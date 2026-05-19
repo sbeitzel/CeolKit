@@ -1,10 +1,10 @@
-# ABCKit Parser & Domain Model — Specification (v0.1)
+# CeolKit Parser & Domain Model — Specification (v0.1)
 
 **Status:** Draft for review
 **Scope:** Architectural overview + core domain model
 **Target language:** Swift
-**Source standards:** ABC notation standard v2.2 (Walshaw, draft) + ABCKit `EXTENSIONS.md`
-**Audience:** ABCKit maintainers and contributors building or consuming the parser
+**Source standards:** ABC notation standard v2.2 (Walshaw, draft) + CeolKit `EXTENSIONS.md`
+**Audience:** CeolKit maintainers and contributors building or consuming the parser
 
 ---
 
@@ -19,14 +19,14 @@
 3. Produce output that any number of back ends — staff‑notation renderer, MIDI exporter, MusicXML exporter, transposer, tune‑database indexer — can consume **without ever touching the original string**.
 4. Preserve enough provenance (source ranges) that a renderer or editor can map every domain object back to the byte range it came from.
 5. Be friendly to **strict + recoverable** diagnostics: a malformed input still yields a (partial) model plus a structured list of issues.
-6. Treat ABCKit's three current `%%abckit:*` directives as **first‑class** members of the core model, alongside ABC v2.2 constructs.
+6. Treat CeolKit's three current `%%ceolkit:*` directives as **first‑class** members of the core model, alongside ABC v2.2 constructs.
 
 ### 1.2 Non‑goals (for this spec)
 
 - Rendering / typesetting decisions (stem direction heuristics, page layout, font selection). The model carries the *intent* and any directive overrides; how to draw them is a different module's problem.
 - Playback semantics beyond what ABC itself prescribes (e.g. swing interpretation, articulation timing curves).
 - Round‑tripping perfectly to source text. A pretty‑printer is a separate, secondary tool.
-- ABCKit's deprecated abcm2ps/abc2midi extensions (only the three currently documented in `EXTENSIONS.md` are in scope).
+- CeolKit's deprecated abcm2ps/abc2midi extensions (only the three currently documented in `EXTENSIONS.md` are in scope).
 
 ---
 
@@ -385,7 +385,7 @@ A tie symbol `-` is bound to the immediately preceding note (or chord). It may b
 
 ## 6. Domain model (semantic)
 
-This is the layer most consumers of ABCKit should depend on. The semantic pass:
+This is the layer most consumers of CeolKit should depend on. The semantic pass:
 
 1. Applies file‑header defaults to every tune.
 2. Resolves `L:`, `M:`, `Q:`, `K:`, `V:` state for every event in tune order.
@@ -395,7 +395,7 @@ This is the layer most consumers of ABCKit should depend on. The semantic pass:
 6. Threads ties across notes and across bars, validates slur nesting, materialises tuplets with their `p:q:r` parameters.
 7. Resolves `P:` part ordering into a playable / printable sequence.
 8. Attaches `w:` lyric syllables to notes per alignment rules (§5).
-9. Records every applicable `%%abckit:*` directive on the affected scope (see §7).
+9. Records every applicable `%%ceolkit:*` directive on the affected scope (see §7).
 
 ### 6.1 Top types
 
@@ -423,7 +423,7 @@ public struct Tune {
     public let voices: [Voice]                   // ≥1; single-voice tunes have one synthetic voice
     public let userSymbols: [Character: Decoration]
     public let macros: [MacroDefinition]
-    public let directives: [ABCKitDirectiveScope] // see §7
+    public let directives: [CeolKitDirectiveScope] // see §7
     public let source: SourceRange
 }
 ```
@@ -437,7 +437,7 @@ public struct Voice {
     public let id: VoiceId                       // "1", "soprano", etc.; "*" for all-voice
     public let properties: VoiceProperties       // clef, stafflines, transpose, name, subname, …
     public let staves: [Staff]                   // usually 1; > 1 for grand staff voices
-    public let directives: [ABCKitDirectiveScope]
+    public let directives: [CeolKitDirectiveScope]
     public let source: SourceRange
 }
 
@@ -467,7 +467,7 @@ public enum Event {
     case grace(GraceGroup)       // attached to the following event
     case tuplet(Tuplet)
     case spacer(Spacer)
-    case directiveAnchor(ABCKitDirective)   // a directive whose effect attaches to next event
+    case directiveAnchor(CeolKitDirective)   // a directive whose effect attaches to next event
 }
 
 public struct Note {
@@ -566,21 +566,21 @@ How code line‑breaks map to score line‑breaks depends on `I:linebreak` setti
 
 ---
 
-## 7. ABCKit extensions
+## 7. CeolKit extensions
 
-The three ABCKit `%%abckit:*` directives are first‑class participants in the domain model. They follow ABC v2.2 §11.5's *application‑specific directive* convention (`%%<app>:<directive>` — see the standard's example `%%noteedit:fontcolor blue`), so the line classifier recognises them generically as members of the `%%abckit:` namespace before dispatching to the typed handlers.
+The three CeolKit `%%ceolkit:*` directives are first‑class participants in the domain model. They follow ABC v2.2 §11.5's *application‑specific directive* convention (`%%<app>:<directive>` — see the standard's example `%%noteedit:fontcolor blue`), so the line classifier recognises them generically as members of the `%%ceolkit:` namespace before dispatching to the typed handlers.
 
 ### 7.1 Representation
 
 ```swift
-public enum ABCKitDirective: Hashable {
-    case pipeFormat(Bool)              // %%abckit:pipeformat true|false
-    case pageNumber(Int)               // %%abckit:pagenumber N  (N >= 1)
-    case stemAlignment(Int)            // %%abckit:stemalignment N  (signed integer)
+public enum CeolKitDirective: Hashable {
+    case pipeFormat(Bool)              // %%ceolkit:pipeformat true|false
+    case pageNumber(Int)               // %%ceolkit:pagenumber N  (N >= 1)
+    case stemAlignment(Int)            // %%ceolkit:stemalignment N  (signed integer)
 }
 
-public struct ABCKitDirectiveScope {
-    public let directive: ABCKitDirective
+public struct CeolKitDirectiveScope {
+    public let directive: CeolKitDirective
     public let scope: Scope
     public let source: SourceRange
 }
@@ -592,7 +592,7 @@ public enum Scope {
 }
 ```
 
-`ABCKitDirectiveScope` values are attached to the smallest scope they affect: `Score.tunes[i].directives` for tune‑global, `Voice.directives` for voice‑local, and `Score`‑level (via a not‑yet‑named bag — see §10 open question) for file‑global. This mirrors the scope rules in `EXTENSIONS.md`.
+`CeolKitDirectiveScope` values are attached to the smallest scope they affect: `Score.tunes[i].directives` for tune‑global, `Voice.directives` for voice‑local, and `Score`‑level (via a not‑yet‑named bag — see §10 open question) for file‑global. This mirrors the scope rules in `EXTENSIONS.md`.
 
 ### 7.2 Semantics that the parser enforces
 
@@ -607,13 +607,13 @@ The parser/semantic pass enforces what the extension document specifies:
 The extension is modelled as an enum rather than a string map so adding a new directive is a deliberate breaking change. To allow forward compatibility:
 
 ```swift
-public enum ABCKitDirective: Hashable {
+public enum CeolKitDirective: Hashable {
     // …known cases…
-    case unknown(name: String, payload: String)   // anything %%abckit:* not yet defined
+    case unknown(name: String, payload: String)   // anything %%ceolkit:* not yet defined
 }
 ```
 
-`unknown` is what users get for `%%abckit:foobar 3`; it's preserved verbatim so downstream tools (or a later library version) can still see it.
+`unknown` is what users get for `%%ceolkit:foobar 3`; it's preserved verbatim so downstream tools (or a later library version) can still see it.
 
 ---
 
@@ -676,7 +676,7 @@ When `ParseOptions.strictRecovery == true`, the first error in a tune marks the 
 
 ## 9. Public Swift API surface
 
-The public types the rest of ABCKit (and external consumers) depend on:
+The public types the rest of CeolKit (and external consumers) depend on:
 
 ```swift
 public protocol ABCParser {
@@ -684,13 +684,13 @@ public protocol ABCParser {
     func parse(_ source: String, options: ParseOptions, dialectHint: Dialect?) -> ParseResult
 }
 
-public struct ABCKitParser: ABCParser { /* default impl */ }
+public struct CeolKitParser: ABCParser { /* default impl */ }
 ```
 
 Submodules:
 
 ```
-ABCKit/
+CeolKit/
   Source/
     SourceRange.swift
   Parser/
@@ -717,9 +717,9 @@ Every type in `Model/` is `Sendable` and `Codable`. The model has no reference c
 
 These are the things I'd push to a v0.2 of this spec rather than guessing now:
 
-1. **File‑global directive bag.** §7.1 mentions attaching file‑global `%%abckit:*` directives somewhere on `Score`. Two viable shapes: a flat `[ABCKitDirectiveScope]` on `Score`, or a dedicated `FilePreamble` struct that also captures `I:abc-charset`, `I:abc-creator`, etc. The latter is cleaner if we expect more global state to arrive.
+1. **File‑global directive bag.** §7.1 mentions attaching file‑global `%%ceolkit:*` directives somewhere on `Score`. Two viable shapes: a flat `[CeolKitDirectiveScope]` on `Score`, or a dedicated `FilePreamble` struct that also captures `I:abc-charset`, `I:abc-creator`, etc. The latter is cleaner if we expect more global state to arrive.
 2. **Macro expansion timing.** Should `m:` macros be expanded eagerly during the semantic pass (so consumers see only resolved notes), or kept as `Event.macroExpansion` nodes whose children are the expansion? Eager is simpler; lazy preserves source intent for editor tooling. Recommendation: eager by default, with an option to retain the wrapper.
-3. **MIDI / playback hints.** abcm2ps and abc2midi have a swarm of `%%MIDI` directives. None of those are in `EXTENSIONS.md`'s ABCKit fork additions, but ABCKit presumably needs to pass them through. Suggest a `case passthrough(name: String, payload: String)` on `StylesheetDirective` so they survive untouched.
+3. **MIDI / playback hints.** abcm2ps and abc2midi have a swarm of `%%MIDI` directives. None of those are in `EXTENSIONS.md`'s CeolKit fork additions, but CeolKit presumably needs to pass them through. Suggest a `case passthrough(name: String, payload: String)` on `StylesheetDirective` so they survive untouched.
 4. **Unicode normalisation in lyrics.** Aligned lyrics (`w:`) use `-`, `_`, `*`, `~`, `|` with special meanings. Recommend NFC‑normalising lyric strings before alignment is computed, so visually identical syllables compare equal.
 5. **Lyric alignment ambiguity.** When `w:` is shorter than the number of notes since the last bar, the standard says to align as many as given and leave the rest blank. When it's longer, behaviour differs across implementations. Pick the strict v2.2 reading and surface a diagnostic for the over‑long case.
 
@@ -736,7 +736,7 @@ A reasonable first cut to validate the architecture without trying to be exhaust
 - Stages 1–4 fully working: file structure, all v2.2 information fields, line continuation, comments, stylesheet directives, inline fields.
 - Music parser: pitches, octaves, accidentals (including microtonal rational accidentals), length, broken rhythm, rests, bar lines, repeat bars and variant endings, ties, slurs, chords, basic decorations (`!…!` and short‑form), chord symbols, annotations.
 - Semantic pass: K/L/M/V/U resolution, accidental scoping within a bar, ties across bars, single‑voice tunes plus multi‑voice voice splitting.
-- All three `%%abckit:*` extensions parsed and scope‑validated.
+- All three `%%ceolkit:*` extensions parsed and scope‑validated.
 - Strict + recoverable diagnostics with stable codes.
 - Test suite over the four §14 sample tunes plus a malformed‑input recovery suite.
 
@@ -754,5 +754,5 @@ Deferred to v0.2+:
 ## 12. References
 
 - *The DRAFT abc music notation standard 2.2* — Chris Walshaw, abcnotation.com/wiki/abc:standard:v2.2
-- *ABCKit `EXTENSIONS.md`* — codeberg.org/sbeitzel/ABCKit (this repository)
+- *CeolKit `EXTENSIONS.md`* — (this repository)
 - RFC 2119 — keyword conventions used by the standard

@@ -3,28 +3,28 @@
 import PackageDescription
 
 let package = Package(
-  name: "ABCKit",
+  name: "CeolKit",
   platforms: [
     .macOS(.v14),
   ],
   products: [
-    .library(name: "ABCKitModel", targets: ["ABCKitModel"]),
-    .library(name: "ABCKitParser", targets: ["ABCKitParser"]),
-    .library(name: "ABCKitRenderer", targets: ["ABCKitRenderer"]),
+    .library(name: "CeolKitModel", targets: ["CeolKitModel"]),
+    .library(name: "CeolKitParser", targets: ["CeolKitParser"]),
+    .library(name: "CeolKitRenderer", targets: ["CeolKitRenderer"]),
   ],
   targets: [
-    .target(name: "ABCKitModel"),
+    .target(name: "CeolKitModel"),
     .target(
-      name: "ABCKitParser",
-      dependencies: ["ABCKitModel"]
+      name: "CeolKitParser",
+      dependencies: ["CeolKitModel"]
     ),
     .target(
-      name: "ABCKitRenderer",
-      dependencies: ["ABCKitModel"]
+      name: "CeolKitRenderer",
+      dependencies: ["CeolKitModel"]
     ),
     .testTarget(
-      name: "ABCKitParserTests",
-      dependencies: ["ABCKitParser"]
+      name: "CeolKitParserTests",
+      dependencies: ["CeolKitParser"]
     ),
   ],
   swiftLanguageModes: [.v6]

@@ -17,4 +17,12 @@ public struct SourceRange: Hashable, Identifiable, Sendable, Codable {
     public let length: Int
     public let line: Int
     public let column: Int
+
+    public init(file: URL?, byteOffset: Int, length: Int, line: Int, column: Int) {
+        self.file = file
+        self.byteOffset = byteOffset
+        self.length = length
+        self.line = line
+        self.column = column
+    }
 }

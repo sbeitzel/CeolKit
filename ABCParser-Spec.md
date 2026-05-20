@@ -261,7 +261,7 @@ public enum InformationField {
     case rhythm(TextString, SourceRange)                      // R:
 
     case meter(MeterSpec, SourceRange)                        // M:
-    case unitNoteLength(Rational, SourceRange)                // L:
+    case unitNoteLength(Fraction, SourceRange)                // L:
     case tempo(TempoSpec, SourceRange)                        // Q:
     case parts(PartsSpec, SourceRange)                        // P:
     case key(KeySpec, SourceRange)                            // K:
@@ -306,7 +306,7 @@ public struct MusicLine {
 public indirect enum MusicElement {
     case note(NoteToken)
     case rest(RestToken)
-    case chord([NoteToken], lengthMultiplier: Rational, SourceRange)
+    case chord([NoteToken], lengthMultiplier: Fraction, SourceRange)
     case grace(GraceGroup)
     case tuplet(TupletSpec, [MusicElement], SourceRange)
     case slurOpen(SourceRange)
@@ -342,7 +342,7 @@ public struct NoteToken {
 public struct NoteLength {
     public let multiplier: Int            // 1 if omitted
     public let divisor: Int               // 1 if omitted, doubled for each / without a number
-    public var rational: Rational { Rational(multiplier, divisor) }
+    public var fraction: Fraction { Fraction(numerator: multiplier, denominator: divisor) }
 }
 ```
 
@@ -411,13 +411,52 @@ public struct Score {
     public let diagnostics: [Diagnostic]         // all issues from all stages
 }
 
+/// Bibliographic fields from the tune header, kept separate from the primary
+/// musical properties on `Tune` so they don't crowd the call site.
+public struct TuneMetadata {
+    public let composer: TextString?
+    public let origin: [String]          // O: semicolon-split; empty if absent
+    public let area: TextString?         // A: — deprecated but preserved
+    public let book: TextString?
+    public let discography: TextString?
+    public let fileURL: URL?
+    public let group: TextString?
+    public let history: [TextString]     // H: continuations become separate entries
+    public let notes: TextString?
+    public let source: TextString?
+    public let rhythm: TextString?
+    public let transcription: TextString?
+}
+
+/// Resolved part play order from the `P:` field (§3.1.9).
+/// Complex nested plans (parenthesised repeats) are deferred to v0.2;
+/// in v0.1 only simple sequences are fully expanded.
+public struct PartPlan {
+    public let sequence: [PartLabel]
+    public let source: SourceRange
+}
+
+public struct PartLabel: Hashable {
+    public let letter: Character         // A–Z as written in P:
+    public let source: SourceRange
+}
+
+/// A macro definition from an `m:` field.
+/// Full macro expansion is deferred to v0.2; pattern and expansion are stored
+/// verbatim so the semantic pass can record them without losing information.
+public struct MacroDefinition {
+    public let pattern: String           // left-hand side (e.g. `~G2`)
+    public let expansion: String         // right-hand side (e.g. `{A}G2`)
+    public let source: SourceRange
+}
+
 public struct Tune {
     public let reference: Int                    // X:
     public let titles: [TextString]              // T: (≥0; spec says "should" follow X:)
     public let metadata: TuneMetadata            // C, O, B, D, F, G, H, N, S, R, Z, ...
     public let key: KeySignature                 // K: at end of header — required
     public let meter: Meter                      // M: or default
-    public let unitNoteLength: Rational          // L: or default per §3.1.7
+    public let unitNoteLength: Fraction          // L: or default per §3.1.7
     public let tempo: Tempo?                     // Q:
     public let parts: PartPlan?                  // P:
     public let voices: [Voice]                   // ≥1; single-voice tunes have one synthetic voice
@@ -433,11 +472,45 @@ public struct Tune {
 A `Voice` is the central container. Single‑voice tunes have one implicit voice; multi‑voice tunes have one per `V:` plus the `V:*` "all voices" pseudo‑voice (used by `K:` and transposition).
 
 ```swift
+/// Identifies a voice within a tune. The `.all` pseudo-voice (`*`) is used by `K:`
+/// and transposition directives that apply across every voice simultaneously.
+public enum VoiceId: Hashable {
+    case named(String)   // "1", "soprano", "T1", etc.
+    case all             // "*" — all-voices pseudo-voice
+}
+
+public enum StemDirection: Hashable {
+    case up
+    case down
+    case auto            // default — renderer decides based on note position
+}
+
+/// Display and transposition settings from the `V:` field (§4.16).
+/// The semantic pass resolves the active value for each property by merging
+/// `V:` settings over `K:` settings over file-header defaults.
+/// `VoiceProperties` holds the voice-level layer of that stack.
+public struct VoiceProperties: Hashable {
+    public let clef: ClefSpec
+    public let transposition: Transposition
+    public let staffProperties: StaffProperties
+    public let name: String?             // nm= — printed at start of first system
+    public let subname: String?          // snm= — printed at subsequent systems
+    public let stemDirection: StemDirection
+    public let middleNote: PitchClass?   // middle= — pitch on the middle staff line; nil = default
+}
+
 public struct Voice {
     public let id: VoiceId                       // "1", "soprano", etc.; "*" for all-voice
     public let properties: VoiceProperties       // clef, stafflines, transpose, name, subname, …
     public let staves: [Staff]                   // usually 1; > 1 for grand staff voices
     public let directives: [CeolKitDirectiveScope]
+    public let source: SourceRange
+}
+
+/// A secondary voice overlaid on the same staff via the `&` operator (§7.4).
+/// Full voice overlay support is deferred to v0.2.
+public struct VoiceOverlay {
+    public let measures: [Measure]
     public let source: SourceRange
 }
 
@@ -472,9 +545,9 @@ public enum Event {
 
 public struct Note {
     public let pitch: Pitch                // diatonic + chromatic resolved
-    public let writtenAccidental: Accidental? // what was actually printed in source
-    public let displayedAccidental: Accidental? // what should be printed (after key sig & bar scope)
-    public let duration: Rational          // multiplied by unitNoteLength to get a whole-note fraction
+    public let writtenAccidental: Alteration? // what was actually printed in source
+    public let displayedAccidental: Alteration? // what should be printed (after key sig & bar scope)
+    public let duration: Fraction          // multiplied by unitNoteLength to get a whole-note fraction
     public let ties: TieState              // .none / .startsTie / .continuesTie / .endsTie
     public let slurs: SlurState            // open count, close count
     public let decorations: [Decoration]
@@ -485,10 +558,27 @@ public struct Note {
     public let source: SourceRange
 }
 
+public enum DiatonicStep: Int, CaseIterable, Hashable, Comparable {
+    case c = 0
+    case d = 1
+    case e = 2
+    case f = 3
+    case g = 4
+    case a = 5
+    case b = 6
+}
+
 public struct Pitch: Hashable {
     public let step: DiatonicStep          // .c .d .e .f .g .a .b
     public let alteration: Alteration      // exact, rational; see below
     public let octave: Int                 // scientific-pitch-notation octave (middle C = 4)
+}
+
+/// A pitch class: letter + alteration without an octave.
+/// Used wherever octave is irrelevant — key signature tonic, chord symbol root, slash-chord bass.
+public struct PitchClass: Hashable {
+    public let step: DiatonicStep
+    public let alteration: Alteration      // .natural for plain letters; .sharp / .flat for # / b
 }
 
 /// A semitone offset from the natural form of the diatonic step.
@@ -513,20 +603,308 @@ public struct Alteration: Hashable {
     public let numerator: Int
     public let denominator: Int            // > 0, post-reduction
 }
+
 ```
 
 Note specifically:
 
 - `writtenAccidental` is what was printed in the ABC. `displayedAccidental` is what a renderer should draw after applying the key signature and intra‑bar accidental memory. These will *differ* for the second `c` after a `^c` in C major, for example.
+- Both `writtenAccidental` and `displayedAccidental` are typed as `Alteration?` — the field names already convey the display-vs-pitch distinction; a separate `Accidental` typealias would only add confusion.
 - `duration` is normalised. The original `NoteLength` (with its raw multiplier/divisor and broken‑rhythm operator) is preserved in `Note.source` for round‑trip purposes via the AST, but consumers should not have to re‑interpret it.
+
+```swift
+public struct Rest {
+    public let kind: RestKind
+    public let duration: Fraction        // in unit note lengths; same normalisation as Note.duration
+    public let decorations: [Decoration]
+    public let source: SourceRange
+}
+
+public enum RestKind {
+    case normal               // z — visible, counts duration
+    case invisible            // x — invisible, counts duration
+    case fullMeasure          // Z — visible whole-bar rest
+    case fullMeasureInvisible // X — invisible whole-bar rest
+}
+
+/// A vertical group of simultaneous notes. All notes share the same duration.
+/// The chord as a whole participates in beaming, slurring, and tying.
+public struct Chord {
+    public let notes: [Note]             // ≥2; each Note.duration equals Chord.duration
+    public let duration: Fraction
+    public let decorations: [Decoration]
+    public let chordSymbol: ChordSymbol?
+    public let annotations: [Annotation]
+    public let beam: BeamState
+    public let ties: TieState
+    public let slurs: SlurState
+    public let lyric: LyricSyllable?
+    public let source: SourceRange
+}
+
+/// A pre-beat ornament attached to the following event.
+/// v0.1 preserves the structural distinction between grace kinds;
+/// full rhythmic timing is deferred to v0.2.
+public struct GraceGroup {
+    public let kind: GraceKind
+    public let notes: [Note]             // durations nominal; timing resolved by renderer
+    public let source: SourceRange
+}
+
+public enum GraceKind {
+    case acciaccatura    // {/  — crushed grace, typically slurred and crossed
+    case appoggiatura    // {   — leaning grace
+}
+
+/// The semantic form of a `(p:q:r` tuplet after the semantic pass has resolved
+/// and validated the group. The semantic pass fills `q` and `r` from the
+/// standard-specified defaults when they are omitted in source.
+public struct Tuplet {
+    public let p: Int          // notes played…
+    public let q: Int          // …in the time of q normal notes
+    public let r: Int          // total notes in the group (equals p when r is omitted)
+    public let events: [Event]
+    public let source: SourceRange
+}
+
+/// A visual spacer (`y`, `y2`, …). Has no musical duration.
+public struct Spacer {
+    public let width: Int      // 1 for bare y; explicit number for y2, y4, etc.
+    public let source: SourceRange
+}
+
+/// The resolved, normalised form of a decoration after the semantic pass.
+/// Short-form decorations (`. ~ H L M O P S T u v`) are expanded to their
+/// canonical cases during the semantic pass; consumers see only this type.
+public enum Decoration: Hashable {
+
+    // Dynamics
+    case ppp                    // !ppp!
+    case pp                     // !pp!
+    case p                      // !p!
+    case mp                     // !mp!
+    case mf                     // !mf!
+    case f                      // !f!
+    case ff                     // !ff!
+    case fff                    // !fff!
+    case sfz                    // !sfz!
+
+    // Articulations
+    case staccato               // !staccato! / .
+    case staccatissimo          // !staccatissimo!
+    case tenuto                 // !tenuto!
+    case accent                 // !accent! / L
+    case strongAccent           // !>!
+    case arpeggio               // !arpeggio!
+
+    // Ornaments
+    case trill                  // !trill! / T
+    case trillStart             // !trill(!
+    case trillEnd               // !trill)!
+    case mordent                // !mordent! / M
+    case pralltriller           // !pralltriller! / P
+    case roll                   // !roll! / ~
+    case turn                   // !turn!
+    case invertedTurn           // !invertedturn!
+
+    // Fermatas
+    case fermata                // !fermata! / H
+    case invertedFermata        // !invertedfermata!
+
+    // Bowing / technique
+    case upbow                  // !upbow! / u
+    case downbow                // !downbow! / v
+    case open                   // !open!
+    case snap                   // !snap!
+    case thumb                  // !thumb!
+    case plus                   // !+!  (left-hand pizzicato / stopped horn)
+    case fingering(Int)         // !0! … !5!
+
+    // Hairpins (single-event anchors)
+    case crescendoStart         // !<(!
+    case crescendoEnd           // !<)!
+    case decrescendoStart       // !>(!
+    case decrescendoEnd         // !>)!
+
+    // Navigation / repeat signs
+    case segno                  // !segno! / S
+    case coda                   // !coda! / O
+    case fine                   // !fine!
+    case dacapo                 // !D.C.!
+    case dacapoAlFine           // !D.C.al Fine!
+    case dacapoAlCoda           // !D.C.al Coda!
+    case dalsegno               // !D.S.!
+    case dalsegnoAlFine         // !D.S.al Fine!
+    case dalsegnoAlCoda         // !D.S.al Coda!
+
+    // Breath / pause
+    case breath                 // !breath!
+    case caesura                // !caesura!
+
+    // Forward compatibility — any !name! not in this table, preserved verbatim
+    case unknown(String)
+}
+```
+
+Short-form expansion happens in the semantic pass. By the time a `Note`, `Rest`, or `Chord` reaches a consumer, all short-form characters (`.`, `~`, `H`, etc.) have been replaced with their corresponding `Decoration` case. `Tune.userSymbols` maps `U:` characters to `Decoration` values by the same mechanism.
+
+```swift
+/// A harmony symbol written in double quotes above the staff (e.g. `"Gm7"`, `"C/E"`).
+/// `root` and `bassNote` are structured for transposition; `quality` is kept verbatim
+/// because chord quality vocabulary is not standardised.
+public struct ChordSymbol: Hashable {
+    public let root: PitchClass          // e.g. G in "Gm7"
+    public let quality: String           // e.g. "m7"; empty string for plain major
+    public let bassNote: PitchClass?     // slash-chord bass, e.g. E in "C/E"
+    public let raw: String               // verbatim text between the quotes
+    public let source: SourceRange
+}
+
+/// A text annotation attached to a note or chord, written in double quotes with a
+/// position-prefix character (e.g. `"^above"`, `"_below"`).
+/// Distinct from `ChordSymbol`, which starts with a note letter (A–G).
+/// `AnnotationPosition` is defined in the model and reused by the syntactic AST.
+public struct Annotation: Hashable {
+    public let position: AnnotationPosition
+    public let text: TextString
+    public let source: SourceRange
+}
+
+public enum AnnotationPosition: Hashable {
+    case above                           // ^
+    case below                           // _
+    case left                            // <
+    case right                           // >
+    case absolute(x: Double, y: Double)  // @x,y  (staff-space coordinates)
+}
+
+/// Counts of slur marks opening and closing at a note or chord.
+/// A struct of two counts rather than an enum because slurs nest — multiple slurs
+/// can be simultaneously active, and a single note can open or close several at once
+/// (e.g. the first note in `((cde))` has `opens: 2`).
+/// The semantic pass validates nesting per §6 step 6 and emits a diagnostic for
+/// unmatched slur marks.
+public struct SlurState: Hashable {
+    public let opens: Int    // slurs beginning at this note
+    public let closes: Int   // slurs ending at this note
+
+    public static let none = SlurState(opens: 0, closes: 0)
+}
+
+/// Assigned by the semantic pass. Ties may span barlines (§6 step 6).
+/// A note in the middle of a chain (e.g. the second note in `C4-C4-C4`) uses
+/// `.continuesTie` — it both receives the tie from the previous note and passes it forward.
+public enum TieState: Hashable {
+    case none            // not part of a tie
+    case startsTie       // tied forward only (first note of a chain)
+    case continuesTie    // tied both backward and forward (mid-chain)
+    case endsTie         // tied backward only (last note of a chain)
+}
+
+/// Assigned by the semantic pass per §5.7.
+/// Only notes with duration < unitNoteLength are beamable; all others are `.single`.
+/// An inline field in the middle of a beam group does not break the beam.
+public enum BeamState: Hashable {
+    case start    // first note in a beamed group
+    case middle   // interior note in a beamed group
+    case end      // last note in a beamed group
+    case single   // not beamed (duration ≥ unitNoteLength, or isolated beamable note)
+}
+
+/// The lyric alignment attached to a note by the semantic pass from `w:` lines (§6 step 8).
+///
+/// `Note.lyric == nil` means no `w:` line applies or the line is exhausted (see §10
+/// open question 5). `.skip` means a `w:` line exists but explicitly passed over this
+/// note with `*` — the two cases are semantically distinct.
+public enum LyricSyllable: Hashable {
+    /// A syllable with display text. `connection` tells the renderer whether to draw
+    /// a hyphen connector to the next aligned note.
+    case text(TextString, connection: LyricConnection)
+
+    /// `_` — this note extends the previous syllable; renderer draws an extender line.
+    case melisma
+
+    /// `*` — this note is explicitly skipped; no text or extender is drawn.
+    case skip
+}
+
+public enum LyricConnection: Hashable {
+    case wordEnd    // syllable ends a word; no connector
+    case hyphen     // mid-word; renderer draws a hyphen to the next syllable
+}
+```
 
 ### 6.4 Key, meter, tempo
 
 ```swift
+/// The modal quality of a key signature. Church modes share names with `.major` (Ionian)
+/// and `.minor` (Aeolian) but are listed explicitly so callers never need string comparison.
+/// `.none` corresponds to `K:none` (no key signature, all naturals).
+/// `.highlandPipes` and `.highlandPipesNoSignature` correspond to `K:HP` and `K:Hp`.
+public enum Mode: Hashable {
+    case major
+    case minor
+    case ionian
+    case dorian
+    case phrygian
+    case lydian
+    case mixolydian
+    case aeolian
+    case locrian
+    case none                    // K:none — no key signature
+    case highlandPipes           // K:HP  — F# and C# implicit, not drawn on staff
+    case highlandPipesNoSignature // K:Hp  — no sharps drawn
+}
+
+/// An explicit accidental modification applied to a diatonic step within a key signature
+/// (e.g. the `^f` in `K:D Phr ^f`). Structurally identical to `PitchClass` but
+/// semantically distinct: this is an instruction ("alter this step by this amount")
+/// rather than a pitch name.
+public struct KeyModification: Hashable {
+    public let step: DiatonicStep
+    public let alteration: Alteration
+}
+
+public enum Clef: Hashable {
+    case treble
+    case bass
+    case baritone      // bass3 — F clef on line 3
+    case alto          // C clef on line 3
+    case tenor         // C clef on line 4
+    case soprano       // C clef on line 1
+    case mezzoSoprano  // C clef on line 2
+    case percussion    // perc
+    case none
+}
+
+/// The clef drawn on the staff plus an optional octave-transposition marker.
+/// `octaveShift` stores the value as ABC writes it (0, ±8, ±15) so renderers can
+/// draw the correct numeral on the clef glyph without reverse-engineering it from semitones.
+public struct ClefSpec: Hashable {
+    public let clef: Clef
+    public let octaveShift: Int    // 0, ±8, ±15 as written in source (e.g. treble+8)
+}
+
+/// Written-vs-sounding pitch offset applied to a voice or staff (§13).
+/// Covers `transpose=N` (chromatic semitones) and `octave=N` (whole-octave shift).
+public struct Transposition: Hashable {
+    public let semitones: Int    // chromatic transposition; 0 = none
+    public let octave: Int       // additional octave shift; 0 = none
+
+    public static let none = Transposition(semitones: 0, octave: 0)
+}
+
+/// Rendering hints attached to a voice or key field via `V:` / `K:` syntax.
+/// Covers `stafflines=N` and `scale=N`.
+public struct StaffProperties: Hashable {
+    public let staffLines: Int     // default 5
+    public let scale: Double?      // optional rendering scale factor; nil = default
+}
+
 public struct KeySignature {
     public let tonic: PitchClass?          // nil for K:none and K:HP
-    public let mode: Mode                  // .major .minor .ionian .dorian .phrygian .lydian .mixolydian .aeolian .locrian .none .highlandPipes .highlandPipesNoSignature
-    public let modifications: [AccidentalAlteration]  // K:D Phr ^f
+    public let mode: Mode
+    public let modifications: [KeyModification]  // K:D Phr ^f
     public let explicit: Bool              // K: ... exp ...
     public let clef: ClefSpec              // resolved
     public let transposition: Transposition // resolved
@@ -544,7 +922,7 @@ public enum Meter {
 
 public struct Tempo {
     public let prelude: TextString?
-    public let beats: [Rational]   // one or more beat units
+    public let beats: [Fraction]   // one or more beat units
     public let bpm: Double
     public let postlude: TextString?
 }

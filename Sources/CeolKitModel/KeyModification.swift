@@ -14,4 +14,9 @@ import Foundation
 public struct KeyModification: Hashable {
     public let step: DiatonicStep
     public let alteration: Alteration
+
+    public init(step: DiatonicStep, alteration: Alteration) {
+        self.step = step
+        self.alteration = alteration
+    }
 }

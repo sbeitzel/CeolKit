@@ -10,4 +10,9 @@ import Foundation
 public struct Spacer {
     public let width: Int                // 1 for bare y, explicit number for y2, y4, etc.
     public let source: SourceRange
+
+    public init(width: Int, source: SourceRange) {
+        self.width = width
+        self.source = source
+    }
 }

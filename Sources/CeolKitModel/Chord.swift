@@ -18,6 +18,30 @@ public struct Chord {
     public let slurs: SlurState
     public let lyric: LyricSyllable?
     public let source: SourceRange
+
+    public init(
+        notes: [Note],
+        duration: Fraction,
+        decorations: [Decoration],
+        chordSymbol: ChordSymbol?,
+        annotations: [Annotation],
+        beam: BeamState,
+        ties: TieState,
+        slurs: SlurState,
+        lyric: LyricSyllable?,
+        source: SourceRange
+    ) {
+        self.notes = notes
+        self.duration = duration
+        self.decorations = decorations
+        self.chordSymbol = chordSymbol
+        self.annotations = annotations
+        self.beam = beam
+        self.ties = ties
+        self.slurs = slurs
+        self.lyric = lyric
+        self.source = source
+    }
 }
 
 /// A harmony symbol written in double quotes above the staff (e.g. `"Gm7"`, `"C/E"`).
@@ -29,4 +53,12 @@ public struct ChordSymbol: Hashable {
     public let bassNote: PitchClass?     // slash-chord bass, e.g. E in "C/E"
     public let raw: String               // verbatim text between the quotes
     public let source: SourceRange
+
+    public init(root: PitchClass, quality: String, bassNote: PitchClass?, raw: String, source: SourceRange) {
+        self.root = root
+        self.quality = quality
+        self.bassNote = bassNote
+        self.raw = raw
+        self.source = source
+    }
 }

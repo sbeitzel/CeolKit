@@ -12,4 +12,9 @@ import Foundation
 public struct VoiceOverlay {
     public let measures: [Measure]
     public let source: SourceRange
+
+    public init(measures: [Measure], source: SourceRange) {
+        self.measures = measures
+        self.source = source
+    }
 }

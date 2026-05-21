@@ -17,6 +17,12 @@ public struct CeolKitDirectiveScope {
     public let directive: CeolKitDirective
     public let scope: Scope
     public let source: SourceRange
+
+    public init(directive: CeolKitDirective, scope: Scope, source: SourceRange) {
+        self.directive = directive
+        self.scope = scope
+        self.source = source
+    }
 }
 
 public enum Scope {

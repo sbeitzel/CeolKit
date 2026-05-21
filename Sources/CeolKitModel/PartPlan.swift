@@ -13,9 +13,19 @@ import Foundation
 public struct PartPlan {
     public let sequence: [PartLabel]
     public let source: SourceRange
+
+    public init(sequence: [PartLabel], source: SourceRange) {
+        self.sequence = sequence
+        self.source = source
+    }
 }
 
 public struct PartLabel: Hashable {
     public let letter: Character         // A–Z as written in P:
     public let source: SourceRange
+
+    public init(letter: Character, source: SourceRange) {
+        self.letter = letter
+        self.source = source
+    }
 }

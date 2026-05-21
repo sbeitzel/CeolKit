@@ -14,4 +14,10 @@ public struct MacroDefinition {
     public let pattern: String           // left-hand side (e.g. `~G2`)
     public let expansion: String         // right-hand side (e.g. `{A}G2`)
     public let source: SourceRange
+
+    public init(pattern: String, expansion: String, source: SourceRange) {
+        self.pattern = pattern
+        self.expansion = expansion
+        self.source = source
+    }
 }

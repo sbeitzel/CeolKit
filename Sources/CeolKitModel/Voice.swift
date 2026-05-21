@@ -13,4 +13,18 @@ public struct Voice {
     public let staves: [Staff]                   // usually 1; > 1 for grand staff voices
     public let directives: [CeolKitDirectiveScope]
     public let source: SourceRange
+
+    public init(
+        id: VoiceId,
+        properties: VoiceProperties,
+        staves: [Staff],
+        directives: [CeolKitDirectiveScope],
+        source: SourceRange
+    ) {
+        self.id = id
+        self.properties = properties
+        self.staves = staves
+        self.directives = directives
+        self.source = source
+    }
 }

@@ -15,6 +15,22 @@ public struct Diagnostic {
     public let source: SourceRange
     public let related: [SourceRange]    // e.g. earlier definition for a duplicate
     public let hint: String?             // optional fix suggestion
+
+    public init(
+        severity: Severity,
+        code: DiagnosticCode,
+        message: String,
+        source: SourceRange,
+        related: [SourceRange] = [],
+        hint: String? = nil
+    ) {
+        self.severity = severity
+        self.code = code
+        self.message = message
+        self.source = source
+        self.related = related
+        self.hint = hint
+    }
 }
 
 public enum DiagnosticCode: String, Codable, Sendable {

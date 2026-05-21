@@ -10,4 +10,9 @@ import Foundation
 public struct TextBlock {
     public let content: String
     public let source: SourceRange
+
+    public init(content: String, source: SourceRange) {
+        self.content = content
+        self.source = source
+    }
 }

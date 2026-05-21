@@ -21,4 +21,34 @@ public struct Tune {
     public let macros: [MacroDefinition]
     public let directives: [CeolKitDirectiveScope] // see §7
     public let source: SourceRange
+
+    public init(
+        reference: Int,
+        titles: [TextString],
+        metadata: TuneMetadata,
+        key: KeySignature,
+        meter: Meter,
+        unitNoteLength: Fraction,
+        tempo: Tempo?,
+        parts: PartPlan?,
+        voices: [Voice],
+        userSymbols: [Character: Decoration],
+        macros: [MacroDefinition],
+        directives: [CeolKitDirectiveScope],
+        source: SourceRange
+    ) {
+        self.reference = reference
+        self.titles = titles
+        self.metadata = metadata
+        self.key = key
+        self.meter = meter
+        self.unitNoteLength = unitNoteLength
+        self.tempo = tempo
+        self.parts = parts
+        self.voices = voices
+        self.userSymbols = userSymbols
+        self.macros = macros
+        self.directives = directives
+        self.source = source
+    }
 }

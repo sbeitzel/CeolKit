@@ -11,6 +11,12 @@ public struct Annotation: Hashable {
     public let position: AnnotationPosition
     public let text: TextString
     public let source: SourceRange
+
+    public init(position: AnnotationPosition, text: TextString, source: SourceRange) {
+        self.position = position
+        self.text = text
+        self.source = source
+    }
 }
 
 public enum AnnotationPosition: Hashable {

@@ -10,6 +10,11 @@ import Foundation
 public struct ClefSpec: Hashable {
     public let clef: Clef
     public let octaveShift: Int    // 0, ±8, ±15 — as written in source (e.g. treble+8)
+
+    public init(clef: Clef, octaveShift: Int) {
+        self.clef = clef
+        self.octaveShift = octaveShift
+    }
 }
 
 public enum Clef: Hashable {

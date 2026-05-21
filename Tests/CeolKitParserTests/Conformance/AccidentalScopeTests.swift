@@ -16,7 +16,7 @@ struct AccidentalScopeTests {
 
     @Test("In K:G, plain F has pitch alteration +1/1 (F# from key)")
     func keySignatureSharp() {
-        let result = parse(scopeTune("FGAB|"))
+        let result = parse("X:1\nT:Test\nM:4/4\nL:1/4\nK:G\nFGAB|")
         let note = result.score.firstTune?.singleVoiceMeasures.first?.noteEvents.first
         #expect(note?.pitch.step == .f)
         #expect(note?.pitch.alteration == Alteration(numerator: 1, denominator: 1))

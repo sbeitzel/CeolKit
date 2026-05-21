@@ -7,7 +7,7 @@
 
 import Foundation
 
-public enum DiatonicStep: Int, CaseIterable, Hashable, Comparable {
+public enum DiatonicStep: Int, CaseIterable, Hashable, Comparable, Sendable {
     public static func < (lhs: DiatonicStep, rhs: DiatonicStep) -> Bool {
         lhs.rawValue < rhs.rawValue
     }

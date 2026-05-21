@@ -13,4 +13,12 @@ public struct Tuplet {
     public let r: Int                    // total notes in the group (may equal p)
     public let events: [Event]           // the r contained events
     public let source: SourceRange
+
+    public init(p: Int, q: Int, r: Int, events: [Event], source: SourceRange) {
+        self.p = p
+        self.q = q
+        self.r = r
+        self.events = events
+        self.source = source
+    }
 }

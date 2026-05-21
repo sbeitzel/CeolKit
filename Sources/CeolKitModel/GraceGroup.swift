@@ -11,6 +11,12 @@ public struct GraceGroup {
     public let kind: GraceKind
     public let notes: [Note]             // durations nominal; timing resolved by renderer
     public let source: SourceRange
+
+    public init(kind: GraceKind, notes: [Note], source: SourceRange) {
+        self.kind = kind
+        self.notes = notes
+        self.source = source
+    }
 }
 
 public enum GraceKind {

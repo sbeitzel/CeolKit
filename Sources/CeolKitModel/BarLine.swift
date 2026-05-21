@@ -10,6 +10,11 @@ import Foundation
 public struct BarLine: Hashable, Codable, Sendable {
     public let kind: BarLineKind
     public let source: SourceRange
+
+    public init(kind: BarLineKind, source: SourceRange) {
+        self.kind = kind
+        self.source = source
+    }
 }
 
 public enum BarLineKind: Hashable, Codable, Sendable {

@@ -20,4 +20,32 @@ public struct Note {
     public let beam: BeamState             // .start / .middle / .end / .single
     public let lyric: LyricSyllable?       // alignment from w: lines
     public let source: SourceRange
+
+    public init(
+        pitch: Pitch,
+        writtenAccidental: Alteration?,
+        displayedAccidental: Alteration?,
+        duration: Fraction,
+        ties: TieState,
+        slurs: SlurState,
+        decorations: [Decoration],
+        chordSymbol: ChordSymbol?,
+        annotations: [Annotation],
+        beam: BeamState,
+        lyric: LyricSyllable?,
+        source: SourceRange
+    ) {
+        self.pitch = pitch
+        self.writtenAccidental = writtenAccidental
+        self.displayedAccidental = displayedAccidental
+        self.duration = duration
+        self.ties = ties
+        self.slurs = slurs
+        self.decorations = decorations
+        self.chordSymbol = chordSymbol
+        self.annotations = annotations
+        self.beam = beam
+        self.lyric = lyric
+        self.source = source
+    }
 }

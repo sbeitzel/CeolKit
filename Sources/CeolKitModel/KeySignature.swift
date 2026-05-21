@@ -16,4 +16,16 @@ public struct KeySignature {
     public let transposition: Transposition // resolved
     public let staffProperties: StaffProperties
     public let source: SourceRange
+
+    public init(tonic: PitchClass?, mode: Mode, modifications: [KeyModification], explicit: Bool, clef: ClefSpec,
+                transposition: Transposition, staffProperties: StaffProperties, source: SourceRange) {
+        self.tonic = tonic
+        self.mode = mode
+        self.modifications = modifications
+        self.explicit = explicit
+        self.clef = clef
+        self.transposition = transposition
+        self.staffProperties = staffProperties
+        self.source = source
+    }
 }

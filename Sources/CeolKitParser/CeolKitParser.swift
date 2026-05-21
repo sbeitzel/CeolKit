@@ -52,17 +52,13 @@ public struct CeolKitParser: ABCParser {
     }
 
     public func parse(_ source: String, options: ParseOptions, dialectHint: Dialect?) -> ParseResult {
-        let range = SourceRange(file: nil, byteOffset: 0, length: source.utf8.count, line: 1, column: 1)
-        let score = Score(
-            source: range,
-            dialect: options.dialectOverride ?? dialectHint ?? .loose,
-            creator: nil,
-            charset: nil,
-            tunes: [],
-            freeText: [],
-            typesetText: [],
-            diagnostics: []
-        )
-        return ParseResult(score: score, diagnostics: [])
+        let src = Source(content: source, fileName: nil)
+        let classifier = LineClassifier(source: src, dialectHint: dialectHint)
+        let lines = classifier.classify()
+        let builder = ABCFileBuilder(lines: lines, options: options)
+        let abcFile = builder.build()
+        let pass = SemanticPass(file: abcFile, options: options, dialectHint: dialectHint)
+        let (score, diagnostics) = pass.build()
+        return ParseResult(score: score, diagnostics: diagnostics)
     }
 }

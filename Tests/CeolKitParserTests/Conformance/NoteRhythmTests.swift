@@ -105,20 +105,16 @@ struct NoteRhythmTests {
 
     @Test("C>>D: C gets 7/4 (double broken right)")
     func doublebrokenRight() {
-        let result = parse(rhythmTune("C>>D2|"))
+        let result = parse(rhythmTune("C>>D|"))
         let notes = result.score.firstTune?.singleVoiceMeasures.first?.noteEvents ?? []
         guard notes.count >= 1 else { Issue.record("Parser prerequisite not met"); return }
-        // >> applies 3/4 ratio twice: C gets 2 * 7/8 units... wait
-        // >> means C gets 3/2 of D's 1/2, then again: (3/2)*(3/2)=9/4 of the 'base'?
-        // Actually: >> means C gets 7/4 and D gets 1/4 of base duration
-        // With L=1/8, base for C and D without explicit length = 1
-        // C>> = 7/4, D = 1/4
+        // >> means C gets 7/4 and D gets 1/4 of their unit-note-length duration
         #expect(notes[0].duration == Fraction(numerator: 7, denominator: 4))
     }
 
     @Test("C>>D: D gets 1/4 (double broken right)")
     func doublebrokenRightSecond() {
-        let result = parse(rhythmTune("C>>D2|"))
+        let result = parse(rhythmTune("C>>D|"))
         let notes = result.score.firstTune?.singleVoiceMeasures.first?.noteEvents ?? []
         guard notes.count >= 2 else { Issue.record("Parser prerequisite not met"); return }
         #expect(notes[1].duration == Fraction(numerator: 1, denominator: 4))

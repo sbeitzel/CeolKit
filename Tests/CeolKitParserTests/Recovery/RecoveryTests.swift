@@ -155,8 +155,8 @@ struct RecoveryTests {
 
     @Test("Unknown field code emits unknownField")
     func unknownFieldEmitsDiagnostic() {
-        // 'W:' is not a valid ABC header field
-        let abc = "X:1\nT:T\nM:4/4\nW:weird field\nL:1/4\nK:C\nCDEF|\n"
+        // 'Y:' is not a defined ABC field code
+        let abc = "X:1\nT:T\nM:4/4\nY:weird field\nL:1/4\nK:C\nCDEF|\n"
         let result = parse(abc)
         let warnings = result.score.diagnostics.filter { $0.code == .unknownField }
         #expect(!warnings.isEmpty)
@@ -164,7 +164,7 @@ struct RecoveryTests {
 
     @Test("Unknown field — remaining tune content still parsed")
     func unknownFieldPreservesRemainingContent() {
-        let abc = "X:1\nT:T\nM:4/4\nW:weird field\nL:1/4\nK:C\nCDEF|\n"
+        let abc = "X:1\nT:T\nM:4/4\nY:weird field\nL:1/4\nK:C\nCDEF|\n"
         let result = parse(abc)
         let notes = result.score.firstTune?.singleVoiceMeasures.first?.noteEvents ?? []
         #expect(notes.count == 4)

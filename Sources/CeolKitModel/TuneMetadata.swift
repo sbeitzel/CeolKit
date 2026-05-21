@@ -20,4 +20,32 @@ public struct TuneMetadata {
     public let source: TextString?
     public let rhythm: TextString?
     public let transcription: TextString?
+
+    public init(
+        composer: TextString?,
+        origin: [String],
+        area: TextString?,
+        book: TextString?,
+        discography: TextString?,
+        fileURL: URL?,
+        group: TextString?,
+        history: [TextString],
+        notes: TextString?,
+        source: TextString?,
+        rhythm: TextString?,
+        transcription: TextString?
+    ) {
+        self.composer = composer
+        self.origin = origin
+        self.area = area
+        self.book = book
+        self.discography = discography
+        self.fileURL = fileURL
+        self.group = group
+        self.history = history
+        self.notes = notes
+        self.source = source
+        self.rhythm = rhythm
+        self.transcription = transcription
+    }
 }

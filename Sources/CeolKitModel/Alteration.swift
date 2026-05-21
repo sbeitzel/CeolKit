@@ -25,7 +25,7 @@ import Foundation
 /// Common values are provided as static members for ergonomics:
 ///   .natural, .sharp, .flat, .doubleSharp, .doubleFlat,
 ///   .quarterSharp, .quarterFlat, .threeQuarterSharp, .threeQuarterFlat
-public struct Alteration: Hashable {
+public struct Alteration: Hashable, Sendable {
     public let numerator: Int
     public let denominator: Int            // > 0, post-reduction
 
@@ -33,4 +33,20 @@ public struct Alteration: Hashable {
         self.numerator = numerator
         self.denominator = denominator
     }
+
+    public static let sharp       = Alteration(numerator:  1, denominator: 1)
+    public static let flat        = Alteration(numerator: -1, denominator: 1)
+    public static let doubleSharp = Alteration(numerator:  2, denominator: 1)
+    public static let doubleFlat  = Alteration(numerator: -2, denominator: 1)
+    public static let natural     = Alteration(numerator:  0, denominator: 1)
+
+    public static func reduced(numerator: Int, denominator: Int) -> Alteration {
+        guard numerator != 0 else { return .natural }
+        let d = denominator > 0 ? denominator : -denominator
+        let sign = denominator < 0 ? -1 : 1
+        let g = gcd(abs(numerator), d)
+        return Alteration(numerator: sign * numerator / g, denominator: d / g)
+    }
 }
+
+private func gcd(_ a: Int, _ b: Int) -> Int { b == 0 ? a : gcd(b, a % b) }

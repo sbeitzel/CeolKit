@@ -10,4 +10,9 @@ import Foundation
 public struct StaffProperties: Hashable {
     public let staffLines: Int     // default 5
     public let scale: Double?      // optional rendering scale factor; nil = default
+
+    public init(staffLines: Int, scale: Double?) {
+        self.staffLines = staffLines
+        self.scale = scale
+    }
 }

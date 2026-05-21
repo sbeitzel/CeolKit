@@ -22,8 +22,7 @@ which are not part of the ABC v2.2 [standard](https://abcnotation.com/wiki/abc:s
 Enables Highland bagpipe formatting for the entire conversion.
 When `%%ceolkit:pipeformat true` is present, note stems, key signatures, and
 other typesetting decisions are adjusted for bagpipe notation (GHB tuning,
-no key-signature accidentals, etc.), matching the behaviour of the CLI `-p`
-flag.
+no key-signature accidentals, etc.).
 
 ### Examples
 

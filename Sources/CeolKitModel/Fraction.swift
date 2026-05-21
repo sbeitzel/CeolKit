@@ -10,4 +10,9 @@ import Foundation
 public struct Fraction: Hashable {
     public let numerator: Int
     public let denominator: Int
+
+    public init(numerator: Int, denominator: Int) {
+        self.numerator = numerator
+        self.denominator = denominator
+    }
 }

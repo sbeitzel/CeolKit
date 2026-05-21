@@ -100,3 +100,7 @@ Dialect is fixed after stage 2 (from the version line / `I:abc-version`), except
 Implement through: file structure, all v2.2 information fields, line continuation, music parser (pitches/octaves/accidentals including microtonal/lengths/broken rhythm/rests/bar lines/repeats/ties/slurs/chords/decorations/chord symbols/annotations), semantic pass (K/L/M/V/U resolution, accidental scoping, ties across bars, single- and multi-voice), all three `%%ceolkit:*` extensions, strict+recoverable diagnostics, conformance test suite.
 
 Deferred to v0.2+: grace note timing, complex `P:` parts, macros, voice overlay (`&`), custom transposition, symbol lines (`s:`).
+
+## Domain reference
+
+Consult [DOMAIN.md](DOMAIN.md) before undertaking a large chunk of work on the project.

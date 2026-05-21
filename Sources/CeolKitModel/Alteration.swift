@@ -28,4 +28,9 @@ import Foundation
 public struct Alteration: Hashable {
     public let numerator: Int
     public let denominator: Int            // > 0, post-reduction
+
+    public init(numerator: Int, denominator: Int) {
+        self.numerator = numerator
+        self.denominator = denominator
+    }
 }

@@ -7,7 +7,7 @@
 
 import Foundation
 
-public enum BeamState: Hashable {
+public enum BeamState: Hashable, Sendable {
     case start    // first note in a beamed group
     case middle   // interior note in a beamed group
     case end      // last note in a beamed group

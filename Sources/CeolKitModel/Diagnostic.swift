@@ -7,8 +7,8 @@
 
 import Foundation
 
-public struct Diagnostic {
-    public enum Severity { case error, warning, info }
+public struct Diagnostic: Sendable {
+    public enum Severity: Sendable { case error, warning, info }
     public let severity: Severity
     public let code: DiagnosticCode      // stable identifier, e.g. .invalidPageNumber, .unknownField
     public let message: String           // human-readable
@@ -47,4 +47,6 @@ public enum DiagnosticCode: String, Codable, Sendable {
     case misplacedStemAlignment
     // Directives
     case unknownDirective
+    // Field keys
+    case unknownKey
 }

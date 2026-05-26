@@ -96,7 +96,7 @@ struct FieldLexer {
             result.append(ch)
             advance()
         }
-        consume("\"")
+        _ = consume("\"")
         return result
     }
 }

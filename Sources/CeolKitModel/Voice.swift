@@ -7,7 +7,7 @@
 
 import Foundation
 
-public struct Voice {
+public struct Voice: Sendable {
     public let id: VoiceId                       // "1", "soprano", etc.; "*" for all-voice
     public let properties: VoiceProperties       // clef, stafflines, transpose, name, subname, …
     public let staves: [Staff]                   // usually 1; > 1 for grand staff voices

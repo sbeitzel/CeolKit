@@ -10,7 +10,7 @@ import Foundation
 /// The resolved, normalised form of a decoration after the semantic pass.
 /// Short-form decorations (`. ~ H L M O P S T u v`) are expanded to their
 /// canonical cases during the semantic pass; consumers see only this type.
-public enum Decoration: Hashable {
+public enum Decoration: Hashable, Sendable {
 
     // Dynamics
     case ppp                    // !ppp!

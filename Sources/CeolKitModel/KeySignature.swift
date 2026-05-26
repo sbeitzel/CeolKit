@@ -7,7 +7,7 @@
 
 import Foundation
 
-public struct KeySignature {
+public struct KeySignature: Sendable {
     public let tonic: PitchClass?          // nil for K:none and K:HP
     public let mode: Mode
     public let modifications: [KeyModification]  // K:D Phr ^f

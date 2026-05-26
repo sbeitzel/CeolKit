@@ -7,7 +7,7 @@
 
 import Foundation
 
-public struct TextBlock {
+public struct TextBlock: Sendable {
     public let content: String
     public let source: SourceRange
 

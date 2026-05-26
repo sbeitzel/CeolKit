@@ -7,7 +7,7 @@
 
 import Foundation
 
-public struct Chord {
+public struct Chord: Sendable {
     public let notes: [Note]             // ≥2; each Note.duration equals Chord.duration
     public let duration: Fraction
     public let decorations: [Decoration]
@@ -47,7 +47,7 @@ public struct Chord {
 /// A harmony symbol written in double quotes above the staff (e.g. `"Gm7"`, `"C/E"`).
 /// `root` and `bassNote` are structured for transposition; `quality` is kept verbatim
 /// because chord quality vocabulary is not standardised.
-public struct ChordSymbol: Hashable {
+public struct ChordSymbol: Hashable, Sendable {
     public let root: PitchClass          // e.g. G in "Gm7"
     public let quality: String           // e.g. "m7"; empty string for plain major
     public let bassNote: PitchClass?     // slash-chord bass, e.g. E in "C/E"

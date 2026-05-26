@@ -7,7 +7,7 @@
 
 import Foundation
 
-public struct Score {
+public struct Score: Sendable {
     public let source: SourceRange
     public let dialect: Dialect
     public let creator: String?                  // I:abc-creator

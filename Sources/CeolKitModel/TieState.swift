@@ -7,7 +7,7 @@
 
 import Foundation
 
-public enum TieState: Hashable {
+public enum TieState: Hashable, Sendable {
     case none            // not part of a tie
     case startsTie       // tied forward only (first note of a chain)
     case continuesTie    // tied both backward and forward (mid-chain)

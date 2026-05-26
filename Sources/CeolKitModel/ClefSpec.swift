@@ -7,7 +7,7 @@
 
 import Foundation
 
-public struct ClefSpec: Hashable {
+public struct ClefSpec: Hashable, Sendable {
     public let clef: Clef
     public let octaveShift: Int    // 0, ±8, ±15 — as written in source (e.g. treble+8)
 
@@ -17,7 +17,7 @@ public struct ClefSpec: Hashable {
     }
 }
 
-public enum Clef: Hashable {
+public enum Clef: Hashable, Sendable {
     case treble
     case bass
     case baritone      // bass3 — F clef on line 3

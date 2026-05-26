@@ -7,7 +7,7 @@
 
 import Foundation
 
-public enum ScoreLineBreak {
+public enum ScoreLineBreak: Sendable {
     case hard      // forces a system break in output
     case soft      // permits but does not force
     case suppressed // the source line ended with \

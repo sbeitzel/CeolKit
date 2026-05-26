@@ -7,7 +7,7 @@
 
 import Foundation
 
-public enum TextAlignment {
+public enum TextAlignment: Sendable {
     case left
     case center
     case right

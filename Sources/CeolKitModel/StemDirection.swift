@@ -7,7 +7,7 @@
 
 import Foundation
 
-public enum StemDirection: Hashable {
+public enum StemDirection: Hashable, Sendable {
     case up
     case down
     case auto                            // default — renderer decides based on note position

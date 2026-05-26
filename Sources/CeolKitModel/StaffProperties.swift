@@ -7,7 +7,7 @@
 
 import Foundation
 
-public struct StaffProperties: Hashable {
+public struct StaffProperties: Hashable, Sendable {
     public let staffLines: Int     // default 5
     public let scale: Double?      // optional rendering scale factor; nil = default
 

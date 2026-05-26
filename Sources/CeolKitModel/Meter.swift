@@ -7,7 +7,7 @@
 
 import Foundation
 
-public enum Meter {
+public enum Meter: Sendable {
     case fraction(num: Int, den: Int)
     case commonTime           // C  -> 4/4
     case cutTime              // C| -> 2/2

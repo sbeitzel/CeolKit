@@ -7,7 +7,7 @@
 
 import Foundation
 
-public struct Measure {
+public struct Measure: Sendable {
     public let openingBar: BarLine?              // bar before first event (e.g. anacrusis end)
     public let events: [Event]                   // notes, rests, chords, grace groups, ties, …
     public let closingBar: BarLine               // bar at end; may carry repeat info

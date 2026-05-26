@@ -7,7 +7,7 @@
 
 import Foundation
 
-public struct VoiceProperties: Hashable {
+public struct VoiceProperties: Hashable, Sendable {
     public let clef: ClefSpec
     public let transposition: Transposition
     public let staffProperties: StaffProperties

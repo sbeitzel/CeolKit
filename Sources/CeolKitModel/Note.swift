@@ -7,7 +7,7 @@
 
 import Foundation
 
-public struct Note {
+public struct Note: Sendable {
     public let pitch: Pitch                // diatonic + chromatic resolved
     public let writtenAccidental: Alteration? // what was actually printed in source
     public let displayedAccidental: Alteration? // what should be printed (after key sig & bar scope)

@@ -12,7 +12,7 @@ import Foundation
 /// `Note.lyric == nil` means no `w:` line applies or the line is exhausted (see §10
 /// open question 5). `.skip` means a `w:` line exists but explicitly passed over this
 /// note with `*` — the two cases are semantically distinct.
-public enum LyricSyllable: Hashable {
+public enum LyricSyllable: Hashable, Sendable {
     /// A syllable with display text. `connection` tells the renderer whether to draw
     /// a hyphen connector to the next aligned note.
     case text(TextString, connection: LyricConnection)
@@ -24,7 +24,7 @@ public enum LyricSyllable: Hashable {
     case skip
 }
 
-public enum LyricConnection: Hashable {
+public enum LyricConnection: Hashable, Sendable {
     case wordEnd    // syllable ends a word; no connector
     case hyphen     // mid-word; renderer draws a hyphen to the next syllable
 }

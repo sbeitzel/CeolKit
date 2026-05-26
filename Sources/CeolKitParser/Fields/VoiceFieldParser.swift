@@ -16,6 +16,7 @@ enum VoiceFieldParser {
         var staffLines = 5
         var transposeSemitones = 0
         var transposeOctave = 0
+        var diagnostics: [Diagnostic] = []
 
         // key=value pairs
         while !lex.isAtEnd {
@@ -39,6 +40,11 @@ enum VoiceFieldParser {
                 case "down": stem = .down
                 default:     stem = .auto
                 }
+            case "transpose":
+                lex.skipWhitespace()
+                var sign = 1
+                if lex.consume("-") { sign = -1 } else { _ = lex.consume("+") }
+                if let n = lex.scanInt() { transposeSemitones = sign * n }
             case "octave":
                 lex.skipWhitespace()
                 var sign = 1
@@ -47,7 +53,13 @@ enum VoiceFieldParser {
             case "stafflines":
                 if let n = lex.scanInt() { staffLines = n }
             default:
-                lex.scanWord()
+                _ = lex.scanWord()
+                diagnostics.append(Diagnostic(
+                    severity: .warning,
+                    code: .unknownKey,
+                    message: "Unknown V: key '\(key)'",
+                    source: source
+                ))
             }
             lex.skipWhitespace()
         }
@@ -61,6 +73,6 @@ enum VoiceFieldParser {
             stemDirection: stem,
             middleNote: nil
         )
-        return (id: id, props, [])
+        return (id: id, props, diagnostics)
     }
 }

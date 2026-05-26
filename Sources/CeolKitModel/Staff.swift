@@ -7,7 +7,7 @@
 
 import Foundation
 
-public struct Staff {
+public struct Staff: Sendable {
     public let measures: [Measure]               // bar-line-delimited
     public let overlays: [VoiceOverlay]          // & overlays per §7.4 of the standard
 

@@ -7,7 +7,7 @@
 
 import Foundation
 
-public struct Rest {
+public struct Rest: Sendable {
     public let kind: RestKind
     public let duration: Fraction        // in unit note lengths (same normalisation as Note.duration)
     public let decorations: [Decoration]
@@ -21,7 +21,7 @@ public struct Rest {
     }
 }
 
-public enum RestKind {
+public enum RestKind: Sendable {
     case normal          // z — visible, counts duration
     case invisible       // x — invisible, counts duration
     case fullMeasure     // Z — visible whole-bar rest

@@ -10,7 +10,7 @@ import Foundation
 /// Resolved part play order from the `P:` field (§3.1.9).
 /// Complex nested plans (parenthesised repeats) are deferred to v0.2;
 /// in v0.1 only simple sequences are fully expanded.
-public struct PartPlan {
+public struct PartPlan: Sendable {
     public let sequence: [PartLabel]
     public let source: SourceRange
 
@@ -20,7 +20,7 @@ public struct PartPlan {
     }
 }
 
-public struct PartLabel: Hashable {
+public struct PartLabel: Hashable, Sendable {
     public let letter: Character         // A–Z as written in P:
     public let source: SourceRange
 

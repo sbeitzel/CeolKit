@@ -7,7 +7,7 @@
 
 import Foundation
 
-public struct Annotation: Hashable {
+public struct Annotation: Hashable, Sendable {
     public let position: AnnotationPosition
     public let text: TextString
     public let source: SourceRange
@@ -19,7 +19,7 @@ public struct Annotation: Hashable {
     }
 }
 
-public enum AnnotationPosition: Hashable {
+public enum AnnotationPosition: Hashable, Sendable {
     case above                           // ^
     case below                           // _
     case left                            // <

@@ -7,7 +7,7 @@
 
 import Foundation
 
-public struct Pitch: Hashable {
+public struct Pitch: Hashable, Sendable {
     public let step: DiatonicStep          // .c .d .e .f .g .a .b
     public let alteration: Alteration      // exact, rational; see below
     public let octave: Int                 // scientific-pitch-notation octave (middle C = 4)
@@ -21,7 +21,7 @@ public struct Pitch: Hashable {
 
 /// A pitch class: letter + alteration without an octave.
 /// Used wherever octave is irrelevant — key signature tonic, chord symbol root, slash-chord bass.
-public struct PitchClass: Hashable {
+public struct PitchClass: Hashable, Sendable {
     public let step: DiatonicStep
     public let alteration: Alteration      // .natural for plain letters; .sharp / .flat for # / b
 

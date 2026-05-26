@@ -7,7 +7,7 @@
 
 import Foundation
 
-public struct TuneMetadata {
+public struct TuneMetadata: Sendable {
     public let composer: TextString?
     public let origin: [String]          // O: semicolon-split; empty if absent
     public let area: TextString?         // A: — deprecated but preserved

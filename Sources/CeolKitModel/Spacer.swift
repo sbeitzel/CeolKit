@@ -7,7 +7,7 @@
 
 import Foundation
 
-public struct Spacer {
+public struct Spacer: Sendable {
     public let width: Int                // 1 for bare y, explicit number for y2, y4, etc.
     public let source: SourceRange
 

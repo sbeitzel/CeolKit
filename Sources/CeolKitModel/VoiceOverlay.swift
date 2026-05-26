@@ -9,7 +9,7 @@ import Foundation
 
 /// A secondary voice overlaid on the same staff via `&` (§7.4).
 /// Full voice overlay support is deferred to v0.2.
-public struct VoiceOverlay {
+public struct VoiceOverlay: Sendable {
     public let measures: [Measure]
     public let source: SourceRange
 

@@ -7,7 +7,7 @@
 
 import Foundation
 
-public struct GraceGroup {
+public struct GraceGroup: Sendable {
     public let kind: GraceKind
     public let notes: [Note]             // durations nominal; timing resolved by renderer
     public let source: SourceRange
@@ -19,7 +19,7 @@ public struct GraceGroup {
     }
 }
 
-public enum GraceKind {
+public enum GraceKind: Sendable {
     case acciaccatura    // {/  — crushed grace, typically slurred+crossed
     case appoggiatura    // {   — leaning grace
 }

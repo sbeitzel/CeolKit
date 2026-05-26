@@ -7,7 +7,7 @@
 
 import Foundation
 
-public struct Tune {
+public struct Tune: Sendable {
     public let reference: Int                    // X:
     public let titles: [TextString]              // T: (≥0; spec says "should" follow X:)
     public let metadata: TuneMetadata            // C, O, B, D, F, G, H, N, S, R, Z, ...

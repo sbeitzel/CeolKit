@@ -7,7 +7,7 @@
 
 import Foundation
 
-public enum Event {
+public enum Event: Sendable {
     case note(Note)
     case rest(Rest)
     case chord(Chord)            // unison / vertical chord — all notes share duration

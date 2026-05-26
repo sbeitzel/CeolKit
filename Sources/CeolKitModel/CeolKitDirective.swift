@@ -7,13 +7,13 @@
 
 import Foundation
 
-public enum CeolKitDirective: Hashable {
+public enum CeolKitDirective: Hashable, Sendable {
     case pipeFormat(Bool)              // %%ceolkit:pipeformat true|false
     case pageNumber(Int)               // %%ceolkit:pagenumber N  (N >= 1)
     case stemAlignment(Int)            // %%ceolkit:stemalignment N  (signed integer)
 }
 
-public struct CeolKitDirectiveScope {
+public struct CeolKitDirectiveScope: Sendable {
     public let directive: CeolKitDirective
     public let scope: Scope
     public let source: SourceRange
@@ -25,7 +25,7 @@ public struct CeolKitDirectiveScope {
     }
 }
 
-public enum Scope {
+public enum Scope: Sendable {
     case fileGlobal           // file preamble
     case tuneGlobal           // tune header
     case voiceLocal(VoiceId)  // body, immediately after V:

@@ -11,7 +11,7 @@ import Foundation
 /// and `.minor` (Aeolian) but are listed explicitly so callers never need string comparison.
 /// `.none` corresponds to `K:none` (no key signature, all naturals).
 /// `.highlandPipes` and `.highlandPipesNoSignature` correspond to `K:HP` and `K:Hp`.
-public enum Mode: Hashable {
+public enum Mode: Hashable, Sendable {
     case major
     case minor
     case ionian

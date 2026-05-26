@@ -7,7 +7,7 @@
 
 import Foundation
 
-public struct Fraction: Hashable {
+public struct Fraction: Hashable, Sendable {
     public let numerator: Int
     public let denominator: Int
 

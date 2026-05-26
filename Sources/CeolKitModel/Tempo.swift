@@ -7,7 +7,7 @@
 
 import Foundation
 
-public struct Tempo {
+public struct Tempo: Sendable {
     public let prelude: TextString?
     public let beats: [Fraction]   // one or more beat units
     public let bpm: Double

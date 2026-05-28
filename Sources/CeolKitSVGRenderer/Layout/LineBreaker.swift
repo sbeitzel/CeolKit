@@ -15,9 +15,11 @@ public struct LineBreaker: Sendable {
     ///     each measure. `nil` or `.soft`/`.suppressed` leaves the greedy algorithm in charge;
     ///     `.hard` forces a system break after that measure.
     ///   - usableWidth: Available horizontal space in points (page width minus left/right margins).
+    ///   - clef: The clef in effect for the voice; propagated to each output `System`.
     public func breakIntoSystems(
         _ measures: [(measure: SizedMeasure, breakAfter: ScoreLineBreak?)],
-        usableWidth: Double
+        usableWidth: Double,
+        clef: ClefSpec = ClefSpec(clef: .treble, octaveShift: 0)
     ) -> [System] {
         var systems: [System] = []
         var bucket: [SizedMeasure] = []
@@ -28,7 +30,7 @@ public struct LineBreaker: Sendable {
 
             // Overflow: flush before adding the new measure.
             if !bucket.isEmpty && bucketWidth + w > usableWidth {
-                systems.append(System(measures: bucket, isLastSystem: false, sourceForced: false))
+                systems.append(System(measures: bucket, isLastSystem: false, sourceForced: false, clef: clef))
                 bucket = []
                 bucketWidth = 0
             }
@@ -38,20 +40,20 @@ public struct LineBreaker: Sendable {
 
             // Source-forced break: flush with the flag set.
             if breakAfter == .hard {
-                systems.append(System(measures: bucket, isLastSystem: false, sourceForced: true))
+                systems.append(System(measures: bucket, isLastSystem: false, sourceForced: true, clef: clef))
                 bucket = []
                 bucketWidth = 0
             }
         }
 
         if !bucket.isEmpty {
-            systems.append(System(measures: bucket, isLastSystem: false, sourceForced: false))
+            systems.append(System(measures: bucket, isLastSystem: false, sourceForced: false, clef: clef))
         }
 
         // Mark the trailing system.
         if !systems.isEmpty {
             let last = systems.removeLast()
-            systems.append(System(measures: last.measures, isLastSystem: true, sourceForced: last.sourceForced))
+            systems.append(System(measures: last.measures, isLastSystem: true, sourceForced: last.sourceForced, clef: clef))
         }
 
         return systems

@@ -35,7 +35,8 @@ public struct SVGRenderer: CeolKitRenderer {
                     (measure: sizer.size(m, unitNoteLength: tune.unitNoteLength),
                      breakAfter: ScoreLineBreak?.none)
                 }
-                let systems   = breaker.breakIntoSystems(pairs, usableWidth: usableWidth)
+                let systems   = breaker.breakIntoSystems(pairs, usableWidth: usableWidth,
+                                                        clef: voice.properties.clef)
                 let justified = justifier.justify(systems, usableWidth: usableWidth,
                                                   justifyLastSystem: config.justifyLastSystem)
                 allSystems.append(contentsOf: justified)

@@ -42,22 +42,54 @@ struct SVGEmitter: Sendable {
 
     private func emitSystem(_ system: ResolvedSystem, builder: inout SVGBuilder) {
         emitStaffLines(system, builder: &builder)
+        emitClef(system, builder: &builder)
         for measure in system.measures {
             emitMeasure(measure, system: system, builder: &builder)
         }
     }
 
     private func emitStaffLines(_ system: ResolvedSystem, builder: inout SVGBuilder) {
-        guard let firstMeasure = system.measures.first,
-              let lastMeasure  = system.measures.last else { return }
+        guard let lastMeasure = system.measures.last else { return }
         let topY      = system.origin.y + system.staffOrigin
-        let leftX     = firstMeasure.origin.x
+        let leftX     = system.origin.x
         let rightX    = lastMeasure.origin.x + lastMeasure.width
         let thickness = metadata.engravingDefaults.staffLineThickness * config.staffSize
         for i in 0..<5 {
             let y = topY + Double(i) * config.staffSize
             builder.line(x1: leftX, y1: y, x2: rightX, y2: y,
                          stroke: "black", strokeWidth: thickness)
+        }
+    }
+
+    // MARK: - Clef
+
+    private func emitClef(_ system: ResolvedSystem, builder: inout SVGBuilder) {
+        guard let glyph = clefGlyph(for: system.clef.clef) else { return }
+        let s = config.staffSize
+        let bottomStaffY = system.origin.y + system.staffOrigin + system.staffHeight
+        let fontSize = 4.0 * s
+        let x = system.origin.x + 0.25 * s
+        let y: Double
+        switch system.clef.clef {
+        case .none:                 return
+        case .treble:               y = bottomStaffY - s
+        case .bass, .baritone:      y = bottomStaffY - 3 * s
+        case .alto:                 y = bottomStaffY - 2 * s
+        case .tenor:                y = bottomStaffY - 3 * s
+        case .soprano:              y = bottomStaffY
+        case .mezzoSoprano:         y = bottomStaffY - s
+        case .percussion:           y = bottomStaffY - 2 * s
+        }
+        builder.text(String(glyph.character), x: x, y: y, fontFamily: "Bravura", fontSize: fontSize)
+    }
+
+    private func clefGlyph(for clef: Clef) -> SMuFLGlyph? {
+        switch clef {
+        case .none:                 return nil
+        case .treble:               return .gClef
+        case .bass, .baritone:      return .fClef
+        case .alto, .tenor, .soprano, .mezzoSoprano: return .cClef
+        case .percussion:           return .unpitchedPercussionClef1
         }
     }
 

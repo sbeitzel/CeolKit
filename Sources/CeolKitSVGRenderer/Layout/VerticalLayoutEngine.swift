@@ -17,16 +17,9 @@ public struct VerticalLayoutEngine: Sendable {
 
     /// Converts justified systems into a fully positioned layout.
     ///
-    /// - Parameters:
-    ///   - systems: Pass 3 output.
-    ///   - systemStartWidth: Horizontal space reserved before the first measure of each system
-    ///     for clef, key signature, and time signature glyphs. The first measure's `origin.x`
-    ///     is shifted right by this amount; subsequent measures follow immediately after.
-    ///     Pass `0` when system-start glyphs are not needed (e.g. in tests).
-    public func layout(
-        _ systems: [JustifiedSystem],
-        systemStartWidth: Double = 0
-    ) -> ResolvedLayout {
+    /// The horizontal space before the first measure of each system (for the clef glyph)
+    /// is derived automatically from `jsystem.clef`. Pass `clef: .none` to suppress it.
+    public func layout(_ systems: [JustifiedSystem]) -> ResolvedLayout {
         let staffHeight = 4.0 * config.staffSize
 
         var pages: [ResolvedPage] = []
@@ -44,11 +37,12 @@ public struct VerticalLayoutEngine: Sendable {
             }
 
             let systemOrigin = Point(x: config.margins.left, y: y)
+            let startWidth = clefStartWidth(for: jsystem.clef)
             let measures = resolveMeasures(
                 jsystem.measures,
                 systemOrigin: systemOrigin,
                 extraAbove: extraAbove,
-                systemStartWidth: systemStartWidth
+                systemStartWidth: startWidth
             )
 
             pageSystems.append(ResolvedSystem(
@@ -58,7 +52,8 @@ public struct VerticalLayoutEngine: Sendable {
                 staffHeight: staffHeight,
                 extraAbove: extraAbove,
                 extraBelow: extraBelow,
-                totalHeight: totalHeight
+                totalHeight: totalHeight,
+                clef: jsystem.clef
             ))
 
             y += totalHeight + config.systemGap
@@ -73,6 +68,22 @@ public struct VerticalLayoutEngine: Sendable {
             margins: config.margins,
             pages: pages
         )
+    }
+
+    // MARK: - Clef width
+
+    private func clefStartWidth(for spec: ClefSpec) -> Double {
+        let name: String
+        switch spec.clef {
+        case .none:                              return 0
+        case .treble:                            name = "gClef"
+        case .bass, .baritone:                  name = "fClef"
+        case .alto, .tenor, .soprano, .mezzoSoprano: name = "cClef"
+        case .percussion:                        name = "unpitchedPercussionClef1"
+        }
+        let glyphWidth = metadata.glyphBBoxes[name].map { $0.width * config.staffSize }
+            ?? (2.8 * config.staffSize)
+        return glyphWidth + 0.5 * config.staffSize
     }
 
     // MARK: - Vertical extent

@@ -34,11 +34,18 @@ public struct System: Sendable {
     public let isLastSystem: Bool
     /// `true` when the system break was forced by a `.hard` `ScoreLineBreak` in the source.
     public let sourceForced: Bool
+    public let clef: ClefSpec
 
-    public init(measures: [SizedMeasure], isLastSystem: Bool, sourceForced: Bool) {
+    public init(
+        measures: [SizedMeasure],
+        isLastSystem: Bool,
+        sourceForced: Bool,
+        clef: ClefSpec = ClefSpec(clef: .treble, octaveShift: 0)
+    ) {
         self.measures = measures
         self.isLastSystem = isLastSystem
         self.sourceForced = sourceForced
+        self.clef = clef
     }
 }
 
@@ -48,11 +55,18 @@ public struct JustifiedSystem: Sendable {
     public let measures: [JustifiedMeasure]
     public let isLastSystem: Bool
     public let sourceForced: Bool
+    public let clef: ClefSpec
 
-    public init(measures: [JustifiedMeasure], isLastSystem: Bool, sourceForced: Bool) {
+    public init(
+        measures: [JustifiedMeasure],
+        isLastSystem: Bool,
+        sourceForced: Bool,
+        clef: ClefSpec = ClefSpec(clef: .treble, octaveShift: 0)
+    ) {
         self.measures = measures
         self.isLastSystem = isLastSystem
         self.sourceForced = sourceForced
+        self.clef = clef
     }
 }
 
@@ -105,6 +119,7 @@ public struct ResolvedSystem: Sendable {
     public let extraBelow: Double
     /// `extraAbove + staffHeight + extraBelow`.
     public let totalHeight: Double
+    public let clef: ClefSpec
 
     public init(
         origin: Point,
@@ -113,7 +128,8 @@ public struct ResolvedSystem: Sendable {
         staffHeight: Double,
         extraAbove: Double,
         extraBelow: Double,
-        totalHeight: Double
+        totalHeight: Double,
+        clef: ClefSpec = ClefSpec(clef: .treble, octaveShift: 0)
     ) {
         self.origin = origin
         self.measures = measures
@@ -122,6 +138,7 @@ public struct ResolvedSystem: Sendable {
         self.extraAbove = extraAbove
         self.extraBelow = extraBelow
         self.totalHeight = totalHeight
+        self.clef = clef
     }
 }
 

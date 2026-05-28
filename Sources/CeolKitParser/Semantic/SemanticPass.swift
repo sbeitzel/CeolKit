@@ -14,7 +14,7 @@ struct SemanticPass {
         var preambleCeolKitDirectives: [CeolKitDirectiveScope] = []
         for line in file.filePreamble {
             if case .directive(let name, let payload, let src) = line {
-                if isCeolKitDirective(name) {
+                if isCeolKitDirective(name) || isStandardDirective(name) {
                     var tempDiags: [Diagnostic] = []
                     if let d = parseCeolKitDirective(name: name, payload: payload, source: src, diagnostics: &tempDiags) {
                         preambleCeolKitDirectives.append(
@@ -99,6 +99,10 @@ struct SemanticPass {
         name.hasPrefix("ceolkit:")
     }
 
+    private func isStandardDirective(_ name: String) -> Bool {
+        name == "landscape"
+    }
+
     // MARK: - Tune builder
 
     private func buildTune(_ abcTune: ABCTune, dialect: Dialect) -> (Tune, [Diagnostic]) {
@@ -174,7 +178,7 @@ struct SemanticPass {
             voices: voices,
             userSymbols: ctx.userSymbols,
             macros: ctx.macros,
-            directives: tuneDirectives,
+            directives: tuneDirectives + bodyCtx.bodyTuneDirectives,
             source: abcTune.source
         )
         return (tune, diagnostics)
@@ -515,6 +519,12 @@ struct SemanticPass {
                     source: source
                 ))
             }
+        case "landscape":
+            var tempDiags: [Diagnostic] = []
+            if let d = parseCeolKitDirective(name: name, payload: payload, source: source, diagnostics: &tempDiags) {
+                ctx.bodyTuneDirectives.append(CeolKitDirectiveScope(directive: d, scope: .tuneGlobal, source: source))
+            }
+            diagnostics += tempDiags
         default:
             diagnostics.append(Diagnostic(
                 severity: .warning, code: .unknownDirective,
@@ -732,7 +742,7 @@ struct SemanticPass {
         for (name, payload, source) in directives {
             if let directive = parseCeolKitDirective(name: name, payload: payload, source: source, diagnostics: &diagnostics) {
                 result.append(CeolKitDirectiveScope(directive: directive, scope: scope, source: source))
-            } else if !name.hasPrefix("ceolkit:") {
+            } else if !name.hasPrefix("ceolkit:") && !isStandardDirective(name) {
                 diagnostics.append(Diagnostic(
                     severity: .warning,
                     code: .unknownDirective,
@@ -775,8 +785,22 @@ struct SemanticPass {
             diagnostics.append(Diagnostic(severity: .warning, code: .misplacedStemAlignment,
                 message: "%%ceolkit:stemalignment expects an integer", source: source))
             return nil
+        case "landscape":
+            if let value = parseLogical(trimmed) { return .landscape(value) }
+            diagnostics.append(Diagnostic(severity: .warning, code: .unknownDirective,
+                message: "%%landscape expects '0'/'false' (portrait) or '1'/'true' (landscape)", source: source))
+            return nil
         default:
             return nil
+        }
+    }
+
+    // Parses an ABC v2.2 <logical> value: "0"/"false" → false, "1"/"true" → true.
+    private func parseLogical(_ s: String) -> Bool? {
+        switch s.lowercased() {
+        case "0", "false": return false
+        case "1", "true":  return true
+        default:           return nil
         }
     }
 
@@ -1031,6 +1055,7 @@ private struct BodyContext {
     private(set) var voiceData: [String: VoiceAccumulator] = [:]
     var voiceProperties: [String: VoiceProperties] = [:]
     var voiceDirectives: [String: [CeolKitDirectiveScope]] = [:]
+    var bodyTuneDirectives: [CeolKitDirectiveScope] = []
     var hasExplicitVoice: Bool = false
 
     // Pending attachments for the next note/chord

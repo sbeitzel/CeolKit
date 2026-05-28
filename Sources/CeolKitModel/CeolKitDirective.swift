@@ -11,6 +11,7 @@ public enum CeolKitDirective: Hashable, Sendable {
     case pipeFormat(Bool)              // %%ceolkit:pipeformat true|false
     case pageNumber(Int)               // %%ceolkit:pagenumber N  (N >= 1)
     case stemAlignment(Int)            // %%ceolkit:stemalignment N  (signed integer)
+    case landscape(Bool)               // %%landscape 0|1  (ABC v2.2 §9.1)
 }
 
 public struct CeolKitDirectiveScope: Sendable {

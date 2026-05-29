@@ -1,5 +1,5 @@
 // Pitch, octave, and accidental parsing conformance tests.
-// ABC §4.1: uppercase C..B = octave 3, lowercase c..b = octave 4;
+// ABC convention: uppercase C..B = octave 4 (C = middle C = C4), lowercase c..b = octave 5;
 // ' raises by one octave, , lowers by one octave.
 import Testing
 import CeolKitModel
@@ -14,90 +14,86 @@ struct PitchTests {
 
     // MARK: Octave from letter case (K:C, no accidentals in key)
 
-    @Test("Uppercase C is octave 3")
-    func uppercaseCIsOctave3() {
+    @Test("Uppercase C is octave 4 (middle C)")
+    func uppercaseCIsOctave4() {
         let result = parse(singleNoteTune("C"))
         let note = result.score.firstTune?.singleVoiceMeasures.first?.noteEvents.first
         #expect(note?.pitch.step == .c)
-        #expect(note?.pitch.octave == 3)
+        #expect(note?.pitch.octave == 4)
     }
 
-    @Test("Lowercase c is octave 4 (middle C)")
-    func lowercaseCIsOctave4() {
+    @Test("Lowercase c is octave 5")
+    func lowercaseCIsOctave5() {
         let result = parse(singleNoteTune("c"))
-        let note = result.score.firstTune?.singleVoiceMeasures.first?.noteEvents.first
-        #expect(note?.pitch.step == .c)
-        #expect(note?.pitch.octave == 4)
-    }
-
-    @Test("Uppercase G is octave 3")
-    func uppercaseGIsOctave3() {
-        let result = parse(singleNoteTune("G"))
-        let note = result.score.firstTune?.singleVoiceMeasures.first?.noteEvents.first
-        #expect(note?.pitch.step == .g)
-        #expect(note?.pitch.octave == 3)
-    }
-
-    @Test("Lowercase g is octave 4")
-    func lowercaseGIsOctave4() {
-        let result = parse(singleNoteTune("g"))
-        let note = result.score.firstTune?.singleVoiceMeasures.first?.noteEvents.first
-        #expect(note?.pitch.step == .g)
-        #expect(note?.pitch.octave == 4)
-    }
-
-    @Test("Uppercase B is octave 3")
-    func uppercaseBIsOctave3() {
-        let result = parse(singleNoteTune("B"))
-        let note = result.score.firstTune?.singleVoiceMeasures.first?.noteEvents.first
-        #expect(note?.pitch.step == .b)
-        #expect(note?.pitch.octave == 3)
-    }
-
-    // MARK: Octave marks
-
-    @Test("c' is octave 5")
-    func cPrimeIsOctave5() {
-        let result = parse(singleNoteTune("c'"))
         let note = result.score.firstTune?.singleVoiceMeasures.first?.noteEvents.first
         #expect(note?.pitch.step == .c)
         #expect(note?.pitch.octave == 5)
     }
 
-    @Test("c'' is octave 6")
-    func cDoublePrimeIsOctave6() {
-        let result = parse(singleNoteTune("c''"))
+    @Test("Uppercase G is octave 4")
+    func uppercaseGIsOctave4() {
+        let result = parse(singleNoteTune("G"))
+        let note = result.score.firstTune?.singleVoiceMeasures.first?.noteEvents.first
+        #expect(note?.pitch.step == .g)
+        #expect(note?.pitch.octave == 4)
+    }
+
+    @Test("Lowercase g is octave 5")
+    func lowercaseGIsOctave5() {
+        let result = parse(singleNoteTune("g"))
+        let note = result.score.firstTune?.singleVoiceMeasures.first?.noteEvents.first
+        #expect(note?.pitch.step == .g)
+        #expect(note?.pitch.octave == 5)
+    }
+
+    @Test("Uppercase B is octave 4")
+    func uppercaseBIsOctave4() {
+        let result = parse(singleNoteTune("B"))
+        let note = result.score.firstTune?.singleVoiceMeasures.first?.noteEvents.first
+        #expect(note?.pitch.step == .b)
+        #expect(note?.pitch.octave == 4)
+    }
+
+    // MARK: Octave marks
+
+    @Test("c' is octave 6")
+    func cPrimeIsOctave6() {
+        let result = parse(singleNoteTune("c'"))
         let note = result.score.firstTune?.singleVoiceMeasures.first?.noteEvents.first
         #expect(note?.pitch.step == .c)
         #expect(note?.pitch.octave == 6)
     }
 
-    @Test("C, is octave 2")
-    func cCommaIsOctave2() {
+    @Test("c'' is octave 7")
+    func cDoublePrimeIsOctave7() {
+        let result = parse(singleNoteTune("c''"))
+        let note = result.score.firstTune?.singleVoiceMeasures.first?.noteEvents.first
+        #expect(note?.pitch.step == .c)
+        #expect(note?.pitch.octave == 7)
+    }
+
+    @Test("C, is octave 3")
+    func cCommaIsOctave3() {
         let result = parse(singleNoteTune("C,"))
         let note = result.score.firstTune?.singleVoiceMeasures.first?.noteEvents.first
         #expect(note?.pitch.step == .c)
-        #expect(note?.pitch.octave == 2)
+        #expect(note?.pitch.octave == 3)
     }
 
-    @Test("C,, is octave 1")
-    func cDoubleCommaIsOctave1() {
+    @Test("C,, is octave 2")
+    func cDoubleCommaIsOctave2() {
         let result = parse(singleNoteTune("C,,"))
         let note = result.score.firstTune?.singleVoiceMeasures.first?.noteEvents.first
         #expect(note?.pitch.step == .c)
-        #expect(note?.pitch.octave == 1)
+        #expect(note?.pitch.octave == 2)
     }
 
-    @Test("Octave mark combines with case: G,' = G octave 2 raised 1 = G octave 2 raised to 3")
-    func octaveMarkCombinesWithCase() {
-        // G (uppercase = octave 3), then , lowers to 2, then ' raises to 3... hmm
-        // Actually: G, means G,: G is octave 3, comma lowers by 1 → octave 2.
-        // G,' would be G with , and ' which cancel: octave 3
-        // Let's test G, only:
+    @Test("G, is octave 3")
+    func gCommaIsOctave3() {
         let result = parse(singleNoteTune("G,"))
         let note = result.score.firstTune?.singleVoiceMeasures.first?.noteEvents.first
         #expect(note?.pitch.step == .g)
-        #expect(note?.pitch.octave == 2)
+        #expect(note?.pitch.octave == 3)
     }
 
     // MARK: Diatonic steps

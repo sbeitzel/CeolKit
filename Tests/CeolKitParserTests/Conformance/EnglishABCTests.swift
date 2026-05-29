@@ -154,13 +154,13 @@ struct EnglishABCTests {
         #expect(measure.noteEvents.count == 6)
     }
 
-    @Test("Tune 1 first note is B (octave 3)")
+    @Test("Tune 1 first note is B (octave 4)")
     func tune1FirstNote() {
         guard let tune = score.tunes.first,
               let measure = tune.firstVoice?.allMeasures.first,
               let note = measure.noteEvents.first else { Issue.record("Parser prerequisite not met"); return }
         #expect(note.pitch.step == .b)
-        #expect(note.pitch.octave == 3)
+        #expect(note.pitch.octave == 4)
     }
 
     @Test("Tune 1 first note has broken-right duration 3/2")
@@ -178,7 +178,7 @@ struct EnglishABCTests {
         let notes = measure.noteEvents
         guard notes.count >= 2 else { Issue.record("Parser prerequisite not met"); return }
         #expect(notes[1].pitch.step == .c)
-        #expect(notes[1].pitch.octave == 4)
+        #expect(notes[1].pitch.octave == 5)
         #expect(notes[1].duration == Fraction(numerator: 1, denominator: 2))
     }
 
@@ -244,7 +244,7 @@ struct EnglishABCTests {
         let notes = first.noteEvents
         #expect(notes.count == 1)
         #expect(notes.first?.pitch.step == .d)
-        #expect(notes.first?.pitch.octave == 3)
+        #expect(notes.first?.pitch.octave == 4)
     }
 
     // MARK: Tune 3 — William and Nancy / Legacy

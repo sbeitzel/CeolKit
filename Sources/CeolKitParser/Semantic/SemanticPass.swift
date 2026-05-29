@@ -353,8 +353,8 @@ struct SemanticPass {
 
     private func buildNoteEvent(_ tok: NoteToken, ctx: inout BodyContext) -> Event {
         let step = diatonicStep(from: tok.pitchLetter)
-        // ABC octave convention: uppercase C..B = octave 3, lowercase c..b = octave 4 (middle C)
-        let baseOctave = tok.pitchLetter.isUppercase ? 3 : 4
+        // ABC octave convention: uppercase C..B = octave 4 (middle C = C4), lowercase c..b = octave 5
+        let baseOctave = tok.pitchLetter.isUppercase ? 4 : 5
         let octave = baseOctave + tok.octaveMarks
 
         let currentResolved = ctx.accidentalScope.resolve(step: step, octave: octave)
@@ -404,7 +404,7 @@ struct SemanticPass {
     private func buildChordEvent(_ notes: [NoteToken], source: SourceRange, ctx: inout BodyContext) -> Event {
         let resolvedNotes: [Note] = notes.map { tok in
             let step = diatonicStep(from: tok.pitchLetter)
-            let baseOctave = tok.pitchLetter.isUppercase ? 3 : 4
+            let baseOctave = tok.pitchLetter.isUppercase ? 4 : 5
             let octave = baseOctave + tok.octaveMarks
 
             let currentResolved = ctx.accidentalScope.resolve(step: step, octave: octave)

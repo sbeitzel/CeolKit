@@ -89,8 +89,8 @@ struct AccidentalScopeTests {
         let result = parse(scopeTune("^c C2|"))
         let notes = result.score.firstTune?.singleVoiceMeasures.first?.noteEvents ?? []
         guard notes.count >= 2 else { Issue.record("Parser prerequisite not met"); return }
-        // Second note is uppercase C (octave 3), different octave from the ^c (octave 4)
-        #expect(notes[1].pitch.octave == 3)
+        // Second note is uppercase C (octave 4), different octave from the ^c (octave 5)
+        #expect(notes[1].pitch.octave == 4)
         #expect(notes[1].pitch.alteration == Alteration(numerator: 0, denominator: 1))
     }
 
@@ -99,11 +99,11 @@ struct AccidentalScopeTests {
         let result = parse("X:1\nT:T\nM:4/4\nL:1/4\nK:G\n_b B2|")
         let notes = result.score.firstTune?.singleVoiceMeasures.first?.noteEvents ?? []
         guard notes.count >= 2 else { Issue.record("Parser prerequisite not met"); return }
-        // b (octave 4) is flat
-        #expect(notes[0].pitch.octave == 4)
+        // b (octave 5) is flat
+        #expect(notes[0].pitch.octave == 5)
         #expect(notes[0].pitch.alteration == Alteration(numerator: -1, denominator: 1))
-        // B (octave 3) is unaffected — stays natural in K:G
-        #expect(notes[1].pitch.octave == 3)
+        // B (octave 4) is unaffected — stays natural in K:G
+        #expect(notes[1].pitch.octave == 4)
         #expect(notes[1].pitch.alteration == Alteration(numerator: 0, denominator: 1))
     }
 

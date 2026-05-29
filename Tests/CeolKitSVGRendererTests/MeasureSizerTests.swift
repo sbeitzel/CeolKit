@@ -105,4 +105,55 @@ private func measure(events: [Event]) -> Measure {
 
         #expect(sharpSized.naturalWidth > plainSized.naturalWidth)
     }
+
+    // MARK: - Grace note pairing
+
+    @Test func gracePairedWithNoteProducesTwoOffsets() {
+        let gNote = note(duration: Fraction(numerator: 1, denominator: 2))
+        let grace = GraceGroup(kind: .appoggiatura, notes: [gNote], source: dummyRange)
+        let quarter = Fraction(numerator: 2, denominator: 1)
+        let events: [Event] = [.grace(grace), .note(note(duration: quarter))]
+        let sized = sizer.size(measure(events: events), unitNoteLength: unitNoteLength)
+
+        #expect(sized.eventOffsets.count == 2)
+        #expect(sized.eventOffsets[0] == 0)
+        #expect(sized.eventOffsets[1] > 0)
+    }
+
+    @Test func graceNoteOffsetEqualsGraceWidthPlusGap() throws {
+        let metadata = try BravuraMetadata.load()
+        let config   = SVGRenderConfig()
+        let noteW    = metadata.glyphBBoxes["noteheadBlack"].map { $0.width * config.staffSize }
+                       ?? config.staffSize * 1.2
+        let graceNoteW        = noteW * 0.6
+        let expectedGraceW    = graceNoteW * 1.5        // single grace note
+        let expectedGap       = 0.25 * graceNoteW + 0.25 * noteW
+        let expectedNoteOffset = expectedGraceW + expectedGap
+
+        let gNote = note(duration: Fraction(numerator: 1, denominator: 2))
+        let grace = GraceGroup(kind: .appoggiatura, notes: [gNote], source: dummyRange)
+        let quarter = Fraction(numerator: 2, denominator: 1)
+        let events: [Event] = [.grace(grace), .note(note(duration: quarter))]
+        let sized = sizer.size(measure(events: events), unitNoteLength: unitNoteLength)
+
+        #expect(abs(sized.eventOffsets[1] - expectedNoteOffset) < 0.001)
+    }
+
+    @Test func graceNoteNotSeparatedFromPrincipalByFullNoteColumn() {
+        // A grace+note unit should be narrower than two independent note columns,
+        // confirming the grace is attached rather than treated as a separate spacing event.
+        let gNote = note(duration: Fraction(numerator: 1, denominator: 2))
+        let grace = GraceGroup(kind: .appoggiatura, notes: [gNote], source: dummyRange)
+        let quarter = Fraction(numerator: 2, denominator: 1)
+
+        let pairedMeasure = measure(events: [.grace(grace), .note(note(duration: quarter))])
+        let twoNoteMeasure = measure(events: [.note(note(duration: quarter)), .note(note(duration: quarter))])
+
+        let pairedSized   = sizer.size(pairedMeasure,   unitNoteLength: unitNoteLength)
+        let twoNoteSized  = sizer.size(twoNoteMeasure,  unitNoteLength: unitNoteLength)
+
+        // Grace+note pair is narrower than two independent notes
+        // (grace group is smaller than a full note column).
+        #expect(pairedSized.naturalWidth < twoNoteSized.naturalWidth)
+    }
 }

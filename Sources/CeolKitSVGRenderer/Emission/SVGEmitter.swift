@@ -166,7 +166,10 @@ struct SVGEmitter: Sendable {
                 emitNote(note, x: event.origin.x, topStaffY: topStaffY, bottomStaffY: bottomStaffY,
                          unitNoteLength: unitNoteLength, builder: &builder)
             }
-        case .grace, .tuplet, .spacer, .directiveAnchor:
+        case .grace(let g):
+            emitGraceGroup(g, originX: event.origin.x, topStaffY: topStaffY,
+                           bottomStaffY: bottomStaffY, builder: &builder)
+        case .tuplet, .spacer, .directiveAnchor:
             break // deferred to a future pass
         }
     }
@@ -239,11 +242,11 @@ struct SVGEmitter: Sendable {
     }
 
     private func emitLedgerLines(staffPos: Int, x: Double, bottomStaffY: Double,
-                                 builder: inout SVGBuilder) {
+                                 scale: Double = 1.0, builder: inout SVGBuilder) {
         let s         = config.staffSize
-        let ext       = metadata.engravingDefaults.legerLineExtension * s
-        let thickness = metadata.engravingDefaults.legerLineThickness * s
-        let noteW     = noteheadWidth()
+        let ext       = metadata.engravingDefaults.legerLineExtension * s * scale
+        let thickness = metadata.engravingDefaults.legerLineThickness * s * scale
+        let noteW     = noteheadWidth() * scale
 
         if staffPos > 8 {
             var p = 10
@@ -262,6 +265,100 @@ struct SVGEmitter: Sendable {
                              stroke: "black", strokeWidth: thickness)
                 p -= 2
             }
+        }
+    }
+
+    // MARK: - Grace groups
+
+    /// Scale factor for grace note glyphs and geometry relative to normal notes.
+    private let graceScale = 0.6
+
+    private func emitGraceGroup(_ grace: GraceGroup, originX: Double,
+                                 topStaffY: Double, bottomStaffY: Double,
+                                 builder: inout SVGBuilder) {
+        guard !grace.notes.isEmpty else { return }
+
+        let s          = config.staffSize
+        let fontSize   = 4.0 * s * graceScale
+        let stemThick  = metadata.engravingDefaults.stemThickness * s
+        let noteW      = noteheadWidth() * graceScale
+        let colWidth   = noteW * 1.5   // total column per grace note: 0.25W lead + W head + 0.25W trail
+        let stemLength = 3.5 * s * graceScale
+        let multiple   = grace.notes.count > 1
+
+        // Pre-pass: compute notehead Y and stem X for each grace note.
+        // Each note's notehead is offset 0.25 × noteW into its column so adjacent noteheads
+        // have 0.5 × noteW of breathing room between them.
+        // Grace note stems always point up, so the stem X is at the right edge of the notehead.
+        struct GracePos { let x, noteheadY, stemX: Double; let staffPos: Int }
+        let positions: [GracePos] = grace.notes.enumerated().map { i, note in
+            let x   = originX + Double(i) * colWidth + noteW * 0.25
+            let sp  = self.staffPos(for: note.pitch)
+            let y   = noteY(staffPos: sp, bottomStaffY: bottomStaffY)
+            return GracePos(x: x, noteheadY: y, stemX: x + noteW, staffPos: sp)
+        }
+
+        // The beam (or flag) sits at the top of the highest note's stem.
+        // All other stems are extended upward to meet that same Y.
+        let highestNoteheadY = positions.map(\.noteheadY).min() ?? positions[0].noteheadY
+        var beamY            = highestNoteheadY - stemLength
+
+        // For beamed groups, ensure all three beams clear the top staff line.
+        // Clamp beamY so the bottom beam (index 2) sits one beamStep above the top staff line,
+        // matching the visual gap between adjacent beams.
+        if multiple {
+            let beamThick   = metadata.engravingDefaults.beamThickness * s * graceScale
+            let beamSpacing = metadata.engravingDefaults.beamSpacing   * s * graceScale
+            let beamStep    = beamThick + beamSpacing
+            beamY = min(beamY, topStaffY - 3.0 * beamStep)
+        }
+
+        for (i, pos) in positions.enumerated() {
+            let note = grace.notes[i]
+
+            builder.text(String(SMuFLGlyph.noteheadBlack.character), x: pos.x, y: pos.noteheadY,
+                         fontFamily: "Bravura", fontSize: fontSize)
+
+            if let acc = note.displayedAccidental, let glyph = accidentalGlyph(for: acc) {
+                builder.text(String(glyph.character), x: pos.x - s * 0.75 * graceScale, y: pos.noteheadY,
+                             fontFamily: "Bravura", fontSize: fontSize)
+            }
+
+            // Stem runs from the notehead up to beamY; the highest note has exactly stemLength,
+            // lower notes are extended so every stem tip meets the beam.
+            builder.line(x1: pos.stemX, y1: beamY, x2: pos.stemX, y2: pos.noteheadY,
+                         stroke: "black", strokeWidth: stemThick)
+
+            // Single grace note gets a 32nd-note flag (three flags)
+            if !multiple {
+                builder.text(String(SMuFLGlyph.flag32ndUp.character), x: pos.stemX, y: beamY,
+                             fontFamily: "Bravura", fontSize: fontSize)
+            }
+
+            emitLedgerLines(staffPos: pos.staffPos, x: pos.x, bottomStaffY: bottomStaffY,
+                            scale: graceScale, builder: &builder)
+        }
+
+        // Three beams for a beamed grace group (32nd-note visual convention).
+        // Beams stack downward from beamY (toward the noteheads) spaced by beamThickness + beamSpacing.
+        if multiple, let first = positions.first, let last = positions.last {
+            let beamThick   = metadata.engravingDefaults.beamThickness * s * graceScale
+            let beamSpacing = metadata.engravingDefaults.beamSpacing   * s * graceScale
+            let beamStep    = beamThick + beamSpacing
+            for b in 0..<3 {
+                let y = beamY + Double(b) * beamStep
+                builder.line(x1: first.stemX, y1: y, x2: last.stemX, y2: y,
+                             stroke: "black", strokeWidth: beamThick)
+            }
+        }
+
+        // Acciaccatura: diagonal slash through the first stem at its midpoint
+        if grace.kind == .acciaccatura, let first = positions.first {
+            let midStemY = (first.noteheadY + beamY) / 2.0
+            let slashExt = s * 0.25
+            builder.line(x1: first.stemX - slashExt, y1: midStemY + slashExt,
+                         x2: first.stemX + slashExt, y2: midStemY - slashExt,
+                         stroke: "black", strokeWidth: stemThick)
         }
     }
 

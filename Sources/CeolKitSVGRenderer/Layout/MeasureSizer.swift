@@ -28,10 +28,29 @@ public struct MeasureSizer: Sendable {
 
         var offsets: [Double] = []
         var x: Double = 0
+        var i = 0
 
-        for event in measure.events {
-            offsets.append(x)
-            x += columnWidth(for: event, quarterInUnits: quarterInUnits)
+        while i < measure.events.count {
+            let event = measure.events[i]
+
+            if case .grace(let g) = event,
+               i + 1 < measure.events.count,
+               isSpacingEvent(measure.events[i + 1]) {
+                // Grace + following note/chord/rest: treat as a combined unit so the pair
+                // moves together during justification. The gap between the grace group's
+                // last notehead and the principal note is fixed at
+                // 0.25 × grace notehead width + 0.25 × normal notehead width.
+                let graceW = graceGroupWidth(g)
+                let gap    = graceNoteGap()
+                offsets.append(x)                    // grace event
+                offsets.append(x + graceW + gap)     // paired note/chord/rest
+                x += graceW + gap + columnWidth(for: measure.events[i + 1], quarterInUnits: quarterInUnits)
+                i += 2
+            } else {
+                offsets.append(x)
+                x += columnWidth(for: event, quarterInUnits: quarterInUnits)
+                i += 1
+            }
         }
 
         // Right-side padding for the closing bar line.
@@ -70,7 +89,8 @@ public struct MeasureSizer: Sendable {
             return max(minCol, base * df)
 
         case .grace(let g):
-            return s * 0.75 * Double(max(g.notes.count, 1))
+            // Fallback for orphaned grace events (not immediately followed by a spacing event).
+            return graceGroupWidth(g)
 
         case .spacer(let sp):
             return s * 0.5 * Double(max(sp.width, 1))
@@ -78,6 +98,35 @@ public struct MeasureSizer: Sendable {
         case .directiveAnchor:
             return 0
         }
+    }
+
+    // MARK: - Grace helpers
+
+    /// Returns true for events that carry rhythmic duration and act as spacing anchors.
+    private func isSpacingEvent(_ event: Event) -> Bool {
+        switch event {
+        case .note, .chord, .rest: return true
+        default: return false
+        }
+    }
+
+    /// Width consumed by a grace group: 1.5 × grace notehead width per note,
+    /// giving 0.25× leading and 0.25× trailing padding (0.5× between adjacent noteheads).
+    private func graceGroupWidth(_ grace: GraceGroup) -> Double {
+        noteheadWidth() * 0.6 * 1.5 * Double(max(grace.notes.count, 1))
+    }
+
+    /// Fixed gap between the last grace notehead's right edge and the principal notehead:
+    /// 0.25 × grace notehead width + 0.25 × normal notehead width.
+    private func graceNoteGap() -> Double {
+        noteheadWidth() * (0.25 * 0.6 + 0.25)
+    }
+
+    // MARK: - Helpers
+
+    private func noteheadWidth() -> Double {
+        metadata.glyphBBoxes["noteheadBlack"].map { $0.width * config.staffSize }
+            ?? config.staffSize * 1.2
     }
 
     private func durationFactor(_ duration: Fraction, quarterInUnits: Double) -> Double {

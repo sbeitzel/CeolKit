@@ -291,4 +291,119 @@ private let quarterUNL = Fraction(numerator: 1, denominator: 4)
         let svgs = try emitter.emit(layout)
         #expect(svgs.isEmpty)
     }
+
+    // MARK: Grace notes
+
+    /// Helper: builds a measure with a single grace event at a given x.
+    private func measureWithGrace(_ grace: GraceGroup, x: Double = 60) -> ResolvedMeasure {
+        let event = ResolvedEvent(origin: Point(x: x, y: 100), kind: .grace(grace))
+        return ResolvedMeasure(
+            origin: Point(x: x, y: 50),
+            width: 150,
+            events: [event],
+            openingBar: nil,
+            closingBar: ResolvedBarLine(x: x + 150, kind: .single),
+            unitNoteLength: quarterUNL
+        )
+    }
+
+    private func graceNote(step: DiatonicStep, octave: Int) -> Note {
+        Note(
+            pitch: Pitch(step: step, alteration: .natural, octave: octave),
+            writtenAccidental: nil,
+            displayedAccidental: nil,
+            duration: Fraction(numerator: 1, denominator: 2),   // nominal eighth
+            ties: .none, slurs: .none, decorations: [],
+            chordSymbol: nil, annotations: [],
+            beam: .single, lyric: nil, source: dummyRange
+        )
+    }
+
+    @Test func singleGraceNoteRendersNotehead() throws {
+        let grace = GraceGroup(kind: .appoggiatura, notes: [graceNote(step: .g, octave: 4)],
+                               source: dummyRange)
+        let svgs = try emitter.emit(layout(systems: [system(measures: [measureWithGrace(grace)])]))
+        let svg  = try #require(svgs.first)
+        #expect(svg.contains(String(SMuFLGlyph.noteheadBlack.character)))
+    }
+
+    @Test func singleGraceNoteRenders32ndFlag() throws {
+        let grace = GraceGroup(kind: .appoggiatura, notes: [graceNote(step: .g, octave: 4)],
+                               source: dummyRange)
+        let svgs = try emitter.emit(layout(systems: [system(measures: [measureWithGrace(grace)])]))
+        let svg  = try #require(svgs.first)
+        #expect(svg.contains(String(SMuFLGlyph.flag32ndUp.character)))
+        #expect(!svg.contains(String(SMuFLGlyph.flag8thUp.character)))
+    }
+
+    @Test func multipleGraceNotesRenderThreeBeams() throws {
+        let notes = [graceNote(step: .f, octave: 4), graceNote(step: .g, octave: 4)]
+        let grace = GraceGroup(kind: .appoggiatura, notes: notes, source: dummyRange)
+        let svgs  = try emitter.emit(layout(systems: [system(measures: [measureWithGrace(grace)])]))
+        let svg   = try #require(svgs.first)
+
+        // No flags should appear for a beamed group.
+        #expect(!svg.contains(String(SMuFLGlyph.flag32ndUp.character)))
+
+        // 2 stem lines + 3 beam lines + 5 staff lines + 1 bar = 11 lines.
+        let lineCount = svg.components(separatedBy: "<line ").count - 1
+        #expect(lineCount == 11)
+    }
+
+    @Test func acciaccaturaHasSlashLine() throws {
+        let grace = GraceGroup(kind: .acciaccatura, notes: [graceNote(step: .g, octave: 4)],
+                               source: dummyRange)
+        let svgs = try emitter.emit(layout(systems: [system(measures: [measureWithGrace(grace)])]))
+        let svg  = try #require(svgs.first)
+
+        // Acciaccatura adds a slash line through the stem. Count: 5 staff + 1 bar + 1 stem + 1 slash = 8.
+        let lineCount = svg.components(separatedBy: "<line ").count - 1
+        #expect(lineCount == 8)
+    }
+
+    @Test func beamedGraceGroupStemsExtendAboveStaff() throws {
+        // Notes deep in the staff (E4 = bottom line, staffPos 0) would put beams
+        // inside the staff with a fixed stem length. The clamp must push beamY above
+        // topStaffY - 3 * beamStep.
+        let lowNote = Note(
+            pitch: Pitch(step: .e, alteration: .natural, octave: 4),  // staffPos 0, bottom line
+            writtenAccidental: nil, displayedAccidental: nil,
+            duration: Fraction(numerator: 1, denominator: 2),
+            ties: .none, slurs: .none, decorations: [],
+            chordSymbol: nil, annotations: [],
+            beam: .single, lyric: nil, source: dummyRange
+        )
+        let notes = [lowNote, lowNote]
+        let grace = GraceGroup(kind: .appoggiatura, notes: notes, source: dummyRange)
+
+        // System: origin.y = 50, staffOrigin = 50 → topStaffY = 100
+        let topStaffY = 100.0
+        let svgs = try emitter.emit(layout(systems: [system(measures: [measureWithGrace(grace)])]))
+        let svg  = try #require(svgs.first)
+
+        // All beam <line> y1/y2 values must be strictly less than topStaffY (i.e. above the staff).
+        // Extract y-coordinates from line elements and verify.
+        let beamThick   = metadata.engravingDefaults.beamThickness * config.staffSize * 0.6
+        let beamSpacing = metadata.engravingDefaults.beamSpacing   * config.staffSize * 0.6
+        let beamStep    = beamThick + beamSpacing
+        let maxAllowedBeamY = topStaffY - beamStep  // bottom beam must be above this
+
+        // The top beam Y must be above maxAllowedBeamY - 2 * beamStep.
+        // Verify by checking the clamped beamY is above the staff.
+        let b = SVGBuilder()
+        let topBeamYStr = b.fmt(topStaffY - 3.0 * beamStep)
+        // The SVG should contain a line at y = topStaffY - 3*beamStep (the clamped beam top).
+        #expect(svg.contains("y1=\"\(topBeamYStr)\"") || svg.contains("y2=\"\(topBeamYStr)\""))
+    }
+
+    @Test func appoggiaturaHasNoSlashLine() throws {
+        let grace = GraceGroup(kind: .appoggiatura, notes: [graceNote(step: .g, octave: 4)],
+                               source: dummyRange)
+        let svgs = try emitter.emit(layout(systems: [system(measures: [measureWithGrace(grace)])]))
+        let svg  = try #require(svgs.first)
+
+        // Appoggiatura: 5 staff + 1 bar + 1 stem = 7 lines (no slash).
+        let lineCount = svg.components(separatedBy: "<line ").count - 1
+        #expect(lineCount == 7)
+    }
 }

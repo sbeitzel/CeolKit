@@ -156,7 +156,9 @@ struct SemanticPass {
             key: key,
             userSymbols: ctx.userSymbols,
             macros: ctx.macros,
-            headerVoices: ctx.headerVoices
+            headerVoices: ctx.headerVoices,
+            linebreakChars: ctx.linebreakChars,
+            linebreakOnEOL: ctx.linebreakOnEOL
         )
         walkBody(abcTune.musicBody, ctx: &bodyCtx, diagnostics: &diagnostics)
 
@@ -219,6 +221,25 @@ struct SemanticPass {
         case .sourceText(let t):        ctx.sourceText = t
         case .rhythm(let t):            ctx.rhythm = t
         case .transcription(let t):     ctx.transcription = t
+        case .instruction(let t):
+            let parts = t.value.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
+            if parts.first?.lowercased() == "linebreak" {
+                // ABC 2.2 §9.2: fixed vocabulary — <EOL>, <none>, $, !
+                // <none> resets everything; other tokens accumulate.
+                var chars: Set<Character> = []
+                var eol = false
+                for token in parts.dropFirst() {
+                    switch token {
+                    case "<EOL>":  eol = true
+                    case "<none>": chars = []; eol = false
+                    case "$":      chars.insert("$")
+                    case "!":      chars.insert("!")  // ambiguous with decorations; best-effort
+                    default:       break               // ignore unrecognised tokens
+                    }
+                }
+                ctx.linebreakChars = chars
+                ctx.linebreakOnEOL = eol
+            }
         default:                        break
         }
     }
@@ -243,6 +264,9 @@ struct SemanticPass {
             ctx.lyricMeasureAnchor[ctx.currentVoiceId] =
                 ctx.voiceData[ctx.currentVoiceId]?.closedMeasures.count ?? 0
             walkLine(line, ctx: &ctx, diagnostics: &diagnostics)
+            if ctx.linebreakOnEOL {
+                ctx.splitCurrentStave()
+            }
         }
     }
 
@@ -339,13 +363,17 @@ struct SemanticPass {
         case .brokenRhythm:
             break  // already handled in resolveBrokenRhythms pre-pass
 
-        case .unknown(_, let src):
-            let severity: Diagnostic.Severity = options.strictRecovery ? .error : .warning
-            diagnostics.append(Diagnostic(
-                severity: severity, code: .reservedCharacter,
-                message: "Unknown element in music body",
-                source: src
-            ))
+        case .unknown(let ch, let src):
+            if ctx.linebreakChars.contains(ch) {
+                ctx.splitCurrentStave()
+            } else {
+                let severity: Diagnostic.Severity = options.strictRecovery ? .error : .warning
+                diagnostics.append(Diagnostic(
+                    severity: severity, code: .reservedCharacter,
+                    message: "Unknown element in music body",
+                    source: src
+                ))
+            }
         }
     }
 
@@ -813,14 +841,28 @@ struct SemanticPass {
         for (voiceId, accumulator) in bodyCtx.voices(orderedBy: bodyCtx.voiceOrder) {
             let (measures, voiceDiags) = finaliseAccumulator(accumulator, meter: bodyCtx.meter)
             diagnostics += voiceDiags
-            let staff = Staff(measures: measures, overlays: [])
+
+            var staves: [Staff] = []
+            var start = 0
+            for breakIdx in accumulator.staveBreakIndices where breakIdx <= measures.count {
+                let slice = Array(measures[start..<breakIdx])
+                if !slice.isEmpty {
+                    staves.append(Staff(measures: slice, overlays: []))
+                }
+                start = breakIdx
+            }
+            let tail = Array(measures[start...])
+            if !tail.isEmpty || staves.isEmpty {
+                staves.append(Staff(measures: tail, overlays: []))
+            }
+
             let props = bodyCtx.voiceProperties[voiceId] ?? defaultVoiceProperties()
             let vid: VoiceId = .named(voiceId)
             let voiceDirs = bodyCtx.voiceDirectives[voiceId] ?? []
             let voice = Voice(
                 id: vid,
                 properties: props,
-                staves: [staff],
+                staves: staves,
                 directives: voiceDirs,
                 source: tuneSource
             )
@@ -985,12 +1027,16 @@ private struct TuneContext {
     var sourceText: TextString? = nil
     var rhythm: TextString? = nil
     var transcription: TextString? = nil
+    // I:linebreak parsed per ABC 2.2 §9.2
+    var linebreakChars: Set<Character> = []   // $ and/or !
+    var linebreakOnEOL: Bool = false           // <EOL> token
 }
 
 // MARK: - VoiceAccumulator
 
 struct VoiceAccumulator {
     var closedMeasures: [Measure] = []
+    var staveBreakIndices: [Int] = []
     var currentEvents: [Event] = []
     var lastBarLine: BarLine? = nil
     var measureSource: SourceRange
@@ -999,6 +1045,12 @@ struct VoiceAccumulator {
     init(source: SourceRange, unitNoteLength: Fraction) {
         self.measureSource = source
         self.unitNoteLength = unitNoteLength
+    }
+
+    mutating func markStaveBoundary() {
+        let idx = closedMeasures.count
+        guard idx != staveBreakIndices.last else { return }  // no new measures since last split
+        staveBreakIndices.append(idx)
     }
 
     mutating func closeWith(barLine: BarLine, endingNumber: [Int]?) {
@@ -1083,13 +1135,19 @@ private struct BodyContext {
     // Space tracking for post-note decoration
     var lastElementWasSpace: Bool = false
 
+    // I:linebreak settings — ABC 2.2 §9.2 closed vocabulary
+    var linebreakChars: Set<Character> = []   // $ and/or !
+    var linebreakOnEOL: Bool = false           // <EOL>
+
     init(
         unitNoteLength: Fraction,
         meter: Meter,
         key: KeySignature,
         userSymbols: [Character: Decoration],
         macros: [MacroDefinition],
-        headerVoices: [String: VoiceProperties] = [:]
+        headerVoices: [String: VoiceProperties] = [:],
+        linebreakChars: Set<Character> = [],
+        linebreakOnEOL: Bool = false
     ) {
         self.unitNoteLength = unitNoteLength
         self.meter = meter
@@ -1098,6 +1156,12 @@ private struct BodyContext {
         self.macros = macros
         self.accidentalScope = AccidentalScope(keyAlterations: keyAlterations(for: key))
         self.voiceProperties = headerVoices
+        self.linebreakChars = linebreakChars
+        self.linebreakOnEOL = linebreakOnEOL
+    }
+
+    mutating func splitCurrentStave() {
+        voiceData[currentVoiceId]?.markStaveBoundary()
     }
 
     // Returns voices in the order they were first encountered.

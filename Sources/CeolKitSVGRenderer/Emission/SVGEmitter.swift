@@ -7,6 +7,15 @@ enum SVGEmitterError: Error {
     case bravuraFontNotFound
 }
 
+// MARK: - Internal geometry
+
+/// Stem geometry returned by `emitStem` so the caller can draw beam strokes.
+private struct StemInfo {
+    let stemX:    Double  // x of the stem stroke
+    let stemTipY: Double  // y of the tip (the end away from the notehead)
+    let stemUp:   Bool
+}
+
 // MARK: - Pass 5
 
 /// Pass 5: converts a `ResolvedLayout` into one self-contained SVG document per page.
@@ -16,6 +25,13 @@ enum SVGEmitterError: Error {
 struct SVGEmitter: Sendable {
     let config: SVGRenderConfig
     let metadata: BravuraMetadata
+    let stemDirection: StemDirection
+
+    init(config: SVGRenderConfig, metadata: BravuraMetadata, stemDirection: StemDirection = .auto) {
+        self.config = config
+        self.metadata = metadata
+        self.stemDirection = stemDirection
+    }
 
     // MARK: - Public entry point
 
@@ -104,9 +120,70 @@ struct SVGEmitter: Sendable {
         }
         emitBarLine(measure.closingBar, topY: topY, bottomY: bottomY, builder: &builder)
 
+        // Beam accumulator: (beamCount, [StemInfo]) per beam run.
+        // Keyed on beam-group index so we can flush when .end is seen.
+        var pendingBeam: (beamCount: Int, stems: [StemInfo])?
+
+        func flushBeam() {
+            guard let g = pendingBeam else { return }
+            emitBeamGroup(g.stems, beamCount: g.beamCount, builder: &builder)
+            pendingBeam = nil
+        }
+
         for event in measure.events {
-            emitEvent(event, topStaffY: topY, bottomStaffY: bottomY,
-                      unitNoteLength: measure.unitNoteLength, builder: &builder)
+            let stemInfo = emitEvent(event, topStaffY: topY, bottomStaffY: bottomY,
+                                     unitNoteLength: measure.unitNoteLength, builder: &builder)
+            if let info = stemInfo, let note = noteFrom(event) {
+                let beamCount = requiredBeamCount(absoluteDuration(note.duration,
+                                                                   unitNoteLength: measure.unitNoteLength))
+                switch note.beam {
+                case .start:
+                    flushBeam()  // safety: shouldn't have an open group here
+                    pendingBeam = (beamCount, [info])
+                case .middle:
+                    if pendingBeam != nil {
+                        pendingBeam!.stems.append(info)
+                    }
+                case .end:
+                    if pendingBeam != nil {
+                        pendingBeam!.stems.append(info)
+                    }
+                    flushBeam()
+                case .single:
+                    break
+                }
+            }
+        }
+        flushBeam()  // safety flush for malformed input
+    }
+
+    private func noteFrom(_ event: ResolvedEvent) -> Note? {
+        if case .note(let n) = event.kind { return n }
+        return nil
+    }
+
+    private func requiredBeamCount(_ absDur: Double) -> Int {
+        if absDur < 0.03125 { return 4 }  // 64th
+        if absDur < 0.0625  { return 3 }  // 32nd
+        if absDur < 0.125   { return 2 }  // 16th
+        return 1                           // eighth
+    }
+
+    private func emitBeamGroup(_ stems: [StemInfo], beamCount: Int, builder: inout SVGBuilder) {
+        guard stems.count >= 2, let first = stems.first, let last = stems.last else { return }
+        let s         = config.staffSize
+        let beamThick = metadata.engravingDefaults.beamThickness * s
+        let beamStep  = (metadata.engravingDefaults.beamThickness + metadata.engravingDefaults.beamSpacing) * s
+
+        // All stems in a group should share the same direction; use the first.
+        let stemUp = first.stemUp
+        for b in 0..<beamCount {
+            // Beams stack away from noteheads: for stem-up, beams stack downward from tip;
+            // for stem-down, beams stack upward from tip.
+            let offset = Double(b) * beamStep
+            let y = stemUp ? first.stemTipY + offset : first.stemTipY - offset
+            builder.line(x1: first.stemX, y1: y, x2: last.stemX, y2: y,
+                         stroke: "black", strokeWidth: beamThick)
         }
     }
 
@@ -152,12 +229,13 @@ struct SVGEmitter: Sendable {
 
     // MARK: - Events
 
+    @discardableResult
     private func emitEvent(_ event: ResolvedEvent, topStaffY: Double, bottomStaffY: Double,
-                           unitNoteLength: Fraction, builder: inout SVGBuilder) {
+                           unitNoteLength: Fraction, builder: inout SVGBuilder) -> StemInfo? {
         switch event.kind {
         case .note(let n):
-            emitNote(n, x: event.origin.x, topStaffY: topStaffY, bottomStaffY: bottomStaffY,
-                     unitNoteLength: unitNoteLength, builder: &builder)
+            return emitNote(n, x: event.origin.x, topStaffY: topStaffY, bottomStaffY: bottomStaffY,
+                            unitNoteLength: unitNoteLength, builder: &builder)
         case .rest(let r):
             emitRest(r, x: event.origin.x, topStaffY: topStaffY, bottomStaffY: bottomStaffY,
                      unitNoteLength: unitNoteLength, builder: &builder)
@@ -172,12 +250,14 @@ struct SVGEmitter: Sendable {
         case .tuplet, .spacer, .directiveAnchor:
             break // deferred to a future pass
         }
+        return nil
     }
 
     // MARK: - Notes
 
+    @discardableResult
     private func emitNote(_ note: Note, x: Double, topStaffY: Double, bottomStaffY: Double,
-                          unitNoteLength: Fraction, builder: inout SVGBuilder) {
+                          unitNoteLength: Fraction, builder: inout SVGBuilder) -> StemInfo? {
         let staffPos  = self.staffPos(for: note.pitch)
         let y         = noteY(staffPos: staffPos, bottomStaffY: bottomStaffY)
         let absDur    = absoluteDuration(note.duration, unitNoteLength: unitNoteLength)
@@ -191,17 +271,57 @@ struct SVGEmitter: Sendable {
             emitAccidental(acc, x: x, y: y, fontSize: fontSize, builder: &builder)
         }
 
+        if isDotted(absDur) {
+            emitAugmentationDot(x: x, noteheadY: y, staffPos: staffPos, fontSize: fontSize,
+                                builder: &builder)
+        }
+
+        var stemInfo: StemInfo?
         if absDur < 1.0 {
-            emitStem(staffPos: staffPos, noteheadY: y, x: x, absDur: absDur,
-                     beamState: note.beam, builder: &builder)
+            stemInfo = emitStem(staffPos: staffPos, noteheadY: y, x: x, absDur: absDur,
+                                beamState: note.beam, builder: &builder)
         }
 
         emitLedgerLines(staffPos: staffPos, x: x, bottomStaffY: bottomStaffY, builder: &builder)
+        return stemInfo
     }
 
+    private func emitAugmentationDot(x: Double, noteheadY: Double, staffPos: Int,
+                                      fontSize: Double, builder: inout SVGBuilder) {
+        let noteW   = noteheadWidth()
+        let dotGap  = noteW * 0.2
+        let dotX    = x + noteW + dotGap
+
+        // If the notehead sits on a line (even staffPos), shift dot up half a space to a space.
+        let dotY = staffPos.isMultiple(of: 2)
+            ? noteheadY - config.staffSize / 2.0
+            : noteheadY
+        builder.text(String(SMuFLGlyph.augmentationDot.character), x: dotX, y: dotY,
+                     fontFamily: "Bravura", fontSize: fontSize)
+    }
+
+    private func isDotted(_ absDur: Double) -> Bool {
+        // A dotted value has the form (2^n - 1) / 2^(n-1).  In practice: 3/4, 3/8, 3/16 …
+        // Equivalently, when rounded to the nearest power of two, the "plain" duration differs.
+        // Simple check: absDur * 4 is an integer of the form 4k+2 (i.e. odd when halved).
+        // Handles 3/4 (dotted half), 3/8 (dotted quarter), 3/16 (dotted eighth), 3/32 (dotted 16th).
+        let scaled = absDur * 64.0
+        let rounded = Int(scaled.rounded())
+        // A dotted note: numerator = 3 * 2^k for some k ≥ 0  →  rounded % 3 == 0 but not a plain 2^n.
+        guard rounded > 0 else { return false }
+        if (rounded & (rounded - 1)) == 0 { return false }  // plain power of two → not dotted
+        return rounded % 3 == 0
+    }
+
+    @discardableResult
     private func emitStem(staffPos: Int, noteheadY: Double, x: Double, absDur: Double,
-                           beamState: BeamState, builder: inout SVGBuilder) {
-        let stemUp       = staffPos <= 4
+                           beamState: BeamState, builder: inout SVGBuilder) -> StemInfo {
+        let stemUp: Bool
+        switch stemDirection {
+        case .up:   stemUp = true
+        case .down: stemUp = false
+        case .auto: stemUp = staffPos <= 4
+        }
         let noteheadW    = noteheadWidth()
         let stemThick    = metadata.engravingDefaults.stemThickness * config.staffSize
         let stemLength   = 3.5 * config.staffSize
@@ -231,6 +351,8 @@ struct SVGEmitter: Sendable {
             builder.text(String(flag.character), x: stemX, y: flagY,
                          fontFamily: "Bravura", fontSize: fontSize)
         }
+
+        return StemInfo(stemX: stemX, stemTipY: stemUp ? stemTop : stemBottom, stemUp: stemUp)
     }
 
     private func emitAccidental(_ alt: Alteration, x: Double, y: Double,

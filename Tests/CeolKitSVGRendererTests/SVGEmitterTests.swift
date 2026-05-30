@@ -406,4 +406,142 @@ private let quarterUNL = Fraction(numerator: 1, denominator: 4)
         let lineCount = svg.components(separatedBy: "<line ").count - 1
         #expect(lineCount == 7)
     }
+
+    // MARK: Beam lines
+
+    /// Helper: build a beamed pair of eighth notes (UNL = 1/8, duration = 1 unit each).
+    private func beamedEighthNote(step: DiatonicStep, octave: Int, beam: BeamState) -> Note {
+        Note(
+            pitch: Pitch(step: step, alteration: .natural, octave: octave),
+            writtenAccidental: nil, displayedAccidental: nil,
+            duration: Fraction(numerator: 1, denominator: 1),  // 1 × UNL(1/8) = eighth
+            ties: .none, slurs: .none, decorations: [],
+            chordSymbol: nil, annotations: [],
+            beam: beam, lyric: nil, source: dummyRange
+        )
+    }
+
+    private let eighthUNL = Fraction(numerator: 1, denominator: 8)
+
+    @Test func beamedEighthPairDrawsOneBeamLine() throws {
+        let n1 = beamedEighthNote(step: .e, octave: 5, beam: .start)
+        let n2 = beamedEighthNote(step: .g, octave: 5, beam: .end)
+        let topY = 100.0
+        let e1 = ResolvedEvent(origin: Point(x: 60, y: topY), kind: .note(n1))
+        let e2 = ResolvedEvent(origin: Point(x: 90, y: topY), kind: .note(n2))
+        let measure = ResolvedMeasure(
+            origin: Point(x: 60, y: 50), width: 150,
+            events: [e1, e2], openingBar: nil,
+            closingBar: ResolvedBarLine(x: 210, kind: .single),
+            unitNoteLength: eighthUNL
+        )
+        let svgs = try emitter.emit(layout(systems: [system(measures: [measure])]))
+        let svg  = try #require(svgs.first)
+
+        // 5 staff lines + 1 bar + 2 stems + 1 beam = 9 lines; no flags.
+        let lineCount = svg.components(separatedBy: "<line ").count - 1
+        #expect(lineCount == 9)
+        #expect(!svg.contains(String(SMuFLGlyph.flag8thUp.character)))
+        #expect(!svg.contains(String(SMuFLGlyph.flag8thDown.character)))
+    }
+
+    @Test func beamedSixteenthPairDrawsTwoBeamLines() throws {
+        // UNL = 1/16; duration = 1 unit → absolute = 1/16
+        let unl = Fraction(numerator: 1, denominator: 16)
+        let makeNote: (BeamState) -> Note = { beam in
+            Note(
+                pitch: Pitch(step: .e, alteration: .natural, octave: 5),
+                writtenAccidental: nil, displayedAccidental: nil,
+                duration: Fraction(numerator: 1, denominator: 1),
+                ties: .none, slurs: .none, decorations: [],
+                chordSymbol: nil, annotations: [],
+                beam: beam, lyric: nil, source: dummyRange
+            )
+        }
+        let topY = 100.0
+        let e1 = ResolvedEvent(origin: Point(x: 60, y: topY), kind: .note(makeNote(.start)))
+        let e2 = ResolvedEvent(origin: Point(x: 90, y: topY), kind: .note(makeNote(.end)))
+        let measure = ResolvedMeasure(
+            origin: Point(x: 60, y: 50), width: 150,
+            events: [e1, e2], openingBar: nil,
+            closingBar: ResolvedBarLine(x: 210, kind: .single),
+            unitNoteLength: unl
+        )
+        let svgs = try emitter.emit(layout(systems: [system(measures: [measure])]))
+        let svg  = try #require(svgs.first)
+
+        // 5 staff + 1 bar + 2 stems + 2 beams = 10 lines.
+        let lineCount = svg.components(separatedBy: "<line ").count - 1
+        #expect(lineCount == 10)
+    }
+
+    // MARK: Augmentation dots
+
+    @Test func dottedEighthNoteHasAugmentationDot() throws {
+        // Dotted eighth: absolute duration = 3/16.
+        // With UNL = 1/16 and duration = 3/1: absDur = 3 * (1/16) = 3/16.
+        let unl = Fraction(numerator: 1, denominator: 16)
+        let note = Note(
+            pitch: Pitch(step: .g, alteration: .natural, octave: 5),
+            writtenAccidental: nil, displayedAccidental: nil,
+            duration: Fraction(numerator: 3, denominator: 1),
+            ties: .none, slurs: .none, decorations: [],
+            chordSymbol: nil, annotations: [],
+            beam: .single, lyric: nil, source: dummyRange
+        )
+        let event = ResolvedEvent(origin: Point(x: 60, y: 100), kind: .note(note))
+        let measure = ResolvedMeasure(
+            origin: Point(x: 60, y: 50), width: 150,
+            events: [event], openingBar: nil,
+            closingBar: ResolvedBarLine(x: 210, kind: .single),
+            unitNoteLength: unl
+        )
+        let svgs = try emitter.emit(layout(systems: [system(measures: [measure])]))
+        let svg  = try #require(svgs.first)
+        #expect(svg.contains(String(SMuFLGlyph.augmentationDot.character)))
+    }
+
+    @Test func plainEighthNoteHasNoAugmentationDot() throws {
+        // Plain eighth: absolute duration = 1/8 — no dot.
+        let note = Note(
+            pitch: Pitch(step: .g, alteration: .natural, octave: 5),
+            writtenAccidental: nil, displayedAccidental: nil,
+            duration: Fraction(numerator: 1, denominator: 1),
+            ties: .none, slurs: .none, decorations: [],
+            chordSymbol: nil, annotations: [],
+            beam: .single, lyric: nil, source: dummyRange
+        )
+        let event = ResolvedEvent(origin: Point(x: 60, y: 100), kind: .note(note))
+        let measure = ResolvedMeasure(
+            origin: Point(x: 60, y: 50), width: 150,
+            events: [event], openingBar: nil,
+            closingBar: ResolvedBarLine(x: 210, kind: .single),
+            unitNoteLength: eighthUNL
+        )
+        let svgs = try emitter.emit(layout(systems: [system(measures: [measure])]))
+        let svg  = try #require(svgs.first)
+        #expect(!svg.contains(String(SMuFLGlyph.augmentationDot.character)))
+    }
+
+    @Test func dottedQuarterNoteHasAugmentationDot() throws {
+        // Dotted quarter: absDur = 3/8.  UNL = 1/8, duration = 3 units.
+        let note = Note(
+            pitch: Pitch(step: .c, alteration: .natural, octave: 5),
+            writtenAccidental: nil, displayedAccidental: nil,
+            duration: Fraction(numerator: 3, denominator: 1),
+            ties: .none, slurs: .none, decorations: [],
+            chordSymbol: nil, annotations: [],
+            beam: .single, lyric: nil, source: dummyRange
+        )
+        let event = ResolvedEvent(origin: Point(x: 60, y: 100), kind: .note(note))
+        let measure = ResolvedMeasure(
+            origin: Point(x: 60, y: 50), width: 150,
+            events: [event], openingBar: nil,
+            closingBar: ResolvedBarLine(x: 210, kind: .single),
+            unitNoteLength: eighthUNL
+        )
+        let svgs = try emitter.emit(layout(systems: [system(measures: [measure])]))
+        let svg  = try #require(svgs.first)
+        #expect(svg.contains(String(SMuFLGlyph.augmentationDot.character)))
+    }
 }

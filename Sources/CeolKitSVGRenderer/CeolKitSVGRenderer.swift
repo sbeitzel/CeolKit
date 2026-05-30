@@ -20,13 +20,18 @@ public struct SVGRenderer: CeolKitRenderer {
         let breaker  = LineBreaker()
         let justifier = Justifier()
         let engine   = VerticalLayoutEngine(config: config, metadata: metadata)
-        let emitter  = SVGEmitter(config: config, metadata: metadata)
 
         let usableWidth = config.pageSize.width - config.margins.left - config.margins.right
 
         var allSystems: [JustifiedSystem] = []
+        var stemDirection: StemDirection = .auto
 
         for tune in score.tunes {
+            for scope in tune.directives {
+                if case .pipeFormat(true) = scope.directive {
+                    stemDirection = .down
+                }
+            }
             for voice in tune.voices {
                 let measures = voice.staves.flatMap { $0.measures }
                 guard !measures.isEmpty else { continue }
@@ -43,6 +48,7 @@ public struct SVGRenderer: CeolKitRenderer {
             }
         }
 
+        let emitter = SVGEmitter(config: config, metadata: metadata, stemDirection: stemDirection)
         let layout = engine.layout(allSystems)
         return try emitter.emit(layout)
     }

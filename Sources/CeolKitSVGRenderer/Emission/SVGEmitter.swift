@@ -224,6 +224,20 @@ struct SVGEmitter: Sendable {
                          stroke: "black", strokeWidth: thin)
             builder.line(x1: bar.x + sep, y1: topY, x2: bar.x + sep, y2: bottomY,
                          stroke: "black", strokeWidth: thick)
+
+        case .sectionRepeatStart:
+            // [|: thick + thin + repeat-dots (simplified as thick + thin)
+            builder.line(x1: bar.x,       y1: topY, x2: bar.x,       y2: bottomY,
+                         stroke: "black", strokeWidth: thick)
+            builder.line(x1: bar.x + sep, y1: topY, x2: bar.x + sep, y2: bottomY,
+                         stroke: "black", strokeWidth: thin)
+
+        case .repeatEndSection:
+            // :|] repeat-dots + thin + thick (simplified as thin + thick)
+            builder.line(x1: bar.x,       y1: topY, x2: bar.x,       y2: bottomY,
+                         stroke: "black", strokeWidth: thin)
+            builder.line(x1: bar.x + sep, y1: topY, x2: bar.x + sep, y2: bottomY,
+                         stroke: "black", strokeWidth: thick)
         }
     }
 

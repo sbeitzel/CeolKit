@@ -67,13 +67,15 @@ private struct ParseContext {
             let duration = parseDuration()
             return .rest(kind: restKind(token), duration: duration, source: source)
 
-        case .barSingle:     advance(); return .barLine(kind: .single,      source: source)
-        case .barDouble:     advance(); return .barLine(kind: .double,      source: source)
-        case .barFinal:      advance(); return .barLine(kind: .final,       source: source)
-        case .barSectionStart: advance(); return .barLine(kind: .start,    source: source)
-        case .barRepeatStart:  advance(); return .barLine(kind: .repeatStart, source: source)
-        case .barRepeatEnd:    advance(); return .barLine(kind: .repeatEnd,   source: source)
-        case .barRepeatBoth:   advance(); return .barLine(kind: .repeatBoth,  source: source)
+        case .barSingle:             advance(); return .barLine(kind: .single,             source: source)
+        case .barDouble:             advance(); return .barLine(kind: .double,             source: source)
+        case .barFinal:              advance(); return .barLine(kind: .final,              source: source)
+        case .barSectionStart:       advance(); return .barLine(kind: .start,              source: source)
+        case .barRepeatStart:        advance(); return .barLine(kind: .repeatStart,        source: source)
+        case .barRepeatEnd:          advance(); return .barLine(kind: .repeatEnd,          source: source)
+        case .barRepeatBoth:         advance(); return .barLine(kind: .repeatBoth,         source: source)
+        case .barSectionRepeatStart: advance(); return .barLine(kind: .sectionRepeatStart, source: source)
+        case .barRepeatEndSection:   advance(); return .barLine(kind: .repeatEndSection,   source: source)
 
         case .endingNumber(let nums):
             advance(); return .endingNumber(nums, source: source)
@@ -331,6 +333,8 @@ private struct ParseContext {
         case .barRepeatStart:           return "|:"
         case .barRepeatEnd:             return ":|"
         case .barRepeatBoth:            return "::"
+        case .barSectionRepeatStart:    return "[|:"
+        case .barRepeatEndSection:      return ":|]"
         case .shortDecoration(let ch):  return String(ch)
         case .restNormal:               return "z"
         case .restInvisible:            return "x"

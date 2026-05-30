@@ -26,4 +26,6 @@ public enum BarLineKind: Hashable, Codable, Sendable {
     case repeatEnd       // :|  — repeat from nearest |: or start
     case repeatStart     // |:  — begin repeat section
     case repeatBoth      // ::  — end one repeat, start another
+    case sectionRepeatStart  // [|:  — thick + thin + start-repeat (compound)
+    case repeatEndSection    // :|]  — end-repeat + thin + thick (compound)
 }

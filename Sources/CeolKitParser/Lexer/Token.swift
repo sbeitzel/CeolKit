@@ -26,6 +26,8 @@ enum Token {
     case barRepeatStart           // |:
     case barRepeatEnd             // :|
     case barRepeatBoth            // ::
+    case barSectionRepeatStart    // [|:  (thick-thin + start-repeat)
+    case barRepeatEndSection      // :|]  (end-repeat + thin + thick)
     case endingNumber([Int])      // |1  |2  [1  [2  [1-3
 
     // Brackets / parens / braces

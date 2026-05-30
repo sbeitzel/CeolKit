@@ -162,14 +162,21 @@ struct MusicLexer {
 
     private mutating func scanColon() -> Token {
         switch current {
-        case "|": advance(); return .barRepeatEnd
+        case "|":
+            advance()
+            if current == "]" { advance(); return .barRepeatEndSection }
+            return .barRepeatEnd
         case ":": advance(); return .barRepeatBoth
         default: return .unknown(":")
         }
     }
 
     private mutating func scanLeftBracket() -> Token {
-        if current == "|" { advance(); return .barSectionStart }
+        if current == "|" {
+            advance()
+            if current == ":" { advance(); return .barSectionRepeatStart }
+            return .barSectionStart
+        }
         if current?.isNumber == true { return scanEndingNumber() }
         if let letter = current, letter.isLetter, peekAt(1) == ":" {
             advance()  // consume letter

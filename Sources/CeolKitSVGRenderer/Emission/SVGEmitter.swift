@@ -11,9 +11,10 @@ enum SVGEmitterError: Error {
 
 /// Stem geometry returned by `emitStem` so the caller can draw beam strokes.
 private struct StemInfo {
-    let stemX:    Double  // x of the stem stroke
-    let stemTipY: Double  // y of the tip (the end away from the notehead)
-    let stemUp:   Bool
+    let stemX:     Double  // x of the stem stroke
+    let stemTipY:  Double  // y of the tip (the end away from the notehead)
+    let stemUp:    Bool
+    let noteheadY: Double  // y of the notehead end (used by emitBeamGroup to draw stems)
 }
 
 // MARK: - Pass 5
@@ -120,13 +121,12 @@ struct SVGEmitter: Sendable {
         }
         emitBarLine(measure.closingBar, topY: topY, bottomY: bottomY, builder: &builder)
 
-        // Beam accumulator: (beamCount, [StemInfo]) per beam run.
-        // Keyed on beam-group index so we can flush when .end is seen.
-        var pendingBeam: (beamCount: Int, stems: [StemInfo])?
+        // Beam accumulator: per-note (StemInfo, beamCount) pairs for the current beam run.
+        var pendingBeam: [(stem: StemInfo, beamCount: Int)]?
 
         func flushBeam() {
             guard let g = pendingBeam else { return }
-            emitBeamGroup(g.stems, beamCount: g.beamCount, builder: &builder)
+            emitBeamGroup(g, builder: &builder)
             pendingBeam = nil
         }
 
@@ -134,20 +134,17 @@ struct SVGEmitter: Sendable {
             let stemInfo = emitEvent(event, topStaffY: topY, bottomStaffY: bottomY,
                                      unitNoteLength: measure.unitNoteLength, builder: &builder)
             if let info = stemInfo, let note = noteFrom(event) {
-                let beamCount = requiredBeamCount(absoluteDuration(note.duration,
-                                                                   unitNoteLength: measure.unitNoteLength))
+                let bc = requiredBeamCount(absoluteDuration(note.duration,
+                                                            unitNoteLength: measure.unitNoteLength))
+                let entry = (stem: info, beamCount: bc)
                 switch note.beam {
                 case .start:
                     flushBeam()  // safety: shouldn't have an open group here
-                    pendingBeam = (beamCount, [info])
+                    pendingBeam = [entry]
                 case .middle:
-                    if pendingBeam != nil {
-                        pendingBeam!.stems.append(info)
-                    }
+                    pendingBeam?.append(entry)
                 case .end:
-                    if pendingBeam != nil {
-                        pendingBeam!.stems.append(info)
-                    }
+                    pendingBeam?.append(entry)
                     flushBeam()
                 case .single:
                     break
@@ -169,21 +166,73 @@ struct SVGEmitter: Sendable {
         return 1                           // eighth
     }
 
-    private func emitBeamGroup(_ stems: [StemInfo], beamCount: Int, builder: inout SVGBuilder) {
-        guard stems.count >= 2, let first = stems.first, let last = stems.last else { return }
+    private func emitBeamGroup(_ entries: [(stem: StemInfo, beamCount: Int)],
+                               builder: inout SVGBuilder) {
+        guard entries.count >= 2 else { return }
+        let first = entries.first!.stem
+        let stems = entries.map(\.stem)
+
         let s         = config.staffSize
         let beamThick = metadata.engravingDefaults.beamThickness * s
         let beamStep  = (metadata.engravingDefaults.beamThickness + metadata.engravingDefaults.beamSpacing) * s
+        let stemThick = metadata.engravingDefaults.stemThickness * s
 
-        // All stems in a group should share the same direction; use the first.
         let stemUp = first.stemUp
-        for b in 0..<beamCount {
-            // Beams stack away from noteheads: for stem-up, beams stack downward from tip;
-            // for stem-down, beams stack upward from tip.
-            let offset = Double(b) * beamStep
-            let y = stemUp ? first.stemTipY + offset : first.stemTipY - offset
-            builder.line(x1: first.stemX, y1: y, x2: last.stemX, y2: y,
-                         stroke: "black", strokeWidth: beamThick)
+        // Common beam Y: for stem-up, the highest tip (min Y); for stem-down, the lowest tip (max Y).
+        let commonBeamY = stemUp
+            ? stems.map(\.stemTipY).min()!
+            : stems.map(\.stemTipY).max()!
+
+        // Draw each stem from its notehead to the common beam Y.
+        for stem in stems {
+            let (y1, y2) = stemUp
+                ? (commonBeamY, stem.noteheadY)
+                : (stem.noteheadY, commonBeamY)
+            builder.line(x1: stem.stemX, y1: y1, x2: stem.stemX, y2: y2,
+                         stroke: "black", strokeWidth: stemThick)
+        }
+
+        // Draw beam levels. Level 0 always spans all notes. Higher levels span only
+        // consecutive notes with sufficient beam count; isolated notes at a higher level
+        // get a stub beam pointing toward the nearest neighbor.
+        let maxBeams = entries.map(\.beamCount).max() ?? 1
+        for b in 0..<maxBeams {
+            let beamY = stemUp
+                ? commonBeamY + Double(b) * beamStep
+                : commonBeamY - Double(b) * beamStep
+
+            func emitRun(from start: Int, to end: Int) {
+                if start < end {
+                    builder.line(x1: entries[start].stem.stemX, y1: beamY,
+                                 x2: entries[end].stem.stemX,   y2: beamY,
+                                 stroke: "black", strokeWidth: beamThick)
+                } else {
+                    // Stub: point right if first in group, otherwise left.
+                    let stemX = entries[start].stem.stemX
+                    if start == 0 {
+                        let stubW = (entries[1].stem.stemX - stemX) * 0.5
+                        builder.line(x1: stemX, y1: beamY, x2: stemX + stubW, y2: beamY,
+                                     stroke: "black", strokeWidth: beamThick)
+                    } else {
+                        let stubW = (stemX - entries[start - 1].stem.stemX) * 0.5
+                        builder.line(x1: stemX - stubW, y1: beamY, x2: stemX, y2: beamY,
+                                     stroke: "black", strokeWidth: beamThick)
+                    }
+                }
+            }
+
+            var runStart: Int? = nil
+            for i in 0..<entries.count {
+                if entries[i].beamCount > b {
+                    if runStart == nil { runStart = i }
+                } else if let start = runStart {
+                    emitRun(from: start, to: i - 1)
+                    runStart = nil
+                }
+            }
+            if let start = runStart {
+                emitRun(from: start, to: entries.count - 1)
+            }
         }
     }
 
@@ -354,8 +403,12 @@ struct SVGEmitter: Sendable {
             stemBottom = noteheadY + stemLength
         }
 
-        builder.line(x1: stemX, y1: stemTop, x2: stemX, y2: stemBottom,
-                     stroke: "black", strokeWidth: stemThick)
+        // Only draw the stem immediately for unbeamed notes.
+        // Beamed notes: emitBeamGroup draws stems at the correct common beam Y.
+        if beamState == .single {
+            builder.line(x1: stemX, y1: stemTop, x2: stemX, y2: stemBottom,
+                         stroke: "black", strokeWidth: stemThick)
+        }
 
         // Flags (only for un-beamed notes shorter than a quarter)
         if absDur < 0.25 && beamState == .single {
@@ -366,7 +419,8 @@ struct SVGEmitter: Sendable {
                          fontFamily: "Bravura", fontSize: fontSize)
         }
 
-        return StemInfo(stemX: stemX, stemTipY: stemUp ? stemTop : stemBottom, stemUp: stemUp)
+        return StemInfo(stemX: stemX, stemTipY: stemUp ? stemTop : stemBottom, stemUp: stemUp,
+                        noteheadY: noteheadY)
     }
 
     private func emitAccidental(_ alt: Alteration, x: Double, y: Double,

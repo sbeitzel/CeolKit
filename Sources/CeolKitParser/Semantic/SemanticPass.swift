@@ -24,9 +24,9 @@ struct SemanticPass {
                     diagnostics += tempDiags
                 } else {
                     diagnostics.append(Diagnostic(
-                        severity: .warning,
+                        severity: .info,
                         code: .unknownDirective,
-                        message: "Unknown directive '%%\(name)'",
+                        message: "Unsupported stylesheet directive '%%\(name)'",
                         source: src
                     ))
                 }
@@ -555,8 +555,8 @@ struct SemanticPass {
             diagnostics += tempDiags
         default:
             diagnostics.append(Diagnostic(
-                severity: .warning, code: .unknownDirective,
-                message: "Unknown directive '%%\(name)'",
+                severity: .info, code: .unknownDirective,
+                message: "Unsupported stylesheet directive '%%\(name)'",
                 source: source
             ))
         }
@@ -772,9 +772,9 @@ struct SemanticPass {
                 result.append(CeolKitDirectiveScope(directive: directive, scope: scope, source: source))
             } else if !name.hasPrefix("ceolkit:") && !isStandardDirective(name) {
                 diagnostics.append(Diagnostic(
-                    severity: .warning,
+                    severity: .info,
                     code: .unknownDirective,
-                    message: "Unknown directive '%%\(name)'",
+                    message: "Unsupported stylesheet directive '%%\(name)'",
                     source: source
                 ))
             }

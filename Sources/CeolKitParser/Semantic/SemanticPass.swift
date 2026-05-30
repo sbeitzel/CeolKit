@@ -599,8 +599,18 @@ struct SemanticPass {
                 if !result.isEmpty {
                     result[result.count - 1] = applyDurationMultiplier(leftMul, to: result[result.count - 1])
                 }
-                // Adjust next note
+                // Advance to the right-side note, passing any intervening grace groups through
+                // unchanged. A grace group is a graceStart…graceEnd bracket with notes inside;
+                // consuming it here preserves order without losing the pending modifier.
                 i += 1
+                while i < elements.count, case .graceStart = elements[i] {
+                    while i < elements.count {
+                        let g = elements[i]
+                        result.append(g)
+                        i += 1
+                        if case .graceEnd = g { break }
+                    }
+                }
                 if i < elements.count {
                     result.append(applyDurationMultiplier(rightMul, to: elements[i]))
                 }

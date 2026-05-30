@@ -164,6 +164,69 @@ struct StandardDirectiveTests {
         #expect(!hasLandscape)
     }
 
+    // MARK: %%flatbeams
+
+    @Test("%%flatbeams true attaches flatBeams(true) at tune scope")
+    func flatBeamsTruePreamble() {
+        let abc = "%%flatbeams true\nX:1\nT:T\nM:4/4\nL:1/4\nK:C\nC|"
+        let result = parse(abc)
+        let directive = result.score.tunes.flatMap(\.directives).first {
+            if case .flatBeams = $0.directive { return true }
+            return false
+        }
+        #expect(directive != nil)
+        if case .flatBeams(let flat) = directive?.directive {
+            #expect(flat == true)
+        }
+    }
+
+    @Test("%%flatbeams false attaches flatBeams(false) at tune scope")
+    func flatBeamsFalsePreamble() {
+        let abc = "%%flatbeams false\nX:1\nT:T\nM:4/4\nL:1/4\nK:C\nC|"
+        let result = parse(abc)
+        let directive = result.score.tunes.flatMap(\.directives).first {
+            if case .flatBeams = $0.directive { return true }
+            return false
+        }
+        #expect(directive != nil)
+        if case .flatBeams(let flat) = directive?.directive {
+            #expect(flat == false)
+        }
+    }
+
+    @Test("%%flatbeams does not emit unknownDirective warning")
+    func flatBeamsNoUnknownWarning() {
+        let abc = "%%flatbeams true\nX:1\nT:T\nM:4/4\nL:1/4\nK:C\nC|"
+        let result = parse(abc)
+        let unknownWarnings = result.score.diagnostics.filter { $0.code == .unknownDirective }
+        #expect(unknownWarnings.isEmpty)
+    }
+
+    @Test("%%ceolkit:pipeformat true then %%flatbeams true emits redundantDirective info")
+    func flatBeamsRedundantAfterPipeFormat() {
+        let abc = "%%ceolkit:pipeformat true\n%%flatbeams true\nX:1\nT:T\nM:4/4\nL:1/4\nK:C\nC|"
+        let result = parse(abc)
+        let redundant = result.score.diagnostics.filter { $0.code == .redundantDirective }
+        #expect(!redundant.isEmpty)
+        #expect(redundant.first?.severity == .info)
+    }
+
+    @Test("%%ceolkit:pipeformat true then %%flatbeams false is not redundant (explicit override)")
+    func flatBeamsFalseAfterPipeFormatNotRedundant() {
+        let abc = "%%ceolkit:pipeformat true\n%%flatbeams false\nX:1\nT:T\nM:4/4\nL:1/4\nK:C\nC|"
+        let result = parse(abc)
+        let redundant = result.score.diagnostics.filter { $0.code == .redundantDirective }
+        #expect(redundant.isEmpty)
+    }
+
+    @Test("%%flatbeams true alone emits no redundantDirective diagnostic")
+    func flatBeamsNoRedundancyWithoutPipeFormat() {
+        let abc = "%%flatbeams true\nX:1\nT:T\nM:4/4\nL:1/4\nK:C\nC|"
+        let result = parse(abc)
+        let redundant = result.score.diagnostics.filter { $0.code == .redundantDirective }
+        #expect(redundant.isEmpty)
+    }
+
     @Test("%%landscape directive has tuneGlobal scope")
     func landscapeScope() {
         let abc = "%%landscape 0\nX:1\nT:T\nM:4/4\nL:1/4\nK:C\nC|"

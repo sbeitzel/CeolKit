@@ -69,6 +69,28 @@ struct SemanticPass {
             }
         }
 
+        // Redundancy: %%flatbeams true is implied by %%ceolkit:pipeformat true.
+        // Walk directives in source order; only flag %%flatbeams true that appears
+        // after %%ceolkit:pipeformat true (a later %%flatbeams false is a valid override,
+        // not redundant, because it actively changes the effective state).
+        for tune in tunes {
+            var pipeFormatActive = false
+            for scope in tune.directives {
+                switch scope.directive {
+                case .pipeFormat(let on):
+                    pipeFormatActive = on
+                case .flatBeams(true) where pipeFormatActive:
+                    diagnostics.append(Diagnostic(
+                        severity: .info, code: .redundantDirective,
+                        message: "%%flatbeams true is redundant when %%ceolkit:pipeformat is active",
+                        source: scope.source
+                    ))
+                default:
+                    break
+                }
+            }
+        }
+
         // Cap diagnostics at maxDiagnostics
         var cappedDiags = Array(diagnostics.prefix(options.maxDiagnostics))
 
@@ -100,7 +122,7 @@ struct SemanticPass {
     }
 
     private func isStandardDirective(_ name: String) -> Bool {
-        name == "landscape"
+        name == "landscape" || name == "flatbeams"
     }
 
     // MARK: - Tune builder
@@ -547,7 +569,7 @@ struct SemanticPass {
                     source: source
                 ))
             }
-        case "landscape":
+        case "landscape", "flatbeams":
             var tempDiags: [Diagnostic] = []
             if let d = parseCeolKitDirective(name: name, payload: payload, source: source, diagnostics: &tempDiags) {
                 ctx.bodyTuneDirectives.append(CeolKitDirectiveScope(directive: d, scope: .tuneGlobal, source: source))
@@ -817,6 +839,11 @@ struct SemanticPass {
             if let value = parseLogical(trimmed) { return .landscape(value) }
             diagnostics.append(Diagnostic(severity: .warning, code: .unknownDirective,
                 message: "%%landscape expects '0'/'false' (portrait) or '1'/'true' (landscape)", source: source))
+            return nil
+        case "flatbeams":
+            if let value = parseLogical(trimmed) { return .flatBeams(value) }
+            diagnostics.append(Diagnostic(severity: .warning, code: .unknownDirective,
+                message: "%%flatbeams expects '0'/'false' or '1'/'true'", source: source))
             return nil
         default:
             return nil

@@ -47,6 +47,7 @@ public enum DiagnosticCode: String, Codable, Sendable {
     case misplacedStemAlignment
     // Directives
     case unknownDirective
+    case redundantDirective
     // Field keys
     case unknownKey
 }

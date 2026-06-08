@@ -19,7 +19,8 @@ public struct LineBreaker: Sendable {
     public func breakIntoSystems(
         _ measures: [(measure: SizedMeasure, breakAfter: ScoreLineBreak?)],
         usableWidth: Double,
-        clef: ClefSpec = ClefSpec(clef: .treble, octaveShift: 0)
+        clef: ClefSpec = ClefSpec(clef: .treble, octaveShift: 0),
+        keySignature: KeySignature? = nil
     ) -> [System] {
         var systems: [System] = []
         var bucket: [SizedMeasure] = []
@@ -30,7 +31,8 @@ public struct LineBreaker: Sendable {
 
             // Overflow: flush before adding the new measure.
             if !bucket.isEmpty && bucketWidth + w > usableWidth {
-                systems.append(System(measures: bucket, isLastSystem: false, sourceForced: false, clef: clef))
+                systems.append(System(measures: bucket, isLastSystem: false, sourceForced: false,
+                                      clef: clef, keySignature: keySignature))
                 bucket = []
                 bucketWidth = 0
             }
@@ -40,20 +42,23 @@ public struct LineBreaker: Sendable {
 
             // Source-forced break: flush with the flag set.
             if breakAfter == .hard {
-                systems.append(System(measures: bucket, isLastSystem: false, sourceForced: true, clef: clef))
+                systems.append(System(measures: bucket, isLastSystem: false, sourceForced: true,
+                                      clef: clef, keySignature: keySignature))
                 bucket = []
                 bucketWidth = 0
             }
         }
 
         if !bucket.isEmpty {
-            systems.append(System(measures: bucket, isLastSystem: false, sourceForced: false, clef: clef))
+            systems.append(System(measures: bucket, isLastSystem: false, sourceForced: false,
+                                  clef: clef, keySignature: keySignature))
         }
 
         // Mark the trailing system.
         if !systems.isEmpty {
             let last = systems.removeLast()
-            systems.append(System(measures: last.measures, isLastSystem: true, sourceForced: last.sourceForced, clef: clef))
+            systems.append(System(measures: last.measures, isLastSystem: true,
+                                  sourceForced: last.sourceForced, clef: clef, keySignature: keySignature))
         }
 
         return systems

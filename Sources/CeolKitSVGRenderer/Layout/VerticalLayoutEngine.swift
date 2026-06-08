@@ -37,7 +37,10 @@ public struct VerticalLayoutEngine: Sendable {
             }
 
             let systemOrigin = Point(x: config.margins.left, y: y)
-            let startWidth = clefStartWidth(for: jsystem.clef)
+            let keySigW = jsystem.keySignature.map {
+                keySignatureWidth(for: $0, metadata: metadata, staffSize: config.staffSize)
+            } ?? 0
+            let startWidth = clefStartWidth(for: jsystem.clef) + keySigW
             let measures = resolveMeasures(
                 jsystem.measures,
                 systemOrigin: systemOrigin,
@@ -53,7 +56,8 @@ public struct VerticalLayoutEngine: Sendable {
                 extraAbove: extraAbove,
                 extraBelow: extraBelow,
                 totalHeight: totalHeight,
-                clef: jsystem.clef
+                clef: jsystem.clef,
+                keySignature: jsystem.keySignature
             ))
 
             y += totalHeight + config.systemGap

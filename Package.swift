@@ -38,6 +38,7 @@ let package = Package(
     .testTarget(
       name: "CeolKitSVGRendererTests",
       dependencies: [
+        "CeolKitParser",
         "CeolKitSVGRenderer",
         .product(name: "SnapshotTesting", package: "swift-snapshot-testing"),
       ]

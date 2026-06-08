@@ -16,12 +16,17 @@ public struct SVGRenderer: CeolKitRenderer {
     /// Returns one SVG string per page.
     public func render(_ score: Score) throws -> [String] {
         let metadata = try BravuraMetadata.load()
-        let sizer    = MeasureSizer(config: config, metadata: metadata)
+
+        // Apply score-level directives that affect the whole document.
+        // File-preamble directives are promoted to the first tune by the parser.
+        let effectiveConfig = applyingScoreDirectives(score)
+
+        let sizer    = MeasureSizer(config: effectiveConfig, metadata: metadata)
         let breaker  = LineBreaker()
         let justifier = Justifier()
-        let engine   = VerticalLayoutEngine(config: config, metadata: metadata)
+        let engine   = VerticalLayoutEngine(config: effectiveConfig, metadata: metadata)
 
-        let usableWidth = config.pageSize.width - config.margins.left - config.margins.right
+        let usableWidth = effectiveConfig.pageSize.width - effectiveConfig.margins.left - effectiveConfig.margins.right
 
         var allSystems: [JustifiedSystem] = []
         var stemDirection: StemDirection = .auto
@@ -41,15 +46,30 @@ public struct SVGRenderer: CeolKitRenderer {
                      breakAfter: ScoreLineBreak?.none)
                 }
                 let systems   = breaker.breakIntoSystems(pairs, usableWidth: usableWidth,
-                                                        clef: voice.properties.clef)
+                                                        clef: voice.properties.clef,
+                                                        keySignature: tune.key)
                 let justified = justifier.justify(systems, usableWidth: usableWidth,
-                                                  justifyLastSystem: config.justifyLastSystem)
+                                                  justifyLastSystem: effectiveConfig.justifyLastSystem)
                 allSystems.append(contentsOf: justified)
             }
         }
 
-        let emitter = SVGEmitter(config: config, metadata: metadata, stemDirection: stemDirection)
+        let emitter = SVGEmitter(config: effectiveConfig, metadata: metadata, stemDirection: stemDirection)
         let layout = engine.layout(allSystems)
         return try emitter.emit(layout)
+    }
+
+    /// Returns a config with score-level directives applied.
+    ///
+    /// `%%landscape` is a document-wide setting that the parser promotes into the
+    /// first tune's directives.  All other per-config values remain as supplied.
+    private func applyingScoreDirectives(_ score: Score) -> SVGRenderConfig {
+        var effective = config
+        for scope in score.tunes.first?.directives ?? [] {
+            if case .landscape(let on) = scope.directive {
+                effective.pageSize = on ? config.pageSize.landscape : config.pageSize
+            }
+        }
+        return effective
     }
 }

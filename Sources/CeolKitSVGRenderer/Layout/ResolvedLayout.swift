@@ -35,17 +35,20 @@ public struct System: Sendable {
     /// `true` when the system break was forced by a `.hard` `ScoreLineBreak` in the source.
     public let sourceForced: Bool
     public let clef: ClefSpec
+    public let keySignature: KeySignature?
 
     public init(
         measures: [SizedMeasure],
         isLastSystem: Bool,
         sourceForced: Bool,
-        clef: ClefSpec = ClefSpec(clef: .treble, octaveShift: 0)
+        clef: ClefSpec = ClefSpec(clef: .treble, octaveShift: 0),
+        keySignature: KeySignature? = nil
     ) {
         self.measures = measures
         self.isLastSystem = isLastSystem
         self.sourceForced = sourceForced
         self.clef = clef
+        self.keySignature = keySignature
     }
 }
 
@@ -56,17 +59,20 @@ public struct JustifiedSystem: Sendable {
     public let isLastSystem: Bool
     public let sourceForced: Bool
     public let clef: ClefSpec
+    public let keySignature: KeySignature?
 
     public init(
         measures: [JustifiedMeasure],
         isLastSystem: Bool,
         sourceForced: Bool,
-        clef: ClefSpec = ClefSpec(clef: .treble, octaveShift: 0)
+        clef: ClefSpec = ClefSpec(clef: .treble, octaveShift: 0),
+        keySignature: KeySignature? = nil
     ) {
         self.measures = measures
         self.isLastSystem = isLastSystem
         self.sourceForced = sourceForced
         self.clef = clef
+        self.keySignature = keySignature
     }
 }
 
@@ -120,6 +126,7 @@ public struct ResolvedSystem: Sendable {
     /// `extraAbove + staffHeight + extraBelow`.
     public let totalHeight: Double
     public let clef: ClefSpec
+    public let keySignature: KeySignature?
 
     public init(
         origin: Point,
@@ -129,7 +136,8 @@ public struct ResolvedSystem: Sendable {
         extraAbove: Double,
         extraBelow: Double,
         totalHeight: Double,
-        clef: ClefSpec = ClefSpec(clef: .treble, octaveShift: 0)
+        clef: ClefSpec = ClefSpec(clef: .treble, octaveShift: 0),
+        keySignature: KeySignature? = nil
     ) {
         self.origin = origin
         self.measures = measures
@@ -139,6 +147,7 @@ public struct ResolvedSystem: Sendable {
         self.extraBelow = extraBelow
         self.totalHeight = totalHeight
         self.clef = clef
+        self.keySignature = keySignature
     }
 }
 

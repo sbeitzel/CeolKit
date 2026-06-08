@@ -32,7 +32,8 @@ public struct Justifier: Sendable {
                 JustifiedMeasure(source: sized, finalWidth: sized.naturalWidth, eventOffsets: sized.eventOffsets)
             }
             return JustifiedSystem(measures: measures, isLastSystem: system.isLastSystem,
-                                   sourceForced: system.sourceForced, clef: system.clef)
+                                   sourceForced: system.sourceForced, clef: system.clef,
+                                   keySignature: system.keySignature)
         }
 
         let slack = usableWidth - naturalTotal
@@ -44,6 +45,7 @@ public struct Justifier: Sendable {
             return JustifiedMeasure(source: sized, finalWidth: finalWidth, eventOffsets: offsets)
         }
         return JustifiedSystem(measures: measures, isLastSystem: system.isLastSystem,
-                               sourceForced: system.sourceForced, clef: system.clef)
+                               sourceForced: system.sourceForced, clef: system.clef,
+                               keySignature: system.keySignature)
     }
 }

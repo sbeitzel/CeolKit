@@ -60,6 +60,9 @@ struct SVGEmitter: Sendable {
     private func emitSystem(_ system: ResolvedSystem, builder: inout SVGBuilder) {
         emitStaffLines(system, builder: &builder)
         emitClef(system, builder: &builder)
+        if let keySig = system.keySignature {
+            emitKeySignature(keySig, system: system, builder: &builder)
+        }
         for measure in system.measures {
             emitMeasure(measure, system: system, builder: &builder)
         }
@@ -98,6 +101,43 @@ struct SVGEmitter: Sendable {
         case .percussion:           y = bottomStaffY - 2 * s
         }
         builder.text(String(glyph.character), x: x, y: y, fontFamily: "Bravura", fontSize: fontSize)
+    }
+
+    // MARK: - Key signature
+
+    private func emitKeySignature(_ keySig: KeySignature, system: ResolvedSystem,
+                                  builder: inout SVGBuilder) {
+        let accs = keyAccidentals(for: keySig)
+        guard !accs.isEmpty else { return }
+
+        let s            = config.staffSize
+        let fontSize     = 4.0 * s
+        let bottomStaffY = system.origin.y + system.staffOrigin + system.staffHeight
+        let glyphW       = metadata.glyphBBoxes["accidentalSharp"].map { $0.width * s } ?? s * 0.75
+        let gap          = s * 0.1
+        let startX       = system.origin.x + clefWidth(for: system.clef.clef)
+
+        for (i, acc) in accs.enumerated() {
+            let x = startX + Double(i) * (glyphW + gap)
+            let y = noteY(staffPos: acc.staffPosition, bottomStaffY: bottomStaffY)
+            builder.text(String(acc.glyph.character), x: x, y: y,
+                         fontFamily: "Bravura", fontSize: fontSize)
+        }
+    }
+
+    /// Width consumed by the clef glyph plus its right-side padding.
+    private func clefWidth(for clef: Clef) -> Double {
+        let name: String
+        switch clef {
+        case .none:                              return 0
+        case .treble:                            name = "gClef"
+        case .bass, .baritone:                  name = "fClef"
+        case .alto, .tenor, .soprano, .mezzoSoprano: name = "cClef"
+        case .percussion:                        name = "unpitchedPercussionClef1"
+        }
+        let glyphWidth = metadata.glyphBBoxes[name].map { $0.width * config.staffSize }
+            ?? (2.8 * config.staffSize)
+        return glyphWidth + 0.5 * config.staffSize
     }
 
     private func clefGlyph(for clef: Clef) -> SMuFLGlyph? {

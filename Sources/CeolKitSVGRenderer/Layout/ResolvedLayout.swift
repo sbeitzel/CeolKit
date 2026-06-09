@@ -36,19 +36,23 @@ public struct System: Sendable {
     public let sourceForced: Bool
     public let clef: ClefSpec
     public let keySignature: KeySignature?
+    /// Non-nil only on the first system of a tune; time signatures do not repeat at line breaks.
+    public let meter: Meter?
 
     public init(
         measures: [SizedMeasure],
         isLastSystem: Bool,
         sourceForced: Bool,
         clef: ClefSpec = ClefSpec(clef: .treble, octaveShift: 0),
-        keySignature: KeySignature? = nil
+        keySignature: KeySignature? = nil,
+        meter: Meter? = nil
     ) {
         self.measures = measures
         self.isLastSystem = isLastSystem
         self.sourceForced = sourceForced
         self.clef = clef
         self.keySignature = keySignature
+        self.meter = meter
     }
 }
 
@@ -60,19 +64,23 @@ public struct JustifiedSystem: Sendable {
     public let sourceForced: Bool
     public let clef: ClefSpec
     public let keySignature: KeySignature?
+    /// Non-nil only on the first system of a tune; time signatures do not repeat at line breaks.
+    public let meter: Meter?
 
     public init(
         measures: [JustifiedMeasure],
         isLastSystem: Bool,
         sourceForced: Bool,
         clef: ClefSpec = ClefSpec(clef: .treble, octaveShift: 0),
-        keySignature: KeySignature? = nil
+        keySignature: KeySignature? = nil,
+        meter: Meter? = nil
     ) {
         self.measures = measures
         self.isLastSystem = isLastSystem
         self.sourceForced = sourceForced
         self.clef = clef
         self.keySignature = keySignature
+        self.meter = meter
     }
 }
 
@@ -127,6 +135,8 @@ public struct ResolvedSystem: Sendable {
     public let totalHeight: Double
     public let clef: ClefSpec
     public let keySignature: KeySignature?
+    /// Non-nil only on the first system of a tune; time signatures do not repeat at line breaks.
+    public let meter: Meter?
 
     public init(
         origin: Point,
@@ -137,7 +147,8 @@ public struct ResolvedSystem: Sendable {
         extraBelow: Double,
         totalHeight: Double,
         clef: ClefSpec = ClefSpec(clef: .treble, octaveShift: 0),
-        keySignature: KeySignature? = nil
+        keySignature: KeySignature? = nil,
+        meter: Meter? = nil
     ) {
         self.origin = origin
         self.measures = measures
@@ -148,6 +159,7 @@ public struct ResolvedSystem: Sendable {
         self.totalHeight = totalHeight
         self.clef = clef
         self.keySignature = keySignature
+        self.meter = meter
     }
 }
 

@@ -169,12 +169,12 @@ private func simpleJigScore() -> Score {
 
     // MARK: Page overflow
 
-    /// Three voices on a 150 pt-tall page forces a second page.
+    /// Three voices on a 100 pt-tall page forces a second page.
     ///
-    /// Geometry: usable height = 130 pt; staffHeight = 28; systemGap = 56.
-    ///   System 1 bottom: 10 + 28 = 38 pt.
-    ///   System 2 bottom: 38 + 56 + 28 = 122 pt.
-    ///   System 3 top:   122 + 56 = 178 pt > 130 → next page.
+    /// Geometry: usable height = 80 pt; staffHeight = 18; systemGap = 22.5.
+    ///   System 1 bottom: 10 + 18 = 28 pt.
+    ///   System 2 bottom: 28 + 22.5 + 18 = 68.5 pt.
+    ///   System 3 top:   68.5 + 22.5 = 91 pt + 18 = 109 pt > 90 → next page.
     @Test func systemsOverflowingPageProduceMultipleElements() throws {
         let quarter = Fraction(numerator: 1, denominator: 1)
         let measure = makeMeasure(events: [.note(makeNote(step: .c, octave: 4, duration: quarter))])
@@ -182,7 +182,7 @@ private func simpleJigScore() -> Score {
         let tune    = makeTune(voices: voices, unitNoteLength: Fraction(numerator: 1, denominator: 4))
         let score   = makeScore(tunes: [tune])
         let config  = SVGRenderConfig(
-            pageSize: PageSize(width: 400, height: 150),
+            pageSize: PageSize(width: 400, height: 100),
             margins:  EdgeInsets(top: 10, bottom: 10, left: 10, right: 10)
         )
         let pages = try SVGRenderer(config: config).render(score)

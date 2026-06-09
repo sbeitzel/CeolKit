@@ -71,11 +71,15 @@ private func measure(events: [Event]) -> Measure {
         }
     }
 
-    @Test func firstEventOffsetIsZero() {
+    @Test func firstEventOffsetIsOneNoteheadWidth() throws {
+        let metadata = try BravuraMetadata.load()
+        let config   = SVGRenderConfig()
+        let noteW    = metadata.glyphBBoxes["noteheadBlack"].map { $0.width * config.staffSize }
+                       ?? config.staffSize * 1.2
         let quarter = Fraction(numerator: 2, denominator: 1)
         let events: [Event] = [.note(note(duration: quarter))]
         let sized = sizer.size(measure(events: events), unitNoteLength: unitNoteLength)
-        #expect(sized.eventOffsets[0] == 0)
+        #expect(abs(sized.eventOffsets[0] - noteW) < 0.001)
     }
 
     @Test func quarterColumnNarrowerThanWholeColumn() {
@@ -116,8 +120,7 @@ private func measure(events: [Event]) -> Measure {
         let sized = sizer.size(measure(events: events), unitNoteLength: unitNoteLength)
 
         #expect(sized.eventOffsets.count == 2)
-        #expect(sized.eventOffsets[0] == 0)
-        #expect(sized.eventOffsets[1] > 0)
+        #expect(sized.eventOffsets[1] > sized.eventOffsets[0])
     }
 
     @Test func graceNoteOffsetEqualsGraceWidthPlusGap() throws {
@@ -128,7 +131,7 @@ private func measure(events: [Event]) -> Measure {
         let graceNoteW        = noteW * 0.6
         let expectedGraceW    = graceNoteW * 1.5        // single grace note
         let expectedGap       = 0.25 * graceNoteW + 0.25 * noteW
-        let expectedNoteOffset = expectedGraceW + expectedGap
+        let expectedNoteOffset = noteW + expectedGraceW + expectedGap
 
         let gNote = note(duration: Fraction(numerator: 1, denominator: 2))
         let grace = GraceGroup(kind: .appoggiatura, notes: [gNote], source: dummyRange)

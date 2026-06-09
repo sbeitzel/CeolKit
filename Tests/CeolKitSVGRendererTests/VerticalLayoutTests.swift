@@ -111,10 +111,10 @@ private let metadata      = try! BravuraMetadata.load()
     // Enough systems to overflow a page → at least 2 pages.
     @Test func manySystemsOverflowToTwoPages() {
         let a4Engine = VerticalLayoutEngine(config: a4Config, metadata: metadata)
-        // On A4 with default staff/system gap, each system is about 84pt tall (staffHeight=28 + gap=56).
-        // Usable height ≈ 770pt → need ~10+ systems to overflow.
-        let systems = (0..<15).map { i in
-            justifiedSystem(measures: [emptyMeasure()], isLast: i == 14)
+        // On A4 with default staff/system gap, each system is about 40.5pt (staffHeight=18 + gap=22.5).
+        // Usable height ≈ 770pt → need ~20+ systems to overflow.
+        let systems = (0..<25).map { i in
+            justifiedSystem(measures: [emptyMeasure()], isLast: i == 24)
         }
         let layout = a4Engine.layout(systems)
         #expect(layout.pages.count >= 2)

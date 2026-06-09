@@ -10,7 +10,7 @@ public struct SVGRenderConfig: Sendable {
     public init(
         pageSize: PageSize = .letter,
         margins: EdgeInsets = EdgeInsets(top: 36, bottom: 36, left: 36, right: 36),
-        staffSize: Double = 7.0,
+        staffSize: Double = 4.5,
         systemGap: Double? = nil,
         justifyLastSystem: Bool = false
     ) {

@@ -29,6 +29,7 @@ T:Kalabakan (Borneo)
 R:Reel
 C:P/M A. MacDonald
 Z:abc-transcription Stephen Beitzel, <sbeitzel@pobox.com>, 2025-11-16
+I:linebreak <EOL>
 M:C|
 L:1/8
 Q: 1/4 = 78
@@ -85,5 +86,14 @@ struct StyleTests {
         let cutTimeChar = String(SMuFLGlyph.timeSigCutCommon.character)
         let cutTimeCount = combined.components(separatedBy: cutTimeChar).count - 1
         #expect(cutTimeCount == 1)
+    }
+
+    @Test func repeatDotsAreRendered() throws {
+        let pages = try SVGRenderer().render(score)
+        let combined = pages.joined()
+        let dotChar = String(SMuFLGlyph.repeatDot.character)
+        let dotCount = combined.components(separatedBy: dotChar).count - 1
+        // The tune has [|: and :|] sections; each produces 2 dots.
+        #expect(dotCount >= 2)
     }
 }

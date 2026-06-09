@@ -37,19 +37,42 @@ public struct SVGRenderer: CeolKitRenderer {
                     stemDirection = .down
                 }
             }
+            var meterForFirstSystem: Meter? = tune.meter
             for voice in tune.voices {
-                let measures = voice.staves.flatMap { $0.measures }
-                guard !measures.isEmpty else { continue }
-
-                let pairs = measures.map { m in
-                    (measure: sizer.size(m, unitNoteLength: tune.unitNoteLength),
-                     breakAfter: ScoreLineBreak?.none)
+                // Build (measure, breakAfter) pairs honouring stave boundaries.
+                // The semantic pass creates one Staff per source line-break, so the
+                // last measure of every non-final stave gets a .hard score line-break.
+                var pairs: [(measure: SizedMeasure, breakAfter: ScoreLineBreak?)] = []
+                let staves = voice.staves
+                for (si, stave) in staves.enumerated() {
+                    let isLastStave = si == staves.count - 1
+                    for (mi, m) in stave.measures.enumerated() {
+                        let forceBreak = !isLastStave && mi == stave.measures.count - 1
+                        pairs.append((
+                            measure: sizer.size(m, unitNoteLength: tune.unitNoteLength),
+                            breakAfter: forceBreak ? .hard : nil
+                        ))
+                    }
                 }
+                guard !pairs.isEmpty else { continue }
+                // Header widths differ between the first system (has time sig) and later ones.
+                let firstHeaderW = systemHeaderWidth(
+                    clef: voice.properties.clef, keySignature: tune.key, meter: meterForFirstSystem,
+                    metadata: metadata, staffSize: effectiveConfig.staffSize)
+                let laterHeaderW = systemHeaderWidth(
+                    clef: voice.properties.clef, keySignature: tune.key, meter: nil,
+                    metadata: metadata, staffSize: effectiveConfig.staffSize)
                 let systems   = breaker.breakIntoSystems(pairs, usableWidth: usableWidth,
+                                                        firstSystemHeaderWidth: firstHeaderW,
+                                                        laterSystemHeaderWidth: laterHeaderW,
                                                         clef: voice.properties.clef,
-                                                        keySignature: tune.key)
+                                                        keySignature: tune.key,
+                                                        meter: meterForFirstSystem)
+                meterForFirstSystem = nil
+                let headerWidths = systems.enumerated().map { i, _ in i == 0 ? firstHeaderW : laterHeaderW }
                 let justified = justifier.justify(systems, usableWidth: usableWidth,
-                                                  justifyLastSystem: effectiveConfig.justifyLastSystem)
+                                                  justifyLastSystem: effectiveConfig.justifyLastSystem,
+                                                  systemHeaderWidths: headerWidths)
                 allSystems.append(contentsOf: justified)
             }
         }

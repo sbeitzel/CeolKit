@@ -63,6 +63,9 @@ struct SVGEmitter: Sendable {
         if let keySig = system.keySignature {
             emitKeySignature(keySig, system: system, builder: &builder)
         }
+        if let meter = system.meter {
+            emitTimeSignature(meter, system: system, builder: &builder)
+        }
         for measure in system.measures {
             emitMeasure(measure, system: system, builder: &builder)
         }
@@ -122,6 +125,61 @@ struct SVGEmitter: Sendable {
             let y = noteY(staffPos: acc.staffPosition, bottomStaffY: bottomStaffY)
             builder.text(String(acc.glyph.character), x: x, y: y,
                          fontFamily: "Bravura", fontSize: fontSize)
+        }
+    }
+
+    // MARK: - Time signature
+
+    private func emitTimeSignature(_ meter: Meter, system: ResolvedSystem, builder: inout SVGBuilder) {
+        let s = config.staffSize
+        let fontSize = 4.0 * s
+        let bottomStaffY = system.origin.y + system.staffOrigin + system.staffHeight
+        let keySigW = system.keySignature.map {
+            keySignatureWidth(for: $0, metadata: metadata, staffSize: s)
+        } ?? 0
+        let startX = system.origin.x + clefWidth(for: system.clef.clef) + keySigW
+
+        switch meter {
+        case .commonTime:
+            builder.text(String(SMuFLGlyph.timeSigCommon.character), x: startX,
+                         y: bottomStaffY - 2.0 * s, fontFamily: "Bravura", fontSize: fontSize)
+        case .cutTime:
+            builder.text(String(SMuFLGlyph.timeSigCutCommon.character), x: startX,
+                         y: bottomStaffY - 2.0 * s, fontFamily: "Bravura", fontSize: fontSize)
+        case .fraction(let num, let den):
+            emitTimeSigNumber(num, x: startX, y: bottomStaffY - 3.0 * s,
+                              fontSize: fontSize, builder: &builder)
+            emitTimeSigNumber(den, x: startX, y: bottomStaffY - s,
+                              fontSize: fontSize, builder: &builder)
+        case .free, .complex:
+            break
+        }
+    }
+
+    private func emitTimeSigNumber(_ n: Int, x: Double, y: Double, fontSize: Double,
+                                   builder: inout SVGBuilder) {
+        let glyphW = metadata.glyphBBoxes["timeSig4"].map { $0.width * config.staffSize }
+            ?? config.staffSize * 0.9
+        for (i, digit) in String(n).enumerated() {
+            guard let d = digit.wholeNumberValue, let glyph = timeSigDigitGlyph(d) else { continue }
+            builder.text(String(glyph.character), x: x + Double(i) * glyphW, y: y,
+                         fontFamily: "Bravura", fontSize: fontSize)
+        }
+    }
+
+    private func timeSigDigitGlyph(_ d: Int) -> SMuFLGlyph? {
+        switch d {
+        case 0: return .timeSig0
+        case 1: return .timeSig1
+        case 2: return .timeSig2
+        case 3: return .timeSig3
+        case 4: return .timeSig4
+        case 5: return .timeSig5
+        case 6: return .timeSig6
+        case 7: return .timeSig7
+        case 8: return .timeSig8
+        case 9: return .timeSig9
+        default: return nil
         }
     }
 
@@ -280,9 +338,10 @@ struct SVGEmitter: Sendable {
 
     private func emitBarLine(_ bar: ResolvedBarLine, topY: Double, bottomY: Double,
                               builder: inout SVGBuilder) {
-        let thin  = metadata.engravingDefaults.thinBarlineThickness  * config.staffSize
-        let thick = metadata.engravingDefaults.thickBarlineThickness * config.staffSize
-        let sep   = metadata.engravingDefaults.barlineSeparation     * config.staffSize
+        let thin    = metadata.engravingDefaults.thinBarlineThickness  * config.staffSize
+        let thick   = metadata.engravingDefaults.thickBarlineThickness * config.staffSize
+        let sep     = metadata.engravingDefaults.barlineSeparation     * config.staffSize
+        let wideSep = sep * 2.0
 
         switch bar.kind {
         case .single, .dotted:
@@ -296,38 +355,76 @@ struct SVGEmitter: Sendable {
                          stroke: "black", strokeWidth: thin)
 
         case .final:
-            builder.line(x1: bar.x,        y1: topY, x2: bar.x,        y2: bottomY,
+            // Right-anchored: thick bar trailing edge at bar.x, thin bar to its left.
+            builder.line(x1: bar.x - wideSep, y1: topY, x2: bar.x - wideSep, y2: bottomY,
                          stroke: "black", strokeWidth: thin)
-            builder.line(x1: bar.x + sep,  y1: topY, x2: bar.x + sep,  y2: bottomY,
+            builder.line(x1: bar.x,           y1: topY, x2: bar.x,           y2: bottomY,
                          stroke: "black", strokeWidth: thick)
 
         case .start:
-            builder.line(x1: bar.x,       y1: topY, x2: bar.x,       y2: bottomY,
+            builder.line(x1: bar.x,            y1: topY, x2: bar.x,            y2: bottomY,
                          stroke: "black", strokeWidth: thick)
-            builder.line(x1: bar.x + sep, y1: topY, x2: bar.x + sep, y2: bottomY,
+            builder.line(x1: bar.x + wideSep,  y1: topY, x2: bar.x + wideSep,  y2: bottomY,
                          stroke: "black", strokeWidth: thin)
 
-        case .repeatEnd, .repeatStart, .repeatBoth:
-            // Simplified: render as a double bar; dots are deferred to a future pass.
-            builder.line(x1: bar.x,       y1: topY, x2: bar.x,       y2: bottomY,
-                         stroke: "black", strokeWidth: thin)
-            builder.line(x1: bar.x + sep, y1: topY, x2: bar.x + sep, y2: bottomY,
-                         stroke: "black", strokeWidth: thick)
+        case .repeatEnd:
+            // Right-anchored: thick bar at bar.x, thin bar and dots to its left.
+            let thickX = bar.x
+            let thinX  = thickX - wideSep
+            emitRepeatDots(isStartSide: false, nearX: thinX, topY: topY, bottomY: bottomY, builder: &builder)
+            builder.line(x1: thinX,  y1: topY, x2: thinX,  y2: bottomY, stroke: "black", strokeWidth: thin)
+            builder.line(x1: thickX, y1: topY, x2: thickX, y2: bottomY, stroke: "black", strokeWidth: thick)
+
+        case .repeatStart:
+            let thinX  = bar.x
+            let thickX = thinX + wideSep
+            builder.line(x1: thinX,  y1: topY, x2: thinX,  y2: bottomY, stroke: "black", strokeWidth: thin)
+            builder.line(x1: thickX, y1: topY, x2: thickX, y2: bottomY, stroke: "black", strokeWidth: thick)
+            emitRepeatDots(isStartSide: true, nearX: thickX, topY: topY, bottomY: bottomY, builder: &builder)
+
+        case .repeatBoth:
+            // Right-anchored: thick bar at bar.x, thin bar to its left; start-repeat
+            // dots extend rightward past bar.x into the next measure's left margin.
+            let thickX = bar.x
+            let thinX  = thickX - wideSep
+            emitRepeatDots(isStartSide: false, nearX: thinX, topY: topY, bottomY: bottomY, builder: &builder)
+            builder.line(x1: thinX,  y1: topY, x2: thinX,  y2: bottomY, stroke: "black", strokeWidth: thin)
+            builder.line(x1: thickX, y1: topY, x2: thickX, y2: bottomY, stroke: "black", strokeWidth: thick)
+            emitRepeatDots(isStartSide: true, nearX: thickX, topY: topY, bottomY: bottomY, builder: &builder)
 
         case .sectionRepeatStart:
-            // [|: thick + thin + repeat-dots (simplified as thick + thin)
-            builder.line(x1: bar.x,       y1: topY, x2: bar.x,       y2: bottomY,
-                         stroke: "black", strokeWidth: thick)
-            builder.line(x1: bar.x + sep, y1: topY, x2: bar.x + sep, y2: bottomY,
-                         stroke: "black", strokeWidth: thin)
+            let thickX = bar.x
+            let thinX  = thickX + wideSep
+            builder.line(x1: thickX, y1: topY, x2: thickX, y2: bottomY, stroke: "black", strokeWidth: thick)
+            builder.line(x1: thinX,  y1: topY, x2: thinX,  y2: bottomY, stroke: "black", strokeWidth: thin)
+            emitRepeatDots(isStartSide: true, nearX: thinX, topY: topY, bottomY: bottomY, builder: &builder)
 
         case .repeatEndSection:
-            // :|] repeat-dots + thin + thick (simplified as thin + thick)
-            builder.line(x1: bar.x,       y1: topY, x2: bar.x,       y2: bottomY,
-                         stroke: "black", strokeWidth: thin)
-            builder.line(x1: bar.x + sep, y1: topY, x2: bar.x + sep, y2: bottomY,
-                         stroke: "black", strokeWidth: thick)
+            // Right-anchored: thick bar at bar.x, thin bar and dots to its left.
+            let thickX = bar.x
+            let thinX  = thickX - wideSep
+            emitRepeatDots(isStartSide: false, nearX: thinX, topY: topY, bottomY: bottomY, builder: &builder)
+            builder.line(x1: thinX,  y1: topY, x2: thinX,  y2: bottomY, stroke: "black", strokeWidth: thin)
+            builder.line(x1: thickX, y1: topY, x2: thickX, y2: bottomY, stroke: "black", strokeWidth: thick)
         }
+    }
+
+    /// Draws the two repeat dots (at the 2nd and 3rd staff spaces from the bottom).
+    ///
+    /// - Parameters:
+    ///   - isStartSide: `true` places dots to the right of `nearX` (start-repeat);
+    ///     `false` places them to the left (end-repeat).
+    ///   - nearX: X of the bar line the dots abut.
+    private func emitRepeatDots(isStartSide: Bool, nearX: Double,
+                                 topY: Double, bottomY: Double, builder: inout SVGBuilder) {
+        let staffSize = (bottomY - topY) / 4.0
+        let fontSize  = 4.0 * staffSize
+        let sep       = metadata.engravingDefaults.barlineSeparation * staffSize
+        let dotW      = metadata.glyphBBoxes["repeatDot"].map { $0.width * staffSize } ?? staffSize * 0.25
+        let dotX      = isStartSide ? nearX + sep * 1.0 : nearX - sep * 1.0 - dotW
+        let dotChar   = String(SMuFLGlyph.repeatDot.character)
+        builder.text(dotChar, x: dotX, y: bottomY - 1.5 * staffSize, fontFamily: "Bravura", fontSize: fontSize)
+        builder.text(dotChar, x: dotX, y: bottomY - 2.5 * staffSize, fontFamily: "Bravura", fontSize: fontSize)
     }
 
     // MARK: - Events

@@ -30,12 +30,18 @@ func keyAccidentals(for key: KeySignature) -> [KeyAccidental] {
 }
 
 /// Total horizontal space (in points) reserved for a key signature header segment.
-func keySignatureWidth(for key: KeySignature, metadata: BravuraMetadata, staffSize: Double) -> Double {
+///
+/// - Parameter trailingGap: Space to reserve after the last accidental glyph.
+///   Defaults to `staffSize * 0.5`. Pass `noteheadWidth` when no time signature
+///   follows, so the gap to the first bar line equals one note head.
+func keySignatureWidth(for key: KeySignature, metadata: BravuraMetadata, staffSize: Double,
+                        trailingGap: Double? = nil) -> Double {
     let accs = keyAccidentals(for: key)
     guard !accs.isEmpty else { return 0 }
-    let glyphW = metadata.glyphBBoxes["accidentalSharp"].map { $0.width * staffSize } ?? staffSize * 0.75
-    let gap = staffSize * 0.1
-    return Double(accs.count) * (glyphW + gap) + staffSize * 0.5
+    let glyphW    = metadata.glyphBBoxes["accidentalSharp"].map { $0.width * staffSize } ?? staffSize * 0.75
+    let interGap  = staffSize * 0.1
+    let trailing  = trailingGap ?? staffSize * 0.5
+    return Double(accs.count) * (glyphW + interGap) + trailing
 }
 
 // MARK: - Private

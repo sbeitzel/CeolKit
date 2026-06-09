@@ -37,10 +37,20 @@ public struct VerticalLayoutEngine: Sendable {
             }
 
             let systemOrigin = Point(x: config.margins.left, y: y)
-            let keySigW = jsystem.keySignature.map {
-                keySignatureWidth(for: $0, metadata: metadata, staffSize: config.staffSize)
+            let timeSigW = jsystem.meter.map {
+                timeSignatureWidth(for: $0, metadata: metadata, staffSize: config.staffSize)
             } ?? 0
-            let startWidth = clefStartWidth(for: jsystem.clef) + keySigW
+            // When no time signature follows, use noteheadWidth as the trailing gap after the key
+            // signature so the space to the first bar line equals one note head.
+            let keySigTrailing: Double? = timeSigW > 0 ? nil : {
+                metadata.glyphBBoxes["noteheadBlack"].map { $0.width * config.staffSize }
+                    ?? config.staffSize * 1.2
+            }()
+            let keySigW = jsystem.keySignature.map {
+                keySignatureWidth(for: $0, metadata: metadata, staffSize: config.staffSize,
+                                  trailingGap: keySigTrailing)
+            } ?? 0
+            let startWidth = clefStartWidth(for: jsystem.clef) + keySigW + timeSigW
             let measures = resolveMeasures(
                 jsystem.measures,
                 systemOrigin: systemOrigin,
@@ -57,7 +67,8 @@ public struct VerticalLayoutEngine: Sendable {
                 extraBelow: extraBelow,
                 totalHeight: totalHeight,
                 clef: jsystem.clef,
-                keySignature: jsystem.keySignature
+                keySignature: jsystem.keySignature,
+                meter: jsystem.meter
             ))
 
             y += totalHeight + config.systemGap
@@ -77,17 +88,7 @@ public struct VerticalLayoutEngine: Sendable {
     // MARK: - Clef width
 
     private func clefStartWidth(for spec: ClefSpec) -> Double {
-        let name: String
-        switch spec.clef {
-        case .none:                              return 0
-        case .treble:                            name = "gClef"
-        case .bass, .baritone:                  name = "fClef"
-        case .alto, .tenor, .soprano, .mezzoSoprano: name = "cClef"
-        case .percussion:                        name = "unpitchedPercussionClef1"
-        }
-        let glyphWidth = metadata.glyphBBoxes[name].map { $0.width * config.staffSize }
-            ?? (2.8 * config.staffSize)
-        return glyphWidth + 0.5 * config.staffSize
+        clefHeaderWidth(for: spec, metadata: metadata, staffSize: config.staffSize)
     }
 
     // MARK: - Vertical extent

@@ -27,7 +27,7 @@ public struct MeasureSizer: Sendable {
         let quarterInUnits = 0.25 / unl
 
         var offsets: [Double] = []
-        var x: Double = 0
+        var x: Double = leftMargin(for: measure)
         var i = 0
 
         while i < measure.events.count {
@@ -53,8 +53,10 @@ public struct MeasureSizer: Sendable {
             }
         }
 
-        // Right-side padding for the closing bar line.
-        let naturalWidth = x + config.staffSize * 0.5
+        // Right-side padding: enough space so the thin bar of a compound closing bar
+        // (final, repeat-end) clears the last note after the thick bar is anchored at
+        // the measure's right edge.
+        let naturalWidth = x + rightPadding(for: measure)
 
         return SizedMeasure(measure: measure, naturalWidth: naturalWidth, eventOffsets: offsets,
                             unitNoteLength: unitNoteLength)
@@ -127,6 +129,44 @@ public struct MeasureSizer: Sendable {
     private func noteheadWidth() -> Double {
         metadata.glyphBBoxes["noteheadBlack"].map { $0.width * config.staffSize }
             ?? config.staffSize * 1.2
+    }
+
+    /// Right padding after the last event column.
+    ///
+    /// Compound closing bars (final, repeat-end) are drawn right-anchored so their
+    /// thick bar's trailing edge aligns with other lines' thin bar edges.  The thin
+    /// bar sits `wideSep` to the left of that anchor, so the padding must be large
+    /// enough to keep the thin bar clear of the last note.
+    private func rightPadding(for measure: Measure) -> Double {
+        let s       = config.staffSize
+        let sep     = metadata.engravingDefaults.barlineSeparation * s
+        let wideSep = sep * 2.0
+        switch measure.closingBar.kind {
+        case .final, .repeatEnd, .repeatEndSection, .repeatBoth:
+            return wideSep + s * 0.5
+        default:
+            return s * 0.5
+        }
+    }
+
+    /// Left margin before the first event.
+    ///
+    /// For measures that begin with a start-repeat bar line the dots occupy
+    /// the space immediately after the bar complex, so the first note is
+    /// pushed past them before the standard one-notehead gap is added.
+    private func leftMargin(for measure: Measure) -> Double {
+        let nhw = noteheadWidth()
+        guard let opening = measure.openingBar else { return nhw }
+        switch opening.kind {
+        case .repeatStart, .sectionRepeatStart, .repeatBoth:
+            let sep     = metadata.engravingDefaults.barlineSeparation * config.staffSize
+            let wideSep = sep * 2.0
+            let dotW    = metadata.glyphBBoxes["repeatDot"].map { $0.width * config.staffSize }
+                          ?? config.staffSize * 0.25
+            return wideSep + sep + dotW + nhw
+        default:
+            return nhw
+        }
     }
 
     private func durationFactor(_ duration: Fraction, quarterInUnits: Double) -> Double {

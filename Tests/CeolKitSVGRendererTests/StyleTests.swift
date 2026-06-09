@@ -96,4 +96,76 @@ struct StyleTests {
         // The tune has [|: and :|] sections; each produces 2 dots.
         #expect(dotCount >= 2)
     }
+
+    // Regression test for issue #22: SVGRenderer was drawing a spurious bar line
+    // between the system header (clef + key sig) and the first note on every
+    // non-first system.  The third system ([| A/ …) is the canonical reproducing case.
+    @Test func noSpuriousBarLineAtStartOfNonFirstSystems() throws {
+        let metadata = try BravuraMetadata.load()
+        let config   = SVGRenderConfig(pageSize: .letter.landscape)
+
+        let tune  = try #require(score.tunes.first)
+        let voice = try #require(tune.voices.first)
+
+        let sizer     = MeasureSizer(config: config, metadata: metadata)
+        let breaker   = LineBreaker()
+        let justifier = Justifier()
+        let engine    = VerticalLayoutEngine(config: config, metadata: metadata)
+
+        let usableWidth  = config.pageSize.width - config.margins.left - config.margins.right
+        let firstHeaderW = systemHeaderWidth(clef: voice.properties.clef,
+                                             keySignature: tune.key,
+                                             meter: tune.meter,
+                                             metadata: metadata,
+                                             staffSize: config.staffSize)
+        let laterHeaderW = systemHeaderWidth(clef: voice.properties.clef,
+                                             keySignature: tune.key,
+                                             meter: nil,
+                                             metadata: metadata,
+                                             staffSize: config.staffSize)
+
+        var pairs: [(measure: SizedMeasure, breakAfter: ScoreLineBreak?)] = []
+        for (si, stave) in voice.staves.enumerated() {
+            let isLast = si == voice.staves.count - 1
+            for (mi, m) in stave.measures.enumerated() {
+                pairs.append((
+                    measure: sizer.size(m, unitNoteLength: tune.unitNoteLength),
+                    breakAfter: (!isLast && mi == stave.measures.count - 1) ? .hard : nil
+                ))
+            }
+        }
+
+        let systems   = breaker.breakIntoSystems(pairs,
+                                                  usableWidth: usableWidth,
+                                                  firstSystemHeaderWidth: firstHeaderW,
+                                                  laterSystemHeaderWidth: laterHeaderW,
+                                                  clef: voice.properties.clef,
+                                                  keySignature: tune.key,
+                                                  meter: tune.meter)
+        let widths    = systems.enumerated().map { i, _ in i == 0 ? firstHeaderW : laterHeaderW }
+        let justified = justifier.justify(systems,
+                                          usableWidth: usableWidth,
+                                          justifyLastSystem: config.justifyLastSystem,
+                                          systemHeaderWidths: widths)
+
+        let allSystems = engine.layout(justified).pages.flatMap { $0.systems }
+        #expect(allSystems.count == 7, "expected 7 systems, got \(allSystems.count)")
+
+        // Systems 1, 2, 4, 6 (0-indexed: 0, 1, 3, 5) start with explicit bar lines in the
+        // source ([|: or [|) and must have those bars rendered at the system start.
+        #expect(allSystems[0].measures.first?.openingBar?.kind == .sectionRepeatStart)
+        for i in [1, 3, 5] {
+            #expect(allSystems[i].measures.first?.openingBar?.kind == .start,
+                    "system \(i + 1) expected .start opening bar")
+        }
+
+        // Systems 3, 5, 7 (0-indexed: 2, 4, 6) are continuation lines — they start with a
+        // note and inherit a spurious .single opening bar from the previous system's closing
+        // bar.  That bar must be suppressed so nothing is drawn between the clef/key sig and
+        // the first note.
+        for i in [2, 4, 6] {
+            #expect(allSystems[i].measures.first?.openingBar == nil,
+                    "system \(i + 1) first measure has spurious opening bar of kind \(String(describing: allSystems[i].measures.first?.openingBar?.kind))")
+        }
+    }
 }

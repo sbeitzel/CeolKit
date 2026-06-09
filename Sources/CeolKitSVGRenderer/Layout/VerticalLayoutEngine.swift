@@ -188,8 +188,23 @@ public struct VerticalLayoutEngine: Sendable {
                 )
             }
 
-            let openingBar = jm.source.measure.openingBar.map {
-                ResolvedBarLine(x: measureOrigin.x, kind: $0.kind)
+            // At the start of a system (i == 0), suppress any opening bar that was
+            // inherited from the previous system's closing bar (e.g. a lone `|`).
+            // Only explicit section-start markers ([|, [|:, |:, ::) are drawn at a
+            // system start; everything else would appear as a spurious bar line between
+            // the clef/key signature and the first note.
+            let openingBar: ResolvedBarLine?
+            if i == 0, let bar = jm.source.measure.openingBar {
+                switch bar.kind {
+                case .start, .sectionRepeatStart, .repeatStart, .repeatBoth:
+                    openingBar = ResolvedBarLine(x: measureOrigin.x, kind: bar.kind)
+                default:
+                    openingBar = nil
+                }
+            } else {
+                openingBar = jm.source.measure.openingBar.map {
+                    ResolvedBarLine(x: measureOrigin.x, kind: $0.kind)
+                }
             }
             let closingBar = ResolvedBarLine(
                 x: measureOrigin.x + jm.finalWidth,

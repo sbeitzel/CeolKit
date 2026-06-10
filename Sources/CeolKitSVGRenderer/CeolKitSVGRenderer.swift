@@ -32,9 +32,12 @@ public struct SVGRenderer: CeolKitRenderer {
         var stemDirection: StemDirection = .auto
 
         for tune in score.tunes {
+            var justifyLastSystem = effectiveConfig.justifyLastSystem
             for scope in tune.directives {
-                if case .pipeFormat(true) = scope.directive {
-                    stemDirection = .down
+                switch scope.directive {
+                case .pipeFormat(true):     stemDirection = .down
+                case .justifyLast(let on):  justifyLastSystem = on
+                default: break
                 }
             }
             var meterForFirstSystem: Meter? = tune.meter
@@ -71,7 +74,7 @@ public struct SVGRenderer: CeolKitRenderer {
                 meterForFirstSystem = nil
                 let headerWidths = systems.enumerated().map { i, _ in i == 0 ? firstHeaderW : laterHeaderW }
                 let justified = justifier.justify(systems, usableWidth: usableWidth,
-                                                  justifyLastSystem: effectiveConfig.justifyLastSystem,
+                                                  justifyLastSystem: justifyLastSystem,
                                                   systemHeaderWidths: headerWidths)
                 allSystems.append(contentsOf: justified)
             }

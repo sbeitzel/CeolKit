@@ -14,6 +14,37 @@ private func parse(_ source: String) -> ParseResult {
     CeolKitParser().parse(source, options: .default)
 }
 
+// Same tune as abcTune but with %%ceolkit:justifylast true added.
+private let abcTuneJustifyLast = """
+%abc-2.2
+%%ceolkit:pipeformat true
+%%ceolkit:justifylast true
+%%titleformat T0, R-1 C1
+%%footer "        Generated: $D"
+%%straightflags false
+%%flatbeams true
+%%graceslurs false
+%%dateformat "%e %B %Y %H:%M"
+%%landscape 1
+X:1
+T:Kalabakan (Borneo)
+R:Reel
+C:P/M A. MacDonald
+Z:abc-transcription Stephen Beitzel, <sbeitzel@pobox.com>, 2025-11-16
+I:linebreak <EOL>
+M:C|
+L:1/8
+Q: 1/4 = 78
+K:D
+[|: A/ | {Gdc}d2 {e}A>d {g}B<{d}A{g}B<d | {g}A<{d}A{g}B<d {g}f>e{A}e>f | {Gdc}d2 {e}A>d {g}B<{d}A{g}B<d | {g}A<{d}A{g}f>e {Gdc}d2 {g}d3/2 :|]
+[| f | {ag}a2 f>a {g}a2>f {ag}a2 | {AGAG}A2 {g}B<d {g}f>e{A}e>f | {ag}a2 f>a {g}a2>f {ag}a2 | {AGAG}A2 {g}f>e {Gdc}d2 {g}d>f |
+{ag}a2 f>a {g}a2>f {ag}a2 | {AGAG}A2 {g}B<d {g}f>e{A}e>f | {Gdc}d2 {e}A>d {g}B<{d}A{g}B<d | {g}A<{d}A{g}f>e {Gdc}d2 {g}d3/2 |]
+[| A/ | {g}B<d{e}A>d {g}B<{d}A{g}B<d | {g}f>A {gAGAG}A2 {g}f>e{A}e>f | {g}B<d{e}A>d {g}B<{d}A{g}B<d | {g}A<{d}A{g}f>e {Gdc}d2 {g}d>A |
+{g}B<d{e}A>d {g}B<{d}A{g}B<d | {g}f>A {gAGAG}A2 {g}f>e{A}e>f | {Gdc}d2 {e}A>d {g}B<{d}A{g}B<d | {g}A<{d}A{g}f>e {Gdc}d2 {g}d3/2 |]
+[| a/ | {fg}f2 {g}f<a {ef}e2 {A}e>f | {Gdc}d2 {g}e>d {g}B<d{g}B<{d}A | {g}B<d{e}A>d {g}B<{d}A{g}B<d | {g}f>e{A}e>f {gef}e2 {ag}a2 |
+{fg}f2 {g}f<a {ef}e2 {A}e>f | {Gdc}d2 {g}e>d {g}B<d{g}B<{d}A | {Gdc}d2 {e}A>d {g}B<{d}A{g}B<d | {g}A<{d}A{g}f>e {Gdc}d2 z |]
+"""
+
 private let abcTune = """
 %abc-2.2
 %%ceolkit:pipeformat true
@@ -167,5 +198,106 @@ struct StyleTests {
             #expect(allSystems[i].measures.first?.openingBar == nil,
                     "system \(i + 1) first measure has spurious opening bar of kind \(String(describing: allSystems[i].measures.first?.openingBar?.kind))")
         }
+    }
+
+    // MARK: - %%ceolkit:justifylast
+
+    // Shared layout helper: sizes and breaks measures into justified systems.
+    // `justifyLast` is passed explicitly so callers can verify directive-driven behaviour.
+    private func justifiedSystems(
+        score: Score,
+        config: SVGRenderConfig,
+        metadata: BravuraMetadata,
+        justifyLast: Bool
+    ) throws -> (systems: [JustifiedSystem], usableWidth: Double, laterHeaderWidth: Double) {
+        let tune  = try #require(score.tunes.first)
+        let voice = try #require(tune.voices.first)
+
+        let sizer     = MeasureSizer(config: config, metadata: metadata)
+        let breaker   = LineBreaker()
+        let justifier = Justifier()
+
+        let usableWidth  = config.pageSize.width - config.margins.left - config.margins.right
+        let firstHeaderW = systemHeaderWidth(clef: voice.properties.clef,
+                                             keySignature: tune.key,
+                                             meter: tune.meter,
+                                             metadata: metadata,
+                                             staffSize: config.staffSize)
+        let laterHeaderW = systemHeaderWidth(clef: voice.properties.clef,
+                                             keySignature: tune.key,
+                                             meter: nil,
+                                             metadata: metadata,
+                                             staffSize: config.staffSize)
+
+        var pairs: [(measure: SizedMeasure, breakAfter: ScoreLineBreak?)] = []
+        for (si, stave) in voice.staves.enumerated() {
+            let isLast = si == voice.staves.count - 1
+            for (mi, m) in stave.measures.enumerated() {
+                pairs.append((
+                    measure: sizer.size(m, unitNoteLength: tune.unitNoteLength),
+                    breakAfter: (!isLast && mi == stave.measures.count - 1) ? .hard : nil
+                ))
+            }
+        }
+
+        let systems  = breaker.breakIntoSystems(pairs,
+                                                 usableWidth: usableWidth,
+                                                 firstSystemHeaderWidth: firstHeaderW,
+                                                 laterSystemHeaderWidth: laterHeaderW,
+                                                 clef: voice.properties.clef,
+                                                 keySignature: tune.key,
+                                                 meter: tune.meter)
+        let widths   = systems.enumerated().map { i, _ in i == 0 ? firstHeaderW : laterHeaderW }
+        let justified = justifier.justify(systems,
+                                          usableWidth: usableWidth,
+                                          justifyLastSystem: justifyLast,
+                                          systemHeaderWidths: widths)
+        return (justified, usableWidth, laterHeaderW)
+    }
+
+    // When %%ceolkit:justifylast true is present the last system must be stretched
+    // to fill the full usable line width, just like every other system.
+    @Test func lastSystemIsJustifiedWhenDirectiveIsTrue() throws {
+        let metadata = try BravuraMetadata.load()
+        let config   = SVGRenderConfig(pageSize: .letter.landscape)
+        let score    = parse(abcTuneJustifyLast).score
+
+        // Verify the directive parsed correctly.
+        let tune = try #require(score.tunes.first)
+        let directiveValue = tune.directives.compactMap { scope -> Bool? in
+            if case .justifyLast(let v) = scope.directive { return v }
+            return nil
+        }.last
+        let justifyLast = try #require(directiveValue as Bool?,
+            "%%ceolkit:justifylast true should produce a .justifyLast(true) directive on the tune")
+
+        let (systems, usableWidth, laterHeaderW) = try justifiedSystems(
+            score: score, config: config, metadata: metadata, justifyLast: justifyLast)
+
+        let lastSystem  = try #require(systems.last)
+        let lastTotalW  = lastSystem.measures.reduce(0.0) { $0 + $1.finalWidth }
+        let targetWidth = usableWidth - laterHeaderW
+
+        #expect(abs(lastTotalW - targetWidth) < 1.0,
+            "last system total width \(lastTotalW) should equal target \(targetWidth) when justifyLast is true")
+    }
+
+    // Without %%ceolkit:justifylast (or with false) the last system stays at its
+    // natural width, noticeably shorter than the full usable line width.
+    @Test func lastSystemIsRaggedRightByDefault() throws {
+        let metadata = try BravuraMetadata.load()
+        let config   = SVGRenderConfig(pageSize: .letter.landscape)
+        // abcTune has no %%ceolkit:justifylast directive; default is false.
+        let score    = parse(abcTune).score
+
+        let (systems, usableWidth, laterHeaderW) = try justifiedSystems(
+            score: score, config: config, metadata: metadata, justifyLast: false)
+
+        let lastSystem  = try #require(systems.last)
+        let lastTotalW  = lastSystem.measures.reduce(0.0) { $0 + $1.finalWidth }
+        let targetWidth = usableWidth - laterHeaderW
+
+        #expect(lastTotalW < targetWidth - 1.0,
+            "last system total width \(lastTotalW) should be less than target \(targetWidth) by default")
     }
 }

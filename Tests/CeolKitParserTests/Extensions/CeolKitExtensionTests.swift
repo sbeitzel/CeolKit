@@ -1,5 +1,6 @@
 // CeolKit extension directive conformance tests.
-// Tests %%ceolkit:pipeformat, %%ceolkit:pagenumber, %%ceolkit:stemalignment.
+// Tests %%ceolkit:pipeformat, %%ceolkit:pagenumber, %%ceolkit:stemalignment,
+// %%ceolkit:justifylast.
 // See EXTENSIONS.md and CeolKit spec §7.
 import Testing
 import CeolKitModel
@@ -293,5 +294,66 @@ struct CeolKitExtensionTests {
         let result = parse(abc)
         let warnings = result.score.diagnostics.filter { $0.code == .misplacedStemAlignment }
         #expect(!warnings.isEmpty)
+    }
+
+    // MARK: %%ceolkit:justifylast
+
+    @Test("%%ceolkit:justifylast true attaches justifyLast(true) directive")
+    func justifylastTrue() {
+        let abc = """
+        X:1
+        T:Test
+        M:4/4
+        L:1/4
+        %%ceolkit:justifylast true
+        K:G
+        GABC|
+        """
+        let result = parse(abc)
+        let tune = result.score.firstTune
+        let directive = tune?.directives.first(where: {
+            if case .justifyLast = $0.directive { return true }
+            return false
+        })
+        #expect(directive != nil)
+        if case .justifyLast(let value) = directive?.directive {
+            #expect(value == true)
+        }
+    }
+
+    @Test("%%ceolkit:justifylast false attaches justifyLast(false) directive")
+    func justifylastFalse() {
+        let abc = """
+        X:1
+        T:Test
+        M:4/4
+        L:1/4
+        %%ceolkit:justifylast false
+        K:G
+        GABC|
+        """
+        let result = parse(abc)
+        let tune = result.score.firstTune
+        let directive = tune?.directives.first(where: {
+            if case .justifyLast = $0.directive { return true }
+            return false
+        })
+        #expect(directive != nil)
+        if case .justifyLast(let value) = directive?.directive {
+            #expect(value == false)
+        }
+    }
+
+    @Test("%%ceolkit:justifylast with invalid payload emits warning and drops directive")
+    func justifylastInvalidPayloadEmitsWarning() {
+        let abc = "%%ceolkit:justifylast yes\nX:1\nT:T\nM:4/4\nL:1/4\nK:C\nC|"
+        let result = parse(abc)
+        let warnings = result.score.diagnostics.filter { $0.code == .unknownDirective }
+        #expect(!warnings.isEmpty)
+        let hasDirective = result.score.tunes.flatMap(\.directives).contains {
+            if case .justifyLast = $0.directive { return true }
+            return false
+        }
+        #expect(!hasDirective)
     }
 }

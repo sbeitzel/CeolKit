@@ -569,7 +569,7 @@ struct SemanticPass {
                     source: source
                 ))
             }
-        case "landscape", "flatbeams":
+        case "landscape", "flatbeams", "ceolkit:justifylast":
             var tempDiags: [Diagnostic] = []
             if let d = parseCeolKitDirective(name: name, payload: payload, source: source, diagnostics: &tempDiags) {
                 ctx.bodyTuneDirectives.append(CeolKitDirectiveScope(directive: d, scope: .tuneGlobal, source: source))
@@ -854,6 +854,11 @@ struct SemanticPass {
             if let value = parseLogical(trimmed) { return .flatBeams(value) }
             diagnostics.append(Diagnostic(severity: .warning, code: .unknownDirective,
                 message: "%%flatbeams expects '0'/'false' or '1'/'true'", source: source))
+            return nil
+        case "ceolkit:justifylast":
+            if let value = parseLogical(trimmed) { return .justifyLast(value) }
+            diagnostics.append(Diagnostic(severity: .warning, code: .unknownDirective,
+                message: "%%ceolkit:justifylast expects 'true' or 'false'", source: source))
             return nil
         default:
             return nil

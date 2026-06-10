@@ -128,9 +128,13 @@ private func measure(events: [Event]) -> Measure {
         let config   = SVGRenderConfig()
         let noteW    = metadata.glyphBBoxes["noteheadBlack"].map { $0.width * config.staffSize }
                        ?? config.staffSize * 1.2
-        let graceNoteW        = noteW * 0.6
-        let expectedGraceW    = graceNoteW * 1.5        // single grace note
-        let expectedGap       = 0.25 * graceNoteW + 0.25 * noteW
+        let graceNoteW     = noteW * 0.6
+        let expectedGraceW = graceNoteW * 1.5   // single grace note
+        // Single grace note: flag overhang + 0.25 staffSize clearance (see MeasureSizer.graceNoteGap)
+        let flagW          = metadata.glyphBBoxes["flag32ndUp"].map { $0.width * config.staffSize * 0.6 }
+                             ?? config.staffSize * 0.625
+        let flagOverhang   = max(0.0, 1.25 * graceNoteW + flagW - 1.5 * graceNoteW)
+        let expectedGap    = flagOverhang + config.staffSize * 0.25
         let expectedNoteOffset = noteW + expectedGraceW + expectedGap
 
         let gNote = note(duration: Fraction(numerator: 1, denominator: 2))

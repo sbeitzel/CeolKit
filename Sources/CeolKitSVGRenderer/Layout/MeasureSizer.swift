@@ -37,11 +37,9 @@ public struct MeasureSizer: Sendable {
                i + 1 < measure.events.count,
                isSpacingEvent(measure.events[i + 1]) {
                 // Grace + following note/chord/rest: treat as a combined unit so the pair
-                // moves together during justification. The gap between the grace group's
-                // last notehead and the principal note is fixed at
-                // 0.25 × grace notehead width + 0.25 × normal notehead width.
+                // moves together during justification.
                 let graceW = graceGroupWidth(g)
-                let gap    = graceNoteGap()
+                let gap    = graceNoteGap(for: g)
                 offsets.append(x)                    // grace event
                 offsets.append(x + graceW + gap)     // paired note/chord/rest
                 x += graceW + gap + columnWidth(for: measure.events[i + 1], quarterInUnits: quarterInUnits)
@@ -71,9 +69,18 @@ public struct MeasureSizer: Sendable {
 
         switch event {
         case .note(let n):
-            let col = max(minCol, base * durationFactor(n.duration, quarterInUnits: quarterInUnits))
+            let rawCol = base * durationFactor(n.duration, quarterInUnits: quarterInUnits)
+            var col = max(minCol, rawCol)
             let accWidth = n.displayedAccidental != nil ? s * 0.75 : 0
-            return col + accWidth
+            // Very short notes (at the minimum floor) get a dot-gap equivalent of extra space
+            // so consecutive beamed notes aren't visually pressed against each other.
+            let breathingRoom = rawCol < minCol ? noteheadWidth() * 0.2 : 0
+            // Dotted notes need enough column to clear the augmentation dot before the next note.
+            // Minimum = notehead + dotGap + dotWidth + clearance = noteheadWidth × 1.4 + dotWidth.
+            if isDottedDuration(n.duration) {
+                col = max(col, noteheadWidth() * 1.4 + augmentationDotWidth())
+            }
+            return col + accWidth + breathingRoom
 
         case .rest(let r):
             return max(minCol, base * durationFactor(r.duration, quarterInUnits: quarterInUnits))
@@ -118,10 +125,25 @@ public struct MeasureSizer: Sendable {
         noteheadWidth() * 0.6 * 1.5 * Double(max(grace.notes.count, 1))
     }
 
-    /// Fixed gap between the last grace notehead's right edge and the principal notehead:
-    /// 0.25 × grace notehead width + 0.25 × normal notehead width.
-    private func graceNoteGap() -> Double {
-        noteheadWidth() * (0.25 * 0.6 + 0.25)
+    /// Gap between the grace group's last column boundary and the principal notehead.
+    ///
+    /// For a single grace note the 32nd-note flag extends right of the stem and overhangs the
+    /// column boundary.  We measure the overhang from the bounding-box data and add a small
+    /// comfortable clearance so the flag tip is visibly separated from the principal note.
+    /// Multi-note groups use beams that don't overhang, so a simpler fixed gap is used there.
+    private func graceNoteGap(for grace: GraceGroup) -> Double {
+        let graceNHW = noteheadWidth() * 0.6   // grace notehead width (graceScale = 0.6)
+        guard grace.notes.count == 1 else {
+            // Beamed group: no flag overhang; keep original gap.
+            return noteheadWidth() * (0.25 * 0.6 + 0.25)
+        }
+        // Single grace note: compute how far the flag extends past the column boundary.
+        // stemX within the column = 1.25 × graceNHW; columnWidth = 1.5 × graceNHW.
+        // flagWidth (rendered) = bboxWidth × staffSize × 0.6.
+        let flagW = metadata.glyphBBoxes["flag32ndUp"].map { $0.width * config.staffSize * 0.6 }
+                    ?? config.staffSize * 0.625
+        let flagOverhang = max(0, 1.25 * graceNHW + flagW - 1.5 * graceNHW)
+        return flagOverhang + config.staffSize * 0.25
     }
 
     // MARK: - Helpers
@@ -167,6 +189,20 @@ public struct MeasureSizer: Sendable {
         default:
             return nhw
         }
+    }
+
+    private func augmentationDotWidth() -> Double {
+        metadata.glyphBBoxes["augmentationDot"].map { $0.width * config.staffSize }
+            ?? config.staffSize * 0.4
+    }
+
+    private func isDottedDuration(_ dur: Fraction) -> Bool {
+        let n = dur.numerator
+        let d = dur.denominator
+        guard n > 0, d > 0, (d & (d - 1)) == 0 else { return false }
+        var m = n
+        while m % 2 == 0 { m /= 2 }
+        return m == 3
     }
 
     private func durationFactor(_ duration: Fraction, quarterInUnits: Double) -> Double {

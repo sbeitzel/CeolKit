@@ -306,13 +306,16 @@ struct SVGEmitter: Sendable {
                                  stroke: "black", strokeWidth: beamThick)
                 } else {
                     // Stub: point right if first in group, otherwise left.
+                    // Cap at 0.75 × staffSize so grace-note-inflated inter-stem distances
+                    // don't produce excessively long stubs.
                     let stemX = entries[start].stem.stemX
+                    let maxStubW = s * 0.75
                     if start == 0 {
-                        let stubW = (entries[1].stem.stemX - stemX) * 0.5
+                        let stubW = min((entries[1].stem.stemX - stemX) * 0.5, maxStubW)
                         builder.line(x1: stemX, y1: beamY, x2: stemX + stubW, y2: beamY,
                                      stroke: "black", strokeWidth: beamThick)
                     } else {
-                        let stubW = (stemX - entries[start - 1].stem.stemX) * 0.5
+                        let stubW = min((stemX - entries[start - 1].stem.stemX) * 0.5, maxStubW)
                         builder.line(x1: stemX - stubW, y1: beamY, x2: stemX, y2: beamY,
                                      stroke: "black", strokeWidth: beamThick)
                     }

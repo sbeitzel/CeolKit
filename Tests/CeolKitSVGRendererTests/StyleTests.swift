@@ -282,6 +282,56 @@ struct StyleTests {
             "last system total width \(lastTotalW) should equal target \(targetWidth) when justifyLast is true")
     }
 
+    // The bottom of the title text block (maximum baseline Y among Helvetica text elements)
+    // must be strictly above the topmost rendered music element (minimum Y among all <line>
+    // elements, which includes staff lines, stems, bar lines, and ledger lines).
+    @Test func titleTextIsAboveHighestNoteStem() throws {
+        let pages = try SVGRenderer().render(score)
+        let svg   = try #require(pages.first)
+
+        // Collect the Y baseline of every title text element.
+        // Title rows use font-family="Helvetica, Arial, sans-serif"; Bravura text uses "Bravura".
+        // SVGBuilder attribute order: x="..." y="..." font-family="..."
+        let titleYValues: [Double] = svg
+            .components(separatedBy: "<text ")
+            .dropFirst()
+            .filter { $0.contains("Helvetica") }
+            .compactMap { segment -> Double? in
+                // Find the y="..." attribute — it follows x="..." in the fixed attribute order.
+                guard let yStart = segment.range(of: " y=\"") else { return nil }
+                let afterY = segment[yStart.upperBound...]
+                guard let yEnd = afterY.firstIndex(of: "\"") else { return nil }
+                return Double(afterY[afterY.startIndex..<yEnd])
+            }
+
+        // Collect the minimum Y coordinate from every <line> element (both y1 and y2).
+        // The smallest value is the topmost rendered music element on the page —
+        // either the highest ledger line, the top of a stem, or the top staff line.
+        let lineMinY: Double = svg
+            .components(separatedBy: "<line ")
+            .dropFirst()
+            .flatMap { segment -> [Double] in
+                var vals: [Double] = []
+                for attr in ["y1=\"", "y2=\""] {
+                    if let s = segment.range(of: attr) {
+                        let after = segment[s.upperBound...]
+                        if let e = after.firstIndex(of: "\""), let v = Double(after[after.startIndex..<e]) {
+                            vals.append(v)
+                        }
+                    }
+                }
+                return vals
+            }
+            .min() ?? .infinity
+
+        guard !titleYValues.isEmpty else { Issue.record("No Helvetica text elements found in SVG"); return }
+        guard lineMinY < .infinity   else { Issue.record("No <line> elements found in SVG"); return }
+
+        let titleMaxY = titleYValues.max()!
+        #expect(titleMaxY < lineMinY,
+                "Title text bottom (baseline Y=\(titleMaxY)) must be strictly above the topmost music element (Y=\(lineMinY))")
+    }
+
     // Without %%ceolkit:justifylast (or with false) the last system stays at its
     // natural width, noticeably shorter than the full usable line width.
     @Test func lastSystemIsRaggedRightByDefault() throws {

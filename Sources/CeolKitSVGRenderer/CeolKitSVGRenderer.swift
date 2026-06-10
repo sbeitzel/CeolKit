@@ -21,10 +21,10 @@ public struct SVGRenderer: CeolKitRenderer {
         // File-preamble directives are promoted to the first tune by the parser.
         let effectiveConfig = applyingScoreDirectives(score)
 
-        let sizer    = MeasureSizer(config: effectiveConfig, metadata: metadata)
-        let breaker  = LineBreaker()
+        let sizer     = MeasureSizer(config: effectiveConfig, metadata: metadata)
+        let breaker   = LineBreaker()
         let justifier = Justifier()
-        let engine   = VerticalLayoutEngine(config: effectiveConfig, metadata: metadata)
+        let engine    = VerticalLayoutEngine(config: effectiveConfig, metadata: metadata)
 
         let usableWidth = effectiveConfig.pageSize.width - effectiveConfig.margins.left - effectiveConfig.margins.right
 
@@ -65,12 +65,12 @@ public struct SVGRenderer: CeolKitRenderer {
                 let laterHeaderW = systemHeaderWidth(
                     clef: voice.properties.clef, keySignature: tune.key, meter: nil,
                     metadata: metadata, staffSize: effectiveConfig.staffSize)
-                let systems   = breaker.breakIntoSystems(pairs, usableWidth: usableWidth,
-                                                        firstSystemHeaderWidth: firstHeaderW,
-                                                        laterSystemHeaderWidth: laterHeaderW,
-                                                        clef: voice.properties.clef,
-                                                        keySignature: tune.key,
-                                                        meter: meterForFirstSystem)
+                let systems = breaker.breakIntoSystems(pairs, usableWidth: usableWidth,
+                                                       firstSystemHeaderWidth: firstHeaderW,
+                                                       laterSystemHeaderWidth: laterHeaderW,
+                                                       clef: voice.properties.clef,
+                                                       keySignature: tune.key,
+                                                       meter: meterForFirstSystem)
                 meterForFirstSystem = nil
                 let headerWidths = systems.enumerated().map { i, _ in i == 0 ? firstHeaderW : laterHeaderW }
                 let justified = justifier.justify(systems, usableWidth: usableWidth,
@@ -80,10 +80,75 @@ public struct SVGRenderer: CeolKitRenderer {
             }
         }
 
+        // Build the title block from the first tune's %%titleformat directive (if present).
+        let (titleRows, titleBlockHeight) = buildTitleBlock(
+            score: score,
+            config: effectiveConfig
+        )
+
         let emitter = SVGEmitter(config: effectiveConfig, metadata: metadata, stemDirection: stemDirection)
-        let layout = engine.layout(allSystems)
+        let layout = engine.layout(allSystems, titleRows: titleRows, titleBlockHeight: titleBlockHeight)
         return try emitter.emit(layout)
     }
+
+    // MARK: - Title block
+
+    private func buildTitleBlock(
+        score: Score,
+        config: SVGRenderConfig
+    ) -> (rows: [ResolvedTitleRow], height: Double) {
+        guard let tune = score.tunes.first else { return ([], 0) }
+
+        var formatString: String? = nil
+        for scope in tune.directives {
+            if case .titleFormat(let fmt) = scope.directive {
+                formatString = fmt
+                break
+            }
+        }
+        guard let fmt = formatString, !fmt.isEmpty else { return ([], 0) }
+
+        let spec = TitleFormatParser.parse(fmt)
+        let resolved = TitleResolver(tune: tune).resolve(spec)
+        guard !resolved.isEmpty else { return ([], 0) }
+
+        let lineHeight = config.staffSize * 2.5
+        let titleFontSize = config.staffSize * 2.0
+        let infoFontSize  = config.staffSize * 1.4
+
+        let leftX   = config.margins.left
+        let centerX = config.pageSize.width / 2.0
+        let rightX  = config.pageSize.width - config.margins.right
+
+        var rows: [ResolvedTitleRow] = []
+        for (rowIndex, row) in resolved.enumerated() {
+            // Use a slightly larger font for the first row (typically the title).
+            let fontSize = rowIndex == 0 ? titleFontSize : infoFontSize
+            let baselineY = config.margins.top + lineHeight * Double(rowIndex + 1) - lineHeight * 0.25
+
+            var items: [ResolvedTitleRow.Item] = []
+            if let text = row.left {
+                items.append(ResolvedTitleRow.Item(
+                    text: text, x: leftX, baselineY: baselineY, anchor: .start, fontSize: fontSize))
+            }
+            if let text = row.center {
+                items.append(ResolvedTitleRow.Item(
+                    text: text, x: centerX, baselineY: baselineY, anchor: .middle, fontSize: fontSize))
+            }
+            if let text = row.right {
+                items.append(ResolvedTitleRow.Item(
+                    text: text, x: rightX, baselineY: baselineY, anchor: .end, fontSize: fontSize))
+            }
+            if !items.isEmpty {
+                rows.append(ResolvedTitleRow(items: items))
+            }
+        }
+
+        let totalHeight = lineHeight * Double(resolved.count) + config.staffSize
+        return (rows, totalHeight)
+    }
+
+    // MARK: - Score directive application
 
     /// Returns a config with score-level directives applied.
     ///

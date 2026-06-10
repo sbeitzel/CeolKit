@@ -122,7 +122,7 @@ struct SemanticPass {
     }
 
     private func isStandardDirective(_ name: String) -> Bool {
-        name == "landscape" || name == "flatbeams"
+        name == "landscape" || name == "flatbeams" || name == "titleformat"
     }
 
     // MARK: - Tune builder
@@ -569,7 +569,7 @@ struct SemanticPass {
                     source: source
                 ))
             }
-        case "landscape", "flatbeams", "ceolkit:justifylast":
+        case "landscape", "flatbeams", "ceolkit:justifylast", "titleformat":
             var tempDiags: [Diagnostic] = []
             if let d = parseCeolKitDirective(name: name, payload: payload, source: source, diagnostics: &tempDiags) {
                 ctx.bodyTuneDirectives.append(CeolKitDirectiveScope(directive: d, scope: .tuneGlobal, source: source))
@@ -860,6 +860,8 @@ struct SemanticPass {
             diagnostics.append(Diagnostic(severity: .warning, code: .unknownDirective,
                 message: "%%ceolkit:justifylast expects 'true' or 'false'", source: source))
             return nil
+        case "titleformat":
+            return .titleFormat(trimmed)
         default:
             return nil
         }

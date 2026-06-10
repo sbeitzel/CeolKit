@@ -17,22 +17,32 @@ public struct VerticalLayoutEngine: Sendable {
 
     /// Converts justified systems into a fully positioned layout.
     ///
-    /// The horizontal space before the first measure of each system (for the clef glyph)
-    /// is derived automatically from `jsystem.clef`. Pass `clef: .none` to suppress it.
-    public func layout(_ systems: [JustifiedSystem]) -> ResolvedLayout {
+    /// - Parameters:
+    ///   - systems: The justified systems to lay out.
+    ///   - titleRows: Pre-resolved title rows to embed on the first page.
+    ///   - titleBlockHeight: Extra vertical space reserved at the top of the first page
+    ///     for the title block. The first system's y-origin is shifted down by this amount.
+    public func layout(
+        _ systems: [JustifiedSystem],
+        titleRows: [ResolvedTitleRow] = [],
+        titleBlockHeight: Double = 0
+    ) -> ResolvedLayout {
         let staffHeight = 4.0 * config.staffSize
 
         var pages: [ResolvedPage] = []
         var pageSystems: [ResolvedSystem] = []
-        var y = config.margins.top
+        var isFirstPage = true
+        var y = config.margins.top + titleBlockHeight
 
         for jsystem in systems {
             let (extraAbove, extraBelow) = verticalExtent(of: jsystem)
             let totalHeight = extraAbove + staffHeight + extraBelow
 
             if !pageSystems.isEmpty && y + totalHeight > config.pageSize.height - config.margins.bottom {
-                pages.append(ResolvedPage(systems: pageSystems))
+                let rows = isFirstPage ? titleRows : []
+                pages.append(ResolvedPage(systems: pageSystems, titleRows: rows))
                 pageSystems = []
+                isFirstPage = false
                 y = config.margins.top
             }
 
@@ -75,7 +85,8 @@ public struct VerticalLayoutEngine: Sendable {
         }
 
         if !pageSystems.isEmpty {
-            pages.append(ResolvedPage(systems: pageSystems))
+            let rows = isFirstPage ? titleRows : []
+            pages.append(ResolvedPage(systems: pageSystems, titleRows: rows))
         }
 
         return ResolvedLayout(
@@ -98,6 +109,7 @@ public struct VerticalLayoutEngine: Sendable {
         var maxLedgerBelow = 0
         var hasChordSymbolsOrAnnotations = false
         var hasLyrics = false
+        var hasGraceGroups = false
 
         for jm in system.measures {
             for event in jm.source.measure.events {
@@ -106,13 +118,17 @@ public struct VerticalLayoutEngine: Sendable {
                     maxLedgerAbove: &maxLedgerAbove,
                     maxLedgerBelow: &maxLedgerBelow,
                     hasChordSymbolsOrAnnotations: &hasChordSymbolsOrAnnotations,
-                    hasLyrics: &hasLyrics
+                    hasLyrics: &hasLyrics,
+                    hasGraceGroups: &hasGraceGroups
                 )
             }
         }
 
         let s = config.staffSize
-        let extraAbove = Double(maxLedgerAbove) * s + (hasChordSymbolsOrAnnotations ? s : 0)
+        // Grace note stems always point upward (graceScale=0.6) × 3.5 staff spaces above the
+        // notehead. Reserve that height so stems never intrude into the title block zone.
+        let graceOvershoot = hasGraceGroups ? 3.5 * s * 0.6 : 0
+        let extraAbove = Double(maxLedgerAbove) * s + (hasChordSymbolsOrAnnotations ? s : 0) + graceOvershoot
         let extraBelow = Double(maxLedgerBelow) * s + (hasLyrics ? s * 2.0 : 0)
         return (extraAbove, extraBelow)
     }
@@ -122,7 +138,8 @@ public struct VerticalLayoutEngine: Sendable {
         maxLedgerAbove: inout Int,
         maxLedgerBelow: inout Int,
         hasChordSymbolsOrAnnotations: inout Bool,
-        hasLyrics: inout Bool
+        hasLyrics: inout Bool,
+        hasGraceGroups: inout Bool
     ) {
         switch event {
         case .note(let n):
@@ -139,9 +156,11 @@ public struct VerticalLayoutEngine: Sendable {
                      maxLedgerAbove: &maxLedgerAbove,
                      maxLedgerBelow: &maxLedgerBelow,
                      hasChordSymbolsOrAnnotations: &hasChordSymbolsOrAnnotations,
-                     hasLyrics: &hasLyrics)
+                     hasLyrics: &hasLyrics,
+                     hasGraceGroups: &hasGraceGroups)
             }
         case .grace(let g):
+            hasGraceGroups = true
             for n in g.notes { accumulate(pitch: n.pitch, above: &maxLedgerAbove, below: &maxLedgerBelow) }
         default:
             break

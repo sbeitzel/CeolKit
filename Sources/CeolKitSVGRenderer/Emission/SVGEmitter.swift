@@ -45,6 +45,7 @@ struct SVGEmitter: Sendable {
 
     private func emitPage(_ page: ResolvedPage, layout: ResolvedLayout, bravuraBase64: String) -> String {
         var builder = SVGBuilder()
+        emitTitleBlock(page.titleRows, builder: &builder)
         for system in page.systems {
             emitSystem(system, builder: &builder)
         }
@@ -53,6 +54,23 @@ struct SVGEmitter: Sendable {
             height: layout.pageSize.height,
             bravuraBase64: bravuraBase64
         )
+    }
+
+    // MARK: - Title block
+
+    private func emitTitleBlock(_ rows: [ResolvedTitleRow], builder: inout SVGBuilder) {
+        for row in rows {
+            for item in row.items {
+                builder.text(
+                    item.text,
+                    x: item.x,
+                    y: item.baselineY,
+                    fontFamily: "Helvetica, Arial, sans-serif",
+                    fontSize: item.fontSize,
+                    textAnchor: item.anchor.rawValue
+                )
+            }
+        }
     }
 
     // MARK: - System

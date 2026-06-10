@@ -21,13 +21,14 @@ struct SVGBuilder: Sendable {
         x: Double, y: Double,
         fontFamily: String,
         fontSize: Double,
-        fill: String = "black"
+        fill: String = "black",
+        textAnchor: String = "start"
     ) {
-        elements.append(
-            "<text x=\"\(fmt(x))\" y=\"\(fmt(y))\"" +
-            " font-family=\"\(esc(fontFamily))\" font-size=\"\(fmt(fontSize))\"" +
-            " fill=\"\(esc(fill))\">\(esc(content))</text>"
-        )
+        var attrs = "x=\"\(fmt(x))\" y=\"\(fmt(y))\""
+        attrs += " font-family=\"\(esc(fontFamily))\" font-size=\"\(fmt(fontSize))\""
+        attrs += " fill=\"\(esc(fill))\""
+        if textAnchor != "start" { attrs += " text-anchor=\"\(esc(textAnchor))\"" }
+        elements.append("<text \(attrs)>\(esc(content))</text>")
     }
 
     mutating func path(

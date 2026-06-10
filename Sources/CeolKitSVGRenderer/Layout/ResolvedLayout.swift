@@ -114,10 +114,43 @@ public struct ResolvedLayout: Sendable {
 
 public struct ResolvedPage: Sendable {
     public let systems: [ResolvedSystem]
+    /// Pre-positioned title rows; non-empty only on the first page.
+    public let titleRows: [ResolvedTitleRow]
 
-    public init(systems: [ResolvedSystem]) {
+    public init(systems: [ResolvedSystem], titleRows: [ResolvedTitleRow] = []) {
         self.systems = systems
+        self.titleRows = titleRows
     }
+}
+
+/// A single rendered row in the title block, with absolute page coordinates.
+public struct ResolvedTitleRow: Sendable {
+    public struct Item: Sendable {
+        public let text: String
+        public let x: Double
+        public let baselineY: Double
+        public let anchor: TextAnchor
+        public let fontSize: Double
+
+        public init(text: String, x: Double, baselineY: Double,
+                    anchor: TextAnchor, fontSize: Double) {
+            self.text = text
+            self.x = x
+            self.baselineY = baselineY
+            self.anchor = anchor
+            self.fontSize = fontSize
+        }
+    }
+
+    public let items: [Item]
+
+    public init(items: [Item]) {
+        self.items = items
+    }
+}
+
+public enum TextAnchor: String, Sendable {
+    case start, middle, end
 }
 
 public struct ResolvedSystem: Sendable {

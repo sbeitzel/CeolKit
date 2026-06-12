@@ -116,10 +116,14 @@ public struct ResolvedPage: Sendable {
     public let systems: [ResolvedSystem]
     /// Pre-positioned title rows; non-empty only on the first page.
     public let titleRows: [ResolvedTitleRow]
+    /// Pre-positioned footer rows; present on every page that has a %%footer template.
+    public let footerRows: [ResolvedTitleRow]
 
-    public init(systems: [ResolvedSystem], titleRows: [ResolvedTitleRow] = []) {
+    public init(systems: [ResolvedSystem], titleRows: [ResolvedTitleRow] = [],
+                footerRows: [ResolvedTitleRow] = []) {
         self.systems = systems
         self.titleRows = titleRows
+        self.footerRows = footerRows
     }
 }
 
@@ -131,14 +135,16 @@ public struct ResolvedTitleRow: Sendable {
         public let baselineY: Double
         public let anchor: TextAnchor
         public let fontSize: Double
+        public let isItalic: Bool
 
         public init(text: String, x: Double, baselineY: Double,
-                    anchor: TextAnchor, fontSize: Double) {
+                    anchor: TextAnchor, fontSize: Double, isItalic: Bool = false) {
             self.text = text
             self.x = x
             self.baselineY = baselineY
             self.anchor = anchor
             self.fontSize = fontSize
+            self.isItalic = isItalic
         }
     }
 

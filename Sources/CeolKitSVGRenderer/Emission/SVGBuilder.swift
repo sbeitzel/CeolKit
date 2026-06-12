@@ -22,12 +22,16 @@ struct SVGBuilder: Sendable {
         fontFamily: String,
         fontSize: Double,
         fill: String = "black",
-        textAnchor: String = "start"
+        textAnchor: String = "start",
+        fontStyle: String? = nil,
+        className: String? = nil
     ) {
         var attrs = "x=\"\(fmt(x))\" y=\"\(fmt(y))\""
         attrs += " font-family=\"\(esc(fontFamily))\" font-size=\"\(fmt(fontSize))\""
         attrs += " fill=\"\(esc(fill))\""
-        if textAnchor != "start" { attrs += " text-anchor=\"\(esc(textAnchor))\"" }
+        if textAnchor != "start"  { attrs += " text-anchor=\"\(esc(textAnchor))\"" }
+        if let style = fontStyle  { attrs += " font-style=\"\(esc(style))\"" }
+        if let cls   = className  { attrs += " class=\"\(esc(cls))\"" }
         elements.append("<text \(attrs)>\(esc(content))</text>")
     }
 
@@ -57,13 +61,25 @@ struct SVGBuilder: Sendable {
         elements.append("<rect \(attrs)/>")
     }
 
-    func buildDocument(width: Double, height: Double, bravuraBase64: String) -> String {
+    func buildDocument(width: Double, height: Double,
+                       bravuraBase64: String,
+                       libertinusSerifBase64: String,
+                       libertinusSerifItalicBase64: String) -> String {
         let defs = """
           <defs>
             <style>
               @font-face {
-                font-family: 'Bravura';
+                font-family: "Bravura";
                 src: url('data:font/otf;base64,\(bravuraBase64)') format('opentype');
+              }
+              @font-face {
+                font-family: "Libertinus Serif";
+                src: url('data:font/otf;base64,\(libertinusSerifBase64)') format('opentype');
+              }
+              @font-face {
+                font-family: "Libertinus Serif";
+                font-style: italic;
+                src: url('data:font/otf;base64,\(libertinusSerifItalicBase64)') format('opentype');
               }
             </style>
           </defs>

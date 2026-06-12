@@ -2,7 +2,16 @@
   <defs>
     <style>
       @font-face {
-        font-family: 'Bravura';
+        font-family: "Bravura";
+        src: url('data:font/otf;base64,<BRAVURA>') format('opentype');
+      }
+      @font-face {
+        font-family: "Libertinus Serif";
+        src: url('data:font/otf;base64,<BRAVURA>') format('opentype');
+      }
+      @font-face {
+        font-family: "Libertinus Serif";
+        font-style: italic;
         src: url('data:font/otf;base64,<BRAVURA>') format('opentype');
       }
     </style>

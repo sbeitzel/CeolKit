@@ -37,22 +37,35 @@ struct SVGEmitter: Sendable {
     // MARK: - Public entry point
 
     func emit(_ layout: ResolvedLayout) throws -> [String] {
-        let base64 = try loadBravuraBase64()
-        return layout.pages.map { emitPage($0, layout: layout, bravuraBase64: base64) }
+        let bravuraBase64             = try loadBravuraBase64()
+        let libertinusSerifBase64     = try LibertinusSerifMetrics.loadBase64()
+        let libertinusSerifItalicBase64 = try LibertinusSerifMetrics.loadItalicBase64()
+        return layout.pages.map {
+            emitPage($0, layout: layout,
+                     bravuraBase64: bravuraBase64,
+                     libertinusSerifBase64: libertinusSerifBase64,
+                     libertinusSerifItalicBase64: libertinusSerifItalicBase64)
+        }
     }
 
     // MARK: - Page
 
-    private func emitPage(_ page: ResolvedPage, layout: ResolvedLayout, bravuraBase64: String) -> String {
+    private func emitPage(_ page: ResolvedPage, layout: ResolvedLayout,
+                           bravuraBase64: String,
+                           libertinusSerifBase64: String,
+                           libertinusSerifItalicBase64: String) -> String {
         var builder = SVGBuilder()
         emitTitleBlock(page.titleRows, builder: &builder)
         for system in page.systems {
             emitSystem(system, builder: &builder)
         }
+        emitFooterBlock(page.footerRows, builder: &builder)
         return builder.buildDocument(
             width: layout.pageSize.width,
             height: layout.pageSize.height,
-            bravuraBase64: bravuraBase64
+            bravuraBase64: bravuraBase64,
+            libertinusSerifBase64: libertinusSerifBase64,
+            libertinusSerifItalicBase64: libertinusSerifItalicBase64
         )
     }
 
@@ -65,9 +78,28 @@ struct SVGEmitter: Sendable {
                     item.text,
                     x: item.x,
                     y: item.baselineY,
-                    fontFamily: "Helvetica, Arial, sans-serif",
+                    fontFamily: "Libertinus Serif",
                     fontSize: item.fontSize,
-                    textAnchor: item.anchor.rawValue
+                    textAnchor: item.anchor.rawValue,
+                    fontStyle: item.isItalic ? "italic" : nil
+                )
+            }
+        }
+    }
+
+    // MARK: - Footer block
+
+    private func emitFooterBlock(_ rows: [ResolvedTitleRow], builder: inout SVGBuilder) {
+        for row in rows {
+            for item in row.items {
+                builder.text(
+                    item.text,
+                    x: item.x,
+                    y: item.baselineY,
+                    fontFamily: "Libertinus Serif",
+                    fontSize: item.fontSize,
+                    textAnchor: item.anchor.rawValue,
+                    className: "footer"
                 )
             }
         }

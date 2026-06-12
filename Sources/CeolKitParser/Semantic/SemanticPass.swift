@@ -11,10 +11,15 @@ struct SemanticPass {
         var diagnostics = file.diagnostics
 
         // Process file-preamble directives: collect ceolkit directives to promote to first tune.
+        // filePreamble contains both the initial preamble and any inter-tune gaps (lines between
+        // tunes that fall outside any tune header), so scanning it here covers both.
         var preambleCeolKitDirectives: [CeolKitDirectiveScope] = []
+        var currentFooter: String? = nil
         for line in file.filePreamble {
             if case .directive(let name, let payload, let src) = line {
-                if isCeolKitDirective(name) || isStandardDirective(name) {
+                if name == "footer" {
+                    currentFooter = stripQuotes(payload.trimmingCharacters(in: .whitespaces))
+                } else if isCeolKitDirective(name) || isStandardDirective(name) {
                     var tempDiags: [Diagnostic] = []
                     if let d = parseCeolKitDirective(name: name, payload: payload, source: src, diagnostics: &tempDiags) {
                         preambleCeolKitDirectives.append(
@@ -46,6 +51,10 @@ struct SemanticPass {
 
         var tunes: [Tune] = []
         for (idx, abcTune) in file.tunes.enumerated() {
+            // Update footer from tune header directives (last-wins across document).
+            for (name, payload, _) in abcTune.headerDirectives where name == "footer" {
+                currentFooter = stripQuotes(payload.trimmingCharacters(in: .whitespaces))
+            }
             let (tune, tuneDiags) = buildTune(abcTune, dialect: dialect)
             diagnostics += tuneDiags
             if idx == 0 && !preambleCeolKitDirectives.isEmpty {
@@ -109,6 +118,7 @@ struct SemanticPass {
             dialect: dialect,
             creator: nil,
             charset: nil,
+            footer: currentFooter,
             tunes: tunes,
             freeText: [],
             typesetText: [],
@@ -122,7 +132,7 @@ struct SemanticPass {
     }
 
     private func isStandardDirective(_ name: String) -> Bool {
-        name == "landscape" || name == "flatbeams" || name == "titleformat"
+        name == "landscape" || name == "flatbeams" || name == "titleformat" || name == "footer"
     }
 
     // MARK: - Tune builder
@@ -569,7 +579,7 @@ struct SemanticPass {
                     source: source
                 ))
             }
-        case "landscape", "flatbeams", "ceolkit:justifylast", "titleformat":
+        case "landscape", "flatbeams", "ceolkit:justifylast", "titleformat", "footer":
             var tempDiags: [Diagnostic] = []
             if let d = parseCeolKitDirective(name: name, payload: payload, source: source, diagnostics: &tempDiags) {
                 ctx.bodyTuneDirectives.append(CeolKitDirectiveScope(directive: d, scope: .tuneGlobal, source: source))
@@ -862,9 +872,18 @@ struct SemanticPass {
             return nil
         case "titleformat":
             return .titleFormat(trimmed)
+        case "footer":
+            // %%footer is file-scoped and extracted directly in build(); silently accept here.
+            return nil
         default:
             return nil
         }
+    }
+
+    // Strips a single pair of surrounding double-quotes (e.g. `"text"` → `text`).
+    private func stripQuotes(_ s: String) -> String {
+        guard s.count >= 2, s.first == "\"", s.last == "\"" else { return s }
+        return String(s.dropFirst().dropLast())
     }
 
     // Parses an ABC v2.2 <logical> value: "0"/"false" → false, "1"/"true" → true.

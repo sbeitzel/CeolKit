@@ -114,8 +114,14 @@ private let quarterUNL = Fraction(numerator: 1, denominator: 4)
         let svgs = try emitter.emit(layout(systems: [system(measures: [emptyMeasure()])]))
         let svg = try #require(svgs.first)
         #expect(svg.contains("@font-face"))
-        #expect(svg.contains("font-family: 'Bravura'"))
+        #expect(svg.contains("font-family: \"Bravura\""))
         #expect(svg.contains("data:font/otf;base64,"))
+    }
+
+    @Test func defsContainsLibertinusSerifFontFace() throws {
+        let svgs = try emitter.emit(layout(systems: [system(measures: [emptyMeasure()])]))
+        let svg = try #require(svgs.first)
+        #expect(svg.contains("font-family: \"Libertinus Serif\""))
     }
 
     // MARK: Staff lines
@@ -386,14 +392,90 @@ private let quarterUNL = Fraction(numerator: 1, denominator: 4)
         let beamThick   = metadata.engravingDefaults.beamThickness * config.staffSize * 0.6
         let beamSpacing = metadata.engravingDefaults.beamSpacing   * config.staffSize * 0.6
         let beamStep    = beamThick + beamSpacing
-        let maxAllowedBeamY = topStaffY - beamStep  // bottom beam must be above this
-
-        // The top beam Y must be above maxAllowedBeamY - 2 * beamStep.
+        // The top beam Y must be above (topStaffY - beamStep) - 2 * beamStep.
         // Verify by checking the clamped beamY is above the staff.
         let b = SVGBuilder()
         let topBeamYStr = b.fmt(topStaffY - 3.0 * beamStep)
         // The SVG should contain a line at y = topStaffY - 3*beamStep (the clamped beam top).
         #expect(svg.contains("y1=\"\(topBeamYStr)\"") || svg.contains("y2=\"\(topBeamYStr)\""))
+    }
+
+    // MARK: Footer
+
+    @Test func footerRowsAreRenderedAsText() throws {
+        let footerItem = ResolvedTitleRow.Item(
+            text: "Page 1 of 1",
+            x: config.pageSize.width / 2.0,
+            baselineY: config.pageSize.height - config.margins.bottom,
+            anchor: .middle,
+            fontSize: config.staffSize * 1.4
+        )
+        let page = ResolvedPage(
+            systems: [system(measures: [emptyMeasure()])],
+            footerRows: [ResolvedTitleRow(items: [footerItem])]
+        )
+        let l = ResolvedLayout(
+            pageSize: Size(width: config.pageSize.width, height: config.pageSize.height),
+            margins: config.margins,
+            pages: [page]
+        )
+        let svg = try #require(try emitter.emit(l).first)
+        #expect(svg.contains("Page 1 of 1"))
+    }
+
+    @Test func footerRowsHaveFooterClass() throws {
+        let footerItem = ResolvedTitleRow.Item(
+            text: "Footer Text",
+            x: config.pageSize.width / 2.0,
+            baselineY: config.pageSize.height - config.margins.bottom,
+            anchor: .middle,
+            fontSize: config.staffSize * 1.4
+        )
+        let page = ResolvedPage(
+            systems: [system(measures: [emptyMeasure()])],
+            footerRows: [ResolvedTitleRow(items: [footerItem])]
+        )
+        let l = ResolvedLayout(
+            pageSize: Size(width: config.pageSize.width, height: config.pageSize.height),
+            margins: config.margins,
+            pages: [page]
+        )
+        let svg = try #require(try emitter.emit(l).first)
+        #expect(svg.contains("class=\"footer\""))
+    }
+
+    @Test func pageWithNoFooterRowsHasNoFooterClass() throws {
+        let page = ResolvedPage(systems: [system(measures: [emptyMeasure()])])
+        let l = ResolvedLayout(
+            pageSize: Size(width: config.pageSize.width, height: config.pageSize.height),
+            margins: config.margins,
+            pages: [page]
+        )
+        let svg = try #require(try emitter.emit(l).first)
+        #expect(!svg.contains("class=\"footer\""))
+    }
+
+    @Test func footerBaselineIsAtBottomMargin() throws {
+        let expectedY = config.pageSize.height - config.margins.bottom
+        let footerItem = ResolvedTitleRow.Item(
+            text: "Footer",
+            x: config.pageSize.width / 2.0,
+            baselineY: expectedY,
+            anchor: .middle,
+            fontSize: config.staffSize * 1.4
+        )
+        let page = ResolvedPage(
+            systems: [system(measures: [emptyMeasure()])],
+            footerRows: [ResolvedTitleRow(items: [footerItem])]
+        )
+        let l = ResolvedLayout(
+            pageSize: Size(width: config.pageSize.width, height: config.pageSize.height),
+            margins: config.margins,
+            pages: [page]
+        )
+        let svg = try #require(try emitter.emit(l).first)
+        let b = SVGBuilder()
+        #expect(svg.contains("y=\"\(b.fmt(expectedY))\""))
     }
 
     @Test func appoggiaturaHasNoSlashLine() throws {

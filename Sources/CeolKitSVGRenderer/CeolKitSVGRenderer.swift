@@ -1,5 +1,6 @@
 import CeolKitModel
 import CeolKitRenderer
+import Foundation
 
 /// Entry point for the SVG renderer.
 ///
@@ -88,7 +89,8 @@ public struct SVGRenderer: CeolKitRenderer {
 
         let emitter = SVGEmitter(config: effectiveConfig, metadata: metadata, stemDirection: stemDirection)
         let layout = engine.layout(allSystems, titleRows: titleRows, titleBlockHeight: titleBlockHeight)
-        return try emitter.emit(layout)
+        let finalLayout = attachFooters(layout, score: score, config: effectiveConfig)
+        return try emitter.emit(finalLayout)
     }
 
     // MARK: - Title block
@@ -112,9 +114,9 @@ public struct SVGRenderer: CeolKitRenderer {
         let resolved = TitleResolver(tune: tune).resolve(spec)
         guard !resolved.isEmpty else { return ([], 0) }
 
-        let lineHeight = config.staffSize * 2.5
-        let titleFontSize = config.staffSize * 2.0
-        let infoFontSize  = config.staffSize * 1.4
+        let lineHeight    = config.staffSize * 2.5
+        let titleFontSize = 18.0
+        let infoFontSize  = 12.0
 
         let leftX   = config.margins.left
         let centerX = config.pageSize.width / 2.0
@@ -126,18 +128,22 @@ public struct SVGRenderer: CeolKitRenderer {
             let fontSize = rowIndex == 0 ? titleFontSize : infoFontSize
             let baselineY = config.margins.top + lineHeight * Double(rowIndex + 1) - lineHeight * 0.25
 
+            let isItalic = rowIndex > 0
             var items: [ResolvedTitleRow.Item] = []
             if let text = row.left {
                 items.append(ResolvedTitleRow.Item(
-                    text: text, x: leftX, baselineY: baselineY, anchor: .start, fontSize: fontSize))
+                    text: text, x: leftX, baselineY: baselineY, anchor: .start,
+                    fontSize: fontSize, isItalic: isItalic))
             }
             if let text = row.center {
                 items.append(ResolvedTitleRow.Item(
-                    text: text, x: centerX, baselineY: baselineY, anchor: .middle, fontSize: fontSize))
+                    text: text, x: centerX, baselineY: baselineY, anchor: .middle,
+                    fontSize: fontSize, isItalic: isItalic))
             }
             if let text = row.right {
                 items.append(ResolvedTitleRow.Item(
-                    text: text, x: rightX, baselineY: baselineY, anchor: .end, fontSize: fontSize))
+                    text: text, x: rightX, baselineY: baselineY, anchor: .end,
+                    fontSize: fontSize, isItalic: isItalic))
             }
             if !items.isEmpty {
                 rows.append(ResolvedTitleRow(items: items))
@@ -146,6 +152,72 @@ public struct SVGRenderer: CeolKitRenderer {
 
         let totalHeight = lineHeight * Double(resolved.count) + config.staffSize
         return (rows, totalHeight)
+    }
+
+    // MARK: - Footer
+
+    private func attachFooters(_ layout: ResolvedLayout, score: Score, config: SVGRenderConfig) -> ResolvedLayout {
+        guard let template = score.footer, !template.isEmpty else { return layout }
+        let pageCount = layout.pages.count
+        let updatedPages = layout.pages.enumerated().map { pageIndex, page -> ResolvedPage in
+            let rows = buildFooterRows(template: template, pageNumber: pageIndex + 1,
+                                       pageCount: pageCount, score: score, config: config)
+            return ResolvedPage(systems: page.systems, titleRows: page.titleRows, footerRows: rows)
+        }
+        return ResolvedLayout(pageSize: layout.pageSize, margins: layout.margins, pages: updatedPages)
+    }
+
+    private func buildFooterRows(template: String, pageNumber: Int, pageCount: Int,
+                                  score: Score, config: SVGRenderConfig) -> [ResolvedTitleRow] {
+        let title   = score.tunes.first?.titles.first?.value ?? ""
+        let dateStr = Self.currentDateString()
+
+        var text = template
+            .replacing(/\$P/, with: String(pageNumber))
+            .replacing(/\$T/, with: title)
+            .replacing(/\$D/, with: dateStr)
+        text = text.replacing(/\\t/, with: "\t")
+
+        let parts     = text.components(separatedBy: "\t")
+        let fontSize  = 12.0
+        // Shift baseline up by the descender depth so the bottom of descenders (p, g, y, …)
+        // lands precisely at the bottom margin line, not below it.
+        let baselineY = config.pageSize.height - config.margins.bottom
+            - fontSize * LibertinusSerifMetrics.descenderRatio
+        let leftX     = config.margins.left
+        let centerX   = config.pageSize.width / 2.0
+        let rightX    = config.pageSize.width - config.margins.right
+
+        var items: [ResolvedTitleRow.Item] = []
+        switch parts.count {
+        case 1:
+            let t = parts[0].trimmingCharacters(in: .whitespaces)
+            if !t.isEmpty {
+                items.append(.init(text: t, x: centerX, baselineY: baselineY,
+                                   anchor: .middle, fontSize: fontSize))
+            }
+        case 2:
+            let l = parts[0].trimmingCharacters(in: .whitespaces)
+            let r = parts[1].trimmingCharacters(in: .whitespaces)
+            if !l.isEmpty { items.append(.init(text: l, x: leftX,  baselineY: baselineY, anchor: .start, fontSize: fontSize)) }
+            if !r.isEmpty { items.append(.init(text: r, x: rightX, baselineY: baselineY, anchor: .end,   fontSize: fontSize)) }
+        default:
+            let l = parts[0].trimmingCharacters(in: .whitespaces)
+            let c = parts[1].trimmingCharacters(in: .whitespaces)
+            let r = parts[2].trimmingCharacters(in: .whitespaces)
+            if !l.isEmpty { items.append(.init(text: l, x: leftX,   baselineY: baselineY, anchor: .start,  fontSize: fontSize)) }
+            if !c.isEmpty { items.append(.init(text: c, x: centerX, baselineY: baselineY, anchor: .middle, fontSize: fontSize)) }
+            if !r.isEmpty { items.append(.init(text: r, x: rightX,  baselineY: baselineY, anchor: .end,    fontSize: fontSize)) }
+        }
+
+        return items.isEmpty ? [] : [ResolvedTitleRow(items: items)]
+    }
+
+    private static func currentDateString() -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .none
+        return formatter.string(from: Date())
     }
 
     // MARK: - Score directive application

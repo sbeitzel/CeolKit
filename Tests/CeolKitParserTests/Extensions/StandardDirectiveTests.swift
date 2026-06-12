@@ -245,4 +245,74 @@ struct StandardDirectiveTests {
             Issue.record("Expected .tuneGlobal scope, got \(d.scope)")
         }
     }
+
+    // MARK: %%footer
+
+    @Test("%%footer in preamble with quotes stores stripped value")
+    func footerPreambleQuoted() {
+        let abc = "%%footer \"        Generated: $D\"\nX:1\nT:T\nM:4/4\nL:1/4\nK:C\nC|"
+        let result = parse(abc)
+        #expect(result.score.footer == "        Generated: $D")
+    }
+
+    @Test("%%footer in preamble without quotes stores trimmed value")
+    func footerPreambleUnquoted() {
+        let abc = "%%footer Page $P\nX:1\nT:T\nM:4/4\nL:1/4\nK:C\nC|"
+        let result = parse(abc)
+        #expect(result.score.footer == "Page $P")
+    }
+
+    @Test("No %%footer directive leaves score.footer nil")
+    func footerAbsent() {
+        let abc = "X:1\nT:T\nM:4/4\nL:1/4\nK:C\nC|"
+        let result = parse(abc)
+        #expect(result.score.footer == nil)
+    }
+
+    @Test("%%footer in tune header is accepted without unknownDirective diagnostic")
+    func footerTuneHeaderNoWarning() {
+        let abc = "X:1\nT:T\n%%footer \"footer text\"\nM:4/4\nL:1/4\nK:C\nC|"
+        let result = parse(abc)
+        let unknown = result.score.diagnostics.filter { $0.code == .unknownDirective }
+        #expect(unknown.isEmpty)
+    }
+
+    @Test("%%footer in tune body is accepted without unknownDirective diagnostic")
+    func footerTuneBodyNoWarning() {
+        let abc = "X:1\nT:T\nM:4/4\nL:1/4\nK:C\n%%footer \"footer text\"\nC|"
+        let result = parse(abc)
+        let unknown = result.score.diagnostics.filter { $0.code == .unknownDirective }
+        #expect(unknown.isEmpty)
+    }
+
+    @Test("Last %%footer wins across preamble and tune headers")
+    func footerLastWins() {
+        let abc = """
+        %%footer "first"
+        X:1
+        T:Tune 1
+        %%footer "second"
+        M:4/4
+        L:1/4
+        K:C
+        CDEF|
+
+        X:2
+        T:Tune 2
+        %%footer "third"
+        M:4/4
+        L:1/4
+        K:G
+        GABC|
+        """
+        let result = parse(abc)
+        #expect(result.score.footer == "third")
+    }
+
+    @Test("%%footer with \\t column separators is stored verbatim")
+    func footerColumnSeparatorsVerbatim() {
+        let abc = "%%footer \"left\\tcenter\\tright\"\nX:1\nT:T\nM:4/4\nL:1/4\nK:C\nC|"
+        let result = parse(abc)
+        #expect(result.score.footer == "left\\tcenter\\tright")
+    }
 }

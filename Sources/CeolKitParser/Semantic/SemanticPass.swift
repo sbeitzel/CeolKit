@@ -544,6 +544,14 @@ struct SemanticPass {
             ctx.applyLyrics(tokens)
         case .userSymbol(let ch, let dec, _):
             ctx.userSymbols[ch] = dec
+        case .instruction(let t)
+            where t.value.trimmingCharacters(in: .whitespaces).lowercased().hasPrefix("abc-include"):
+            diagnostics.append(Diagnostic(
+                severity: .warning,
+                code: .includeIgnoredInline,
+                message: "I:abc-include has no effect as an inline field",
+                source: source
+            ))
         case .unknown(let code, let payload, let src) where String(code) == "%":
             // Body-level directive stored by ABCFileBuilder as .unknown(code:"%", payload:"name payload")
             let parts = payload.split(separator: " ", maxSplits: 1)

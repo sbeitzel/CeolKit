@@ -45,7 +45,11 @@ public protocol ABCParser {
 }
 
 public struct CeolKitParser: ABCParser {
-    public init() {}
+    let baseDir: URL?
+
+    public init(for baseDir: URL? = nil) {
+        self.baseDir = baseDir
+    }
 
     public func parse(_ source: String, options: ParseOptions) -> ParseResult {
         parse(source, options: options, dialectHint: nil)
@@ -55,7 +59,9 @@ public struct CeolKitParser: ABCParser {
         let src = Source(content: source, fileName: nil)
         let classifier = LineClassifier(source: src, dialectHint: dialectHint)
         let lines = classifier.classify()
-        let builder = ABCFileBuilder(lines: lines, options: options)
+        let expander = IncludeExpander(baseDir: baseDir, options: options, dialectHint: dialectHint)
+        let (expandedLines, includeDiags) = expander.expand(lines)
+        let builder = ABCFileBuilder(lines: expandedLines, options: options, preDiagnostics: includeDiags)
         let abcFile = builder.build()
         let pass = SemanticPass(file: abcFile, options: options, dialectHint: dialectHint)
         let (score, diagnostics) = pass.build()

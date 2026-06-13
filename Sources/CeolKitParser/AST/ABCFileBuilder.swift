@@ -3,12 +3,19 @@ import CeolKitModel
 struct ABCFileBuilder {
     let lines: [LogicalLine]
     let options: ParseOptions
+    let preDiagnostics: [Diagnostic]
+
+    init(lines: [LogicalLine], options: ParseOptions, preDiagnostics: [Diagnostic] = []) {
+        self.lines = lines
+        self.options = options
+        self.preDiagnostics = preDiagnostics
+    }
 
     func build() -> ABCFile {
         var versionLine: String? = nil
         var filePreamble: [LogicalLine] = []
         var tunes: [ABCTune] = []
-        var diagnostics: [Diagnostic] = []
+        var diagnostics = preDiagnostics
 
         var tuneHeader: [InformationField] = []
         var tuneDirectives: [(name: String, payload: String, source: SourceRange)] = []

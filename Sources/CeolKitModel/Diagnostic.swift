@@ -50,4 +50,9 @@ public enum DiagnosticCode: String, Codable, Sendable {
     case redundantDirective
     // Field keys
     case unknownKey
+    // Include directive
+    case includeNoBaseDirectory
+    case includeFileNotFound
+    case circularInclude
+    case includeIgnoredInline
 }

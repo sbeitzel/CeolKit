@@ -333,6 +333,140 @@ struct StyleTests {
                 "Title text bottom (baseline Y=\(titleMaxY)) must be strictly above the topmost music element (Y=\(lineMinY))")
     }
 
+    // MARK: - %%straightflags
+
+    // Count <line> elements in an SVG string.
+    private func lineCount(in svg: String) -> Int {
+        svg.components(separatedBy: "<line ").count - 1
+    }
+
+    @Test func straightFlagsFalseUsesCurvedFlagGlyphs() throws {
+        // %%straightflags false (default): curved flag glyph present, no extra line elements.
+        // G (G4, staffPos=2) produces a stem-up note, so flag8thUp is exercised.
+        let abc = """
+        %%straightflags false
+        X:1
+        T:T
+        M:4/4
+        L:1/8
+        K:C
+        G|
+        """
+        let s = parse(abc).score
+        let pages = try SVGRenderer().render(s)
+        let svg = try #require(pages.first)
+        #expect(svg.contains(String(SMuFLGlyph.flag8thUp.character)),
+                "curved flag glyph should appear with %%straightflags false")
+    }
+
+    @Test func straightFlagsTrueUsesSVGLines() throws {
+        // %%straightflags true: no curved flag glyph; instead one extra <line> per flag.
+        // Using a 16th note (two flags) to verify both flags are drawn as lines.
+        // G (G4, staffPos=2) → stem up, L:1/16 → 16th note (absDur=0.0625).
+        let abcStraight = """
+        %%straightflags true
+        X:1
+        T:T
+        M:4/4
+        L:1/16
+        K:C
+        G|
+        """
+        let abcCurved = """
+        %%straightflags false
+        X:1
+        T:T
+        M:4/4
+        L:1/16
+        K:C
+        G|
+        """
+        let svgStraight = try #require(try SVGRenderer().render(parse(abcStraight).score).first)
+        let svgCurved   = try #require(try SVGRenderer().render(parse(abcCurved).score).first)
+
+        // Curved flag should be absent when straight flags are active.
+        #expect(!svgStraight.contains(String(SMuFLGlyph.flag16thUp.character)),
+                "curved 16th flag glyph should not appear with %%straightflags true")
+
+        // Straight mode draws each flag as a <line>; two flags add two extra lines vs. curved.
+        let extraLines = lineCount(in: svgStraight) - lineCount(in: svgCurved)
+        #expect(extraLines == 2, "expected 2 extra <line> elements for a 16th note with %%straightflags true, got \(extraLines)")
+    }
+
+    @Test func straightFlagsTrueAppliesToSingleGraceNoteFlag() throws {
+        // A single grace note gets a 32nd-note flag (3 lines); %%straightflags true must
+        // replace the curved glyph with line elements.
+        let abcStraight = """
+        %%straightflags true
+        X:1
+        T:T
+        M:4/4
+        L:1/4
+        K:C
+        {G}C|
+        """
+        let abcCurved = """
+        %%straightflags false
+        X:1
+        T:T
+        M:4/4
+        L:1/4
+        K:C
+        {G}C|
+        """
+        let svgStraight = try #require(try SVGRenderer().render(parse(abcStraight).score).first)
+        let svgCurved   = try #require(try SVGRenderer().render(parse(abcCurved).score).first)
+
+        // Curved 32nd-flag glyph must be absent in straight mode.
+        #expect(!svgStraight.contains(String(SMuFLGlyph.flag32ndUp.character)),
+                "curved 32nd flag glyph should not appear with %%straightflags true")
+        // Curved mode keeps the glyph.
+        #expect(svgCurved.contains(String(SMuFLGlyph.flag32ndUp.character)),
+                "curved 32nd flag glyph should appear with %%straightflags false")
+
+        // 3 extra <line> elements for the 3-flag 32nd grace note.
+        let extraLines = lineCount(in: svgStraight) - lineCount(in: svgCurved)
+        #expect(extraLines == 3, "expected 3 extra <line> elements for straight 32nd grace flag, got \(extraLines)")
+    }
+
+    // MARK: - %%graceslurs
+
+    @Test func graceSlurstDirectiveRendersWithoutError() throws {
+        // %%graceslurs is accepted; grace slur rendering is deferred but the tune must still render.
+        let abc = """
+        %%graceslurs false
+        X:1
+        T:T
+        M:4/4
+        L:1/4
+        K:C
+        {G}C|
+        """
+        let s = parse(abc).score
+        let pages = try SVGRenderer().render(s)
+        #expect(!pages.isEmpty)
+    }
+
+    @Test func graceSlursDirectiveSetsConfigValue() throws {
+        let renderer = SVGRenderer()
+        let abcFalse = "%%graceslurs false\nX:1\nT:T\nM:4/4\nL:1/4\nK:C\nC|"
+        let abcTrue  = "%%graceslurs true\nX:1\nT:T\nM:4/4\nL:1/4\nK:C\nC|"
+        let scoreFalse = parse(abcFalse).score
+        let scoreTrue  = parse(abcTrue).score
+        // Verify the directive parsed to the expected value on the tune.
+        let valFalse = scoreFalse.tunes.first?.directives.compactMap { s -> Bool? in
+            if case .graceSlurs(let v) = s.directive { return v }; return nil
+        }.last
+        let valTrue = scoreTrue.tunes.first?.directives.compactMap { s -> Bool? in
+            if case .graceSlurs(let v) = s.directive { return v }; return nil
+        }.last
+        #expect(valFalse == false)
+        #expect(valTrue  == true)
+        // Both tunes must still render without error.
+        #expect(try !renderer.render(scoreFalse).isEmpty)
+        #expect(try !renderer.render(scoreTrue).isEmpty)
+    }
+
     // MARK: - %%dateformat
 
     @Test func dateFormatDirectiveFormatsDateInFooter() throws {

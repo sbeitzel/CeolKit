@@ -134,6 +134,7 @@ struct SemanticPass {
     private func isStandardDirective(_ name: String) -> Bool {
         name == "landscape" || name == "flatbeams" || name == "titleformat"
             || name == "dateformat" || name == "footer"
+            || name == "straightflags" || name == "graceslurs"
     }
 
     // MARK: - Tune builder
@@ -580,7 +581,8 @@ struct SemanticPass {
                     source: source
                 ))
             }
-        case "landscape", "flatbeams", "ceolkit:justifylast", "titleformat", "dateformat", "footer":
+        case "landscape", "flatbeams", "ceolkit:justifylast", "titleformat", "dateformat", "footer",
+             "straightflags", "graceslurs":
             var tempDiags: [Diagnostic] = []
             if let d = parseCeolKitDirective(name: name, payload: payload, source: source, diagnostics: &tempDiags) {
                 ctx.bodyTuneDirectives.append(CeolKitDirectiveScope(directive: d, scope: .tuneGlobal, source: source))
@@ -875,6 +877,16 @@ struct SemanticPass {
             return .titleFormat(trimmed)
         case "dateformat":
             return .dateFormat(stripQuotes(trimmed))
+        case "straightflags":
+            if let value = parseLogical(trimmed) { return .straightFlags(value) }
+            diagnostics.append(Diagnostic(severity: .warning, code: .unknownDirective,
+                message: "%%straightflags expects '0'/'false' or '1'/'true'", source: source))
+            return nil
+        case "graceslurs":
+            if let value = parseLogical(trimmed) { return .graceSlurs(value) }
+            diagnostics.append(Diagnostic(severity: .warning, code: .unknownDirective,
+                message: "%%graceslurs expects '0'/'false' or '1'/'true'", source: source))
+            return nil
         case "footer":
             // %%footer is file-scoped and extracted directly in build(); silently accept here.
             return nil

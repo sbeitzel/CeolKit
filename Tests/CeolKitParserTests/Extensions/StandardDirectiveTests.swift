@@ -366,4 +366,106 @@ struct StandardDirectiveTests {
         let unknown = result.score.diagnostics.filter { $0.code == .unknownDirective }
         #expect(unknown.isEmpty)
     }
+
+    // MARK: %%straightflags
+
+    @Test("%%straightflags true attaches straightFlags(true) at tune scope")
+    func straightFlagsTruePreamble() {
+        let abc = "%%straightflags true\nX:1\nT:T\nM:4/4\nL:1/4\nK:C\nC|"
+        let result = parse(abc)
+        let directive = result.score.tunes.flatMap(\.directives).first {
+            if case .straightFlags = $0.directive { return true }
+            return false
+        }
+        #expect(directive != nil)
+        if case .straightFlags(let on) = directive?.directive {
+            #expect(on == true)
+        }
+    }
+
+    @Test("%%straightflags false attaches straightFlags(false) at tune scope")
+    func straightFlagsFalsePreamble() {
+        let abc = "%%straightflags false\nX:1\nT:T\nM:4/4\nL:1/4\nK:C\nC|"
+        let result = parse(abc)
+        let directive = result.score.tunes.flatMap(\.directives).first {
+            if case .straightFlags = $0.directive { return true }
+            return false
+        }
+        #expect(directive != nil)
+        if case .straightFlags(let on) = directive?.directive {
+            #expect(on == false)
+        }
+    }
+
+    @Test("%%straightflags does not emit unknownDirective warning")
+    func straightFlagsNoUnknownWarning() {
+        let abc = "%%straightflags false\nX:1\nT:T\nM:4/4\nL:1/4\nK:C\nC|"
+        let result = parse(abc)
+        let unknownWarnings = result.score.diagnostics.filter { $0.code == .unknownDirective }
+        #expect(unknownWarnings.isEmpty)
+    }
+
+    @Test("%%straightflags with invalid value emits warning and drops directive")
+    func straightFlagsInvalidValueWarning() {
+        let abc = "%%straightflags yes\nX:1\nT:T\nM:4/4\nL:1/4\nK:C\nC|"
+        let result = parse(abc)
+        let warnings = result.score.diagnostics.filter { $0.code == .unknownDirective }
+        #expect(!warnings.isEmpty)
+        let hasStraightFlags = result.score.tunes.flatMap(\.directives).contains {
+            if case .straightFlags = $0.directive { return true }
+            return false
+        }
+        #expect(!hasStraightFlags)
+    }
+
+    // MARK: %%graceslurs
+
+    @Test("%%graceslurs true attaches graceSlurs(true) at tune scope")
+    func graceSlursTruePreamble() {
+        let abc = "%%graceslurs true\nX:1\nT:T\nM:4/4\nL:1/4\nK:C\nC|"
+        let result = parse(abc)
+        let directive = result.score.tunes.flatMap(\.directives).first {
+            if case .graceSlurs = $0.directive { return true }
+            return false
+        }
+        #expect(directive != nil)
+        if case .graceSlurs(let on) = directive?.directive {
+            #expect(on == true)
+        }
+    }
+
+    @Test("%%graceslurs false attaches graceSlurs(false) at tune scope")
+    func graceSlursFalsePreamble() {
+        let abc = "%%graceslurs false\nX:1\nT:T\nM:4/4\nL:1/4\nK:C\nC|"
+        let result = parse(abc)
+        let directive = result.score.tunes.flatMap(\.directives).first {
+            if case .graceSlurs = $0.directive { return true }
+            return false
+        }
+        #expect(directive != nil)
+        if case .graceSlurs(let on) = directive?.directive {
+            #expect(on == false)
+        }
+    }
+
+    @Test("%%graceslurs does not emit unknownDirective warning")
+    func graceSlursNoUnknownWarning() {
+        let abc = "%%graceslurs false\nX:1\nT:T\nM:4/4\nL:1/4\nK:C\nC|"
+        let result = parse(abc)
+        let unknownWarnings = result.score.diagnostics.filter { $0.code == .unknownDirective }
+        #expect(unknownWarnings.isEmpty)
+    }
+
+    @Test("%%graceslurs with invalid value emits warning and drops directive")
+    func graceSlursInvalidValueWarning() {
+        let abc = "%%graceslurs yes\nX:1\nT:T\nM:4/4\nL:1/4\nK:C\nC|"
+        let result = parse(abc)
+        let warnings = result.score.diagnostics.filter { $0.code == .unknownDirective }
+        #expect(!warnings.isEmpty)
+        let hasGraceSlurs = result.score.tunes.flatMap(\.directives).contains {
+            if case .graceSlurs = $0.directive { return true }
+            return false
+        }
+        #expect(!hasGraceSlurs)
+    }
 }

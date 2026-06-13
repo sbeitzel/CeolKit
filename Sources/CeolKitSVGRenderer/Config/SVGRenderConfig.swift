@@ -6,19 +6,25 @@ public struct SVGRenderConfig: Sendable {
     public var staffSize: Double
     public var systemGap: Double
     public var justifyLastSystem: Bool
+    public var straightFlags: Bool
+    public var graceSlurs: Bool
 
     public init(
         pageSize: PageSize = .letter,
         margins: EdgeInsets = EdgeInsets(top: 36, bottom: 36, left: 36, right: 36),
         staffSize: Double = 4.5,
         systemGap: Double? = nil,
-        justifyLastSystem: Bool = false
+        justifyLastSystem: Bool = false,
+        straightFlags: Bool = false,
+        graceSlurs: Bool = true
     ) {
         self.pageSize = pageSize
         self.margins = margins
         self.staffSize = staffSize
         self.systemGap = systemGap ?? staffSize * 8
         self.justifyLastSystem = justifyLastSystem
+        self.straightFlags = straightFlags
+        self.graceSlurs = graceSlurs
     }
 }
 

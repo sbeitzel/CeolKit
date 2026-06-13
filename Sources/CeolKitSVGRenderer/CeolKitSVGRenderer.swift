@@ -249,8 +249,15 @@ public struct SVGRenderer: CeolKitRenderer {
     private func applyingScoreDirectives(_ score: Score) -> SVGRenderConfig {
         var effective = config
         for scope in score.tunes.first?.directives ?? [] {
-            if case .landscape(let on) = scope.directive {
+            switch scope.directive {
+            case .landscape(let on):
                 effective.pageSize = on ? config.pageSize.landscape : config.pageSize
+            case .straightFlags(let on):
+                effective.straightFlags = on
+            case .graceSlurs(let on):
+                effective.graceSlurs = on
+            default:
+                break
             }
         }
         return effective

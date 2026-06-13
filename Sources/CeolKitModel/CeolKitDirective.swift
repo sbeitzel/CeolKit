@@ -16,6 +16,8 @@ public enum CeolKitDirective: Hashable, Sendable {
     case justifyLast(Bool)             // %%ceolkit:justifylast true|false
     case titleFormat(String)           // %%titleformat <format-string>  (abcm2ps/abc2svg)
     case dateFormat(String)            // %%dateformat <strftime-string>  (abcm2ps/abc2svg)
+    case straightFlags(Bool)           // %%straightflags bool  (abcm2ps/abc2svg)
+    case graceSlurs(Bool)              // %%graceslurs bool      (abcm2ps/abc2svg)
 }
 
 public struct CeolKitDirectiveScope: Sendable {

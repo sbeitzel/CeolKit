@@ -602,11 +602,16 @@ struct SVGEmitter: Sendable {
 
         // Flags (only for un-beamed notes shorter than a quarter)
         if absDur < 0.25 && beamState == .single {
-            let flagY    = stemUp ? stemTop : stemBottom
-            let fontSize = 4.0 * config.staffSize
-            let flag     = flagGlyph(absDur: absDur, stemUp: stemUp)
-            builder.text(String(flag.character), x: stemX, y: flagY,
-                         fontFamily: "Bravura", fontSize: fontSize)
+            let flagY = stemUp ? stemTop : stemBottom
+            if config.straightFlags {
+                emitStraightFlags(stemX: stemX, flagTipY: flagY, absDur: absDur, stemUp: stemUp,
+                                  builder: &builder)
+            } else {
+                let fontSize = 4.0 * config.staffSize
+                let flag     = flagGlyph(absDur: absDur, stemUp: stemUp)
+                builder.text(String(flag.character), x: stemX, y: flagY,
+                             fontFamily: "Bravura", fontSize: fontSize)
+            }
         }
 
         return StemInfo(stemX: stemX, stemTipY: stemUp ? stemTop : stemBottom, stemUp: stemUp,
@@ -709,10 +714,15 @@ struct SVGEmitter: Sendable {
             builder.line(x1: pos.stemX, y1: beamY, x2: pos.stemX, y2: pos.noteheadY,
                          stroke: "black", strokeWidth: stemThick)
 
-            // Single grace note gets a 32nd-note flag (three flags)
+            // Single grace note gets a 32nd-note flag (three flags); grace stems always point up.
             if !multiple {
-                builder.text(String(SMuFLGlyph.flag32ndUp.character), x: pos.stemX, y: beamY,
-                             fontFamily: "Bravura", fontSize: fontSize)
+                if config.straightFlags {
+                    emitStraightFlags(stemX: pos.stemX, flagTipY: beamY, absDur: 0.03125,
+                                      stemUp: true, scale: graceScale, builder: &builder)
+                } else {
+                    builder.text(String(SMuFLGlyph.flag32ndUp.character), x: pos.stemX, y: beamY,
+                                 fontFamily: "Bravura", fontSize: fontSize)
+                }
             }
 
             emitLedgerLines(staffPos: pos.staffPos, x: pos.x, bottomStaffY: bottomStaffY,
@@ -810,9 +820,29 @@ struct SVGEmitter: Sendable {
     }
 
     private func flagGlyph(absDur: Double, stemUp: Bool) -> SMuFLGlyph {
-        if absDur >= 0.125 { return stemUp ? .flag8thUp  : .flag8thDown  }
+        if absDur >= 0.125  { return stemUp ? .flag8thUp  : .flag8thDown  }
         if absDur >= 0.0625 { return stemUp ? .flag16thUp : .flag16thDown }
         return stemUp ? .flag32ndUp : .flag32ndDown
+    }
+
+    /// Draws straight flags as SVG lines using Bravura metadata proportions.
+    /// Geometry (in staff spaces): flag width=0.96, first-flag height=1.42, spacing=0.80.
+    private func emitStraightFlags(stemX: Double, flagTipY: Double, absDur: Double,
+                                    stemUp: Bool, scale: Double = 1.0, builder: inout SVGBuilder) {
+        let s         = config.staffSize * scale
+        let flagCount = absDur >= 0.125 ? 1 : absDur >= 0.0625 ? 2 : 3
+        let width     = 0.96 * s
+        let height    = 1.42 * s
+        let spacing   = 0.80 * s
+        let thick     = metadata.engravingDefaults.stemThickness * s * 2.0
+
+        for i in 0..<flagCount {
+            let offset = Double(i) * spacing
+            let y1 = stemUp ? flagTipY + offset         : flagTipY - offset
+            let y2 = stemUp ? flagTipY + offset + height : flagTipY - offset - height
+            builder.line(x1: stemX, y1: y1, x2: stemX + width, y2: y2,
+                         stroke: "black", strokeWidth: thick)
+        }
     }
 
     private func accidentalGlyph(for alt: Alteration) -> SMuFLGlyph? {

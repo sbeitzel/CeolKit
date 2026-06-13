@@ -15,6 +15,7 @@ public enum CeolKitDirective: Hashable, Sendable {
     case flatBeams(Bool)               // %%flatbeams true|false  (abcm2ps; implicit in pipeFormat)
     case justifyLast(Bool)             // %%ceolkit:justifylast true|false
     case titleFormat(String)           // %%titleformat <format-string>  (abcm2ps/abc2svg)
+    case dateFormat(String)            // %%dateformat <strftime-string>  (abcm2ps/abc2svg)
 }
 
 public struct CeolKitDirectiveScope: Sendable {

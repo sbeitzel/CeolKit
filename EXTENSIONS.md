@@ -5,6 +5,21 @@ which are not part of the ABC v2.2 [standard](https://abcnotation.com/wiki/abc:s
 
 ---
 
+## `%%ceolkit:justifylast`
+
+**Syntax:** `%%ceolkit:justifylast <true|false>`
+
+**Type:** boolean (`true` or `false`; case-insensitive)
+**Default:** `false`
+
+### Description
+
+The default way to render a tune is not to justify the last line, leaving it ragged.
+This setting, when `true`, forces the last line to be justified so that it spans the
+whole width.
+
+---
+
 ## `%%ceolkit:pipeformat`
 
 **Syntax:** `%%ceolkit:pipeformat <true|false>`

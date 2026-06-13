@@ -315,4 +315,55 @@ struct StandardDirectiveTests {
         let result = parse(abc)
         #expect(result.score.footer == "left\\tcenter\\tright")
     }
+
+    // MARK: %%dateformat
+
+    @Test("%%dateformat does not emit unknownDirective warning")
+    func dateFormatNoUnknownWarning() {
+        let abc = "%%dateformat \"%e %B %Y %H:%M\"\nX:1\nT:T\nM:4/4\nL:1/4\nK:C\nC|"
+        let result = parse(abc)
+        let unknownWarnings = result.score.diagnostics.filter { $0.code == .unknownDirective }
+        #expect(unknownWarnings.isEmpty)
+    }
+
+    @Test("%%dateformat quoted value strips outer quotes")
+    func dateFormatQuotedStripsQuotes() {
+        let abc = "%%dateformat \"%e %B %Y %H:%M\"\nX:1\nT:T\nM:4/4\nL:1/4\nK:C\nC|"
+        let result = parse(abc)
+        let directive = result.score.tunes.flatMap(\.directives).first {
+            if case .dateFormat = $0.directive { return true }
+            return false
+        }
+        #expect(directive != nil)
+        if case .dateFormat(let fmt) = directive?.directive {
+            #expect(fmt == "%e %B %Y %H:%M")
+        }
+    }
+
+    @Test("%%dateformat in preamble attaches dateFormat at tune scope")
+    func dateFormatPreambleTuneScope() {
+        let abc = "%%dateformat \"%Y-%m-%d\"\nX:1\nT:T\nM:4/4\nL:1/4\nK:C\nC|"
+        let result = parse(abc)
+        let directive = result.score.tunes.flatMap(\.directives).first {
+            if case .dateFormat = $0.directive { return true }
+            return false
+        }
+        guard let d = directive else {
+            Issue.record("Expected dateFormat directive")
+            return
+        }
+        if case .tuneGlobal = d.scope {
+            // expected
+        } else {
+            Issue.record("Expected .tuneGlobal scope, got \(d.scope)")
+        }
+    }
+
+    @Test("%%dateformat in tune body is accepted without unknownDirective diagnostic")
+    func dateFormatTuneBodyNoWarning() {
+        let abc = "X:1\nT:T\nM:4/4\nL:1/4\nK:C\n%%dateformat \"%Y-%m-%d\"\nC|"
+        let result = parse(abc)
+        let unknown = result.score.diagnostics.filter { $0.code == .unknownDirective }
+        #expect(unknown.isEmpty)
+    }
 }

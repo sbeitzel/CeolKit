@@ -7,6 +7,7 @@
 
 import CeolKitModel
 import CeolKitParser
+import Foundation
 import Testing
 @testable import CeolKitSVGRenderer
 
@@ -330,6 +331,60 @@ struct StyleTests {
         let titleMaxY = titleYValues.max()!
         #expect(titleMaxY < lineMinY,
                 "Title text bottom (baseline Y=\(titleMaxY)) must be strictly above the topmost music element (Y=\(lineMinY))")
+    }
+
+    // MARK: - %%dateformat
+
+    @Test func dateFormatDirectiveFormatsDateInFooter() throws {
+        // %%dateformat "%Y" produces only the 4-digit year; verify it appears in the rendered SVG.
+        let abc = """
+        %%dateformat "%Y"
+        %%footer "$D"
+        X:1
+        T:Test
+        M:4/4
+        L:1/4
+        K:C
+        CDEF|
+        """
+        let score = parse(abc).score
+        let pages = try SVGRenderer().render(score)
+        let combined = pages.joined()
+        let currentYear = String(Calendar.current.component(.year, from: Date()))
+        #expect(combined.contains(currentYear),
+                "Footer should contain the current year '\(currentYear)' when %%dateformat is \"%Y\"")
+    }
+
+    @Test func dateFormatWithEscapedPercentsIsHandled() throws {
+        // abc2svg style: \%Y instead of %Y (unquoted form).
+        // The parser stores the raw payload; the renderer must unescape \% → % before strftime.
+        let abc = "%%dateformat \\%Y\n%%footer \"$D\"\nX:1\nT:T\nM:4/4\nL:1/4\nK:C\nC|"
+        let score = parse(abc).score
+        let pages = try SVGRenderer().render(score)
+        let combined = pages.joined()
+        let currentYear = String(Calendar.current.component(.year, from: Date()))
+        #expect(combined.contains(currentYear),
+                "Footer should contain the current year when %%dateformat uses \\%Y escape syntax")
+    }
+
+    @Test func dollarDLowercaseUsesDateFormat() throws {
+        // $d (lowercase) should expand with %%dateformat just like $D.
+        let abc = """
+        %%dateformat "%Y"
+        %%footer "$d"
+        X:1
+        T:T
+        M:4/4
+        L:1/4
+        K:C
+        C|
+        """
+        let score = parse(abc).score
+        let pages = try SVGRenderer().render(score)
+        let combined = pages.joined()
+        let currentYear = String(Calendar.current.component(.year, from: Date()))
+        #expect(combined.contains(currentYear),
+                "$d placeholder should be expanded using %%dateformat")
     }
 
     // Without %%ceolkit:justifylast (or with false) the last system stays at its

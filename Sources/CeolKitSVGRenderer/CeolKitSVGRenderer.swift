@@ -158,24 +158,32 @@ public struct SVGRenderer: CeolKitRenderer {
 
     private func attachFooters(_ layout: ResolvedLayout, score: Score, config: SVGRenderConfig) -> ResolvedLayout {
         guard let template = score.footer, !template.isEmpty else { return layout }
+        // Find the last %%dateformat directive (last-wins across preamble and tune header).
+        let dateFormat = score.tunes.first?.directives.compactMap { scope -> String? in
+            if case .dateFormat(let fmt) = scope.directive { return fmt }
+            return nil
+        }.last
         let pageCount = layout.pages.count
         let updatedPages = layout.pages.enumerated().map { pageIndex, page -> ResolvedPage in
             let rows = buildFooterRows(template: template, pageNumber: pageIndex + 1,
-                                       pageCount: pageCount, score: score, config: config)
+                                       pageCount: pageCount, score: score, config: config,
+                                       dateFormat: dateFormat)
             return ResolvedPage(systems: page.systems, titleRows: page.titleRows, footerRows: rows)
         }
         return ResolvedLayout(pageSize: layout.pageSize, margins: layout.margins, pages: updatedPages)
     }
 
     private func buildFooterRows(template: String, pageNumber: Int, pageCount: Int,
-                                  score: Score, config: SVGRenderConfig) -> [ResolvedTitleRow] {
+                                  score: Score, config: SVGRenderConfig,
+                                  dateFormat: String? = nil) -> [ResolvedTitleRow] {
         let title   = score.tunes.first?.titles.first?.value ?? ""
-        let dateStr = Self.currentDateString()
+        let dateStr = Self.currentDateString(format: dateFormat)
 
         var text = template
             .replacing(/\$P/, with: String(pageNumber))
             .replacing(/\$T/, with: title)
             .replacing(/\$D/, with: dateStr)
+            .replacing(/\$d/, with: dateStr)
         text = text.replacing(/\\t/, with: "\t")
 
         let parts     = text.components(separatedBy: "\t")
@@ -213,11 +221,23 @@ public struct SVGRenderer: CeolKitRenderer {
         return items.isEmpty ? [] : [ResolvedTitleRow(items: items)]
     }
 
-    private static func currentDateString() -> String {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .none
-        return formatter.string(from: Date())
+    private static func currentDateString(format: String? = nil, date: Date = Date()) -> String {
+        guard let fmt = format else {
+            let formatter = DateFormatter()
+            formatter.dateStyle = .medium
+            formatter.timeStyle = .none
+            return formatter.string(from: date)
+        }
+        // Unescape \% → % (abc2svg always requires \%; abcm2ps requires it when value is unquoted).
+        // The parser strips outer double-quotes, so a quoted value arrives without \% escaping.
+        // Doing the unescape unconditionally is safe: it's a no-op when \% is absent.
+        let unescaped = fmt.replacing(/\\%/, with: "%")
+        var t = time_t(date.timeIntervalSince1970)
+        var tmStruct = tm()
+        localtime_r(&t, &tmStruct)
+        var buffer = [CChar](repeating: 0, count: 256)
+        strftime(&buffer, buffer.count, unescaped, &tmStruct)
+        return buffer.withUnsafeBufferPointer { String(cString: $0.baseAddress!) }
     }
 
     // MARK: - Score directive application

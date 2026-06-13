@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-CeolKit is a Swift library for parsing [ABC music notation](https://abcnotation.com/wiki/abc:standard:v2.2) (v2.2) into a structured, typed Swift domain model. The spec lives in `ABCParser-Spec.md`. The codebase is pre-implementation; the spec is authoritative.
+CeolKit is a Swift library for parsing [ABC music notation](https://abcnotation.com/wiki/abc:standard:v2.2) (v2.2) into a structured, typed Swift domain model.
 
 ## Architecture
 
@@ -71,10 +71,11 @@ The parser **always returns a `Score`**, even on error. Every stage has a recove
 `Note` carries both `writtenAccidental` (what was in the ABC source) and `displayedAccidental` (what a renderer should draw after key signature and intra-bar accidental memory). These differ, e.g., for the second `c` after `^c` in C major.
 
 ### CeolKit extensions
-Three `%%ceolkit:*` directives are first-class model members:
+Four `%%ceolkit:*` directives are first-class model members:
 - `%%ceolkit:pipeformat true|false`
 - `%%ceolkit:pagenumber N`
 - `%%ceolkit:stemalignment N`
+- `%%ceolkit:justifylast true|false`
 
 All are represented in `CeolKitDirective` (an enum, not a string map) with an `.unknown(name:payload:)` case for forward compatibility. They attach to a `Scope` (`.fileGlobal`, `.tuneGlobal`, `.voiceLocal(VoiceId)`).
 
@@ -91,12 +92,5 @@ Dialect is fixed after stage 2 (from the version line / `I:abc-version`), except
 
 1. File-global directive bag shape on `Score` — flat array vs. dedicated `FilePreamble` struct
 2. Macro expansion timing — eager (simpler) vs. lazy (preserves source intent)
-3. Passthrough for `%%MIDI` directives from abcm2ps/abc2midi
 4. Unicode NFC normalisation for `w:` lyric alignment
 5. Behavior when `w:` is longer than the note count
-
-## v0.1 Scope
-
-Implement through: file structure, all v2.2 information fields, line continuation, music parser (pitches/octaves/accidentals including microtonal/lengths/broken rhythm/rests/bar lines/repeats/ties/slurs/chords/decorations/chord symbols/annotations), semantic pass (K/L/M/V/U resolution, accidental scoping, ties across bars, single- and multi-voice), all three `%%ceolkit:*` extensions, strict+recoverable diagnostics, conformance test suite.
-
-Deferred to v0.2+: grace note timing, complex `P:` parts, macros, voice overlay (`&`), custom transposition, symbol lines (`s:`).

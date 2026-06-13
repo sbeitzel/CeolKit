@@ -10,7 +10,10 @@ which are not part of the ABC v2.2 [standard](https://abcnotation.com/wiki/abc:s
 **Syntax:** `%%ceolkit:justifylast <true|false>`
 
 **Type:** boolean (`true` or `false`; case-insensitive)
+
 **Default:** `false`
+
+**Scope:** global (file preamble or tune header)
 
 ### Description
 
@@ -25,7 +28,9 @@ whole width.
 **Syntax:** `%%ceolkit:pipeformat <true|false>`
 
 **Type:** boolean (`true` or `false`; case-insensitive)
+
 **Default:** `false`
+
 **Scope:** global (file preamble); last occurrence wins
 
 > **Note:** This directive follows the
@@ -81,7 +86,9 @@ X:1
 **Syntax:** `%%ceolkit:pagenumber <positive integer>`
 
 **Type:** integer
+
 **Default:** `1` (first page is page 1)
+
 **Scope:** global (file preamble or tune header)
 
 ### Description
@@ -144,7 +151,9 @@ file preamble or at the very start of a tune header).
 **Syntax:** `%%ceolkit:stemalignment <integer>`
 
 **Type:** integer
+
 **Default:** `0` (disabled)
+
 **Scope:** global (tune header or file preamble), or voice-level (tune body)
 
 ### Description

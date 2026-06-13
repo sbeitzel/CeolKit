@@ -1113,9 +1113,9 @@ private struct TuneContext {
     var sourceText: TextString? = nil
     var rhythm: TextString? = nil
     var transcription: TextString? = nil
-    // I:linebreak parsed per ABC 2.2 §9.2
-    var linebreakChars: Set<Character> = []   // $ and/or !
-    var linebreakOnEOL: Bool = false           // <EOL> token
+    // I:linebreak parsed per ABC 2.2 §9.2 — default is I:linebreak <EOL> $
+    var linebreakChars: Set<Character> = ["$"] // $ and/or !
+    var linebreakOnEOL: Bool = true            // <EOL> token
 }
 
 // MARK: - VoiceAccumulator
@@ -1221,9 +1221,9 @@ private struct BodyContext {
     // Space tracking for post-note decoration
     var lastElementWasSpace: Bool = false
 
-    // I:linebreak settings — ABC 2.2 §9.2 closed vocabulary
-    var linebreakChars: Set<Character> = []   // $ and/or !
-    var linebreakOnEOL: Bool = false           // <EOL>
+    // I:linebreak settings — ABC 2.2 §9.2 — default is I:linebreak <EOL> $
+    var linebreakChars: Set<Character> = ["$"] // $ and/or !
+    var linebreakOnEOL: Bool = true            // <EOL>
 
     init(
         unitNoteLength: Fraction,
@@ -1232,8 +1232,8 @@ private struct BodyContext {
         userSymbols: [Character: Decoration],
         macros: [MacroDefinition],
         headerVoices: [String: VoiceProperties] = [:],
-        linebreakChars: Set<Character> = [],
-        linebreakOnEOL: Bool = false
+        linebreakChars: Set<Character> = ["$"],
+        linebreakOnEOL: Bool = true
     ) {
         self.unitNoteLength = unitNoteLength
         self.meter = meter

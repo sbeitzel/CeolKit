@@ -15,12 +15,39 @@ private func parse(_ source: String) -> ParseResult {
     CeolKitParser().parse(source, options: .default)
 }
 
+private let multitune = """
+%abc-2.2
+%%ceolkit:pipeformat true
+%%ceolkit:justifylast true
+%%writefields TRC true
+%%footer "        Generated: $D"
+%%dateformat "%e %B %Y %H:%M"
+%%landscape 1
+X:1
+T:Simple Tune
+R:Air
+C:Anon.
+M:4/4
+L:1/4
+K:Cmaj
+A B c>d |
+
+X:2
+T:Second Tune
+R:Air
+C:Anon.
+M:4/4
+L:1/4
+K:Cmaj
+a g d A |
+"""
+
 // Same tune as abcTune but with %%ceolkit:justifylast true added.
 private let abcTuneJustifyLast = """
 %abc-2.2
 %%ceolkit:pipeformat true
 %%ceolkit:justifylast true
-%%titleformat T0, R-1 C1
+%%writefields TRC true
 %%footer "        Generated: $D"
 %%straightflags false
 %%flatbeams true
@@ -32,7 +59,6 @@ T:Kalabakan (Borneo)
 R:Reel
 C:P/M A. MacDonald
 Z:abc-transcription Stephen Beitzel, <sbeitzel@pobox.com>, 2025-11-16
-I:linebreak <EOL>
 M:C|
 L:1/8
 Q: 1/4 = 78
@@ -49,7 +75,7 @@ K:D
 private let abcTune = """
 %abc-2.2
 %%ceolkit:pipeformat true
-%%titleformat T0, R-1 C1
+%%writefields TRC true
 %%footer "        Generated: $D"
 %%straightflags false
 %%flatbeams true
@@ -61,7 +87,6 @@ T:Kalabakan (Borneo)
 R:Reel
 C:P/M A. MacDonald
 Z:abc-transcription Stephen Beitzel, <sbeitzel@pobox.com>, 2025-11-16
-I:linebreak <EOL>
 M:C|
 L:1/8
 Q: 1/4 = 78
@@ -281,6 +306,19 @@ struct StyleTests {
 
         #expect(abs(lastTotalW - targetWidth) < 1.0,
             "last system total width \(lastTotalW) should equal target \(targetWidth) when justifyLast is true")
+    }
+
+    // MARK: Title placement
+
+    @Test func titleIsDrawnForEachTune() throws {
+        let result = parse(multitune)
+        let pages = try SVGRenderer().render(result.score)
+        let combined = pages.joined()
+
+        #expect(pages.count == 1, "The two tunes should fit on a single landscape page")
+        #expect(combined.contains("Simple Tune"), "First tune title should appear in the SVG")
+        #expect(combined.contains("Second Tune"), "Second tune title should appear in the SVG")
+        #expect(combined.contains("Generated:"), "Footer should appear in the SVG")
     }
 
     // The bottom of the title text block (maximum baseline Y among Libertinus Serif text elements)

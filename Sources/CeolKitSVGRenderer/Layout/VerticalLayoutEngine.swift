@@ -96,7 +96,117 @@ public struct VerticalLayoutEngine: Sendable {
         )
     }
 
+    /// Lays out a sequence of tune blocks, each with its own optional title block.
+    ///
+    /// Tunes share pages when they fit; a new page opens only when the current page
+    /// cannot accommodate a tune's title block and its first system together.
+    /// Each tune's title rows are offset from their tune-relative `baselineY` values
+    /// by the actual page y-origin at the moment they are placed.
+    public func layout(_ tuneBlocks: [TuneBlock]) -> ResolvedLayout {
+        let staffHeight = 4.0 * config.staffSize
+
+        var pages: [ResolvedPage] = []
+        var pageSystems: [ResolvedSystem] = []
+        var pageTitleRows: [ResolvedTitleRow] = []
+        var y = config.margins.top
+
+        for block in tuneBlocks {
+            // If the current page already has content, check whether the entire tune
+            // fits in the remaining space. If not, close the current page. Tunes that
+            // are taller than a full page are still forced to a fresh page here; the
+            // inner system loop below handles the mid-tune page breaks they require.
+            if !pageSystems.isEmpty {
+                let tuneH = totalHeight(of: block)
+                if y + tuneH > config.pageSize.height - config.margins.bottom {
+                    pages.append(ResolvedPage(systems: pageSystems, titleRows: pageTitleRows))
+                    pageSystems = []
+                    pageTitleRows = []
+                    y = config.margins.top
+                }
+            }
+
+            // Place this tune's title rows, offsetting their tune-relative baselineY by y.
+            for row in block.titleRows {
+                pageTitleRows.append(ResolvedTitleRow(items: row.items.map {
+                    ResolvedTitleRow.Item(
+                        text: $0.text, x: $0.x, baselineY: $0.baselineY + y,
+                        anchor: $0.anchor, fontSize: $0.fontSize, isItalic: $0.isItalic)
+                }))
+            }
+            y += block.titleBlockHeight
+
+            for jsystem in block.systems {
+                let (extraAbove, extraBelow) = verticalExtent(of: jsystem)
+                let totalHeight = extraAbove + staffHeight + extraBelow
+
+                if !pageSystems.isEmpty && y + totalHeight > config.pageSize.height - config.margins.bottom {
+                    pages.append(ResolvedPage(systems: pageSystems, titleRows: pageTitleRows))
+                    pageSystems = []
+                    pageTitleRows = []
+                    y = config.margins.top
+                }
+
+                let systemOrigin = Point(x: config.margins.left, y: y)
+                let timeSigW = jsystem.meter.map {
+                    timeSignatureWidth(for: $0, metadata: metadata, staffSize: config.staffSize)
+                } ?? 0
+                let keySigTrailing: Double? = timeSigW > 0 ? nil : {
+                    metadata.glyphBBoxes["noteheadBlack"].map { $0.width * config.staffSize }
+                        ?? config.staffSize * 1.2
+                }()
+                let keySigW = jsystem.keySignature.map {
+                    keySignatureWidth(for: $0, metadata: metadata, staffSize: config.staffSize,
+                                      trailingGap: keySigTrailing)
+                } ?? 0
+                let startWidth = clefStartWidth(for: jsystem.clef) + keySigW + timeSigW
+                let measures = resolveMeasures(
+                    jsystem.measures,
+                    systemOrigin: systemOrigin,
+                    extraAbove: extraAbove,
+                    systemStartWidth: startWidth
+                )
+                pageSystems.append(ResolvedSystem(
+                    origin: systemOrigin,
+                    measures: measures,
+                    staffOrigin: extraAbove,
+                    staffHeight: staffHeight,
+                    extraAbove: extraAbove,
+                    extraBelow: extraBelow,
+                    totalHeight: totalHeight,
+                    clef: jsystem.clef,
+                    keySignature: jsystem.keySignature,
+                    meter: jsystem.meter
+                ))
+                y += totalHeight + config.systemGap
+            }
+        }
+
+        if !pageSystems.isEmpty || !pageTitleRows.isEmpty {
+            pages.append(ResolvedPage(systems: pageSystems, titleRows: pageTitleRows))
+        }
+
+        return ResolvedLayout(
+            pageSize: Size(width: config.pageSize.width, height: config.pageSize.height),
+            margins: config.margins,
+            pages: pages
+        )
+    }
+
     // MARK: - Clef width
+
+    /// Returns the total vertical space required to render `block` on a single page,
+    /// including its title block, all systems, and inter-system gaps (but not the
+    /// trailing gap that follows the last system).
+    private func totalHeight(of block: TuneBlock) -> Double {
+        let staffHeight = 4.0 * config.staffSize
+        var h = block.titleBlockHeight
+        for (i, jsystem) in block.systems.enumerated() {
+            let (ea, eb) = verticalExtent(of: jsystem)
+            h += ea + staffHeight + eb
+            if i < block.systems.count - 1 { h += config.systemGap }
+        }
+        return h
+    }
 
     private func clefStartWidth(for spec: ClefSpec) -> Double {
         clefHeaderWidth(for: spec, metadata: metadata, staffSize: config.staffSize)

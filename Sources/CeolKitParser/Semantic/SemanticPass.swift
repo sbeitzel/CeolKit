@@ -23,7 +23,7 @@ struct SemanticPass {
                     var tempDiags: [Diagnostic] = []
                     if let d = parseCeolKitDirective(name: name, payload: payload, source: src, diagnostics: &tempDiags) {
                         preambleCeolKitDirectives.append(
-                            CeolKitDirectiveScope(directive: d, scope: .tuneGlobal, source: src)
+                            CeolKitDirectiveScope(directive: d, scope: .fileGlobal, source: src)
                         )
                     }
                     diagnostics += tempDiags
@@ -132,7 +132,7 @@ struct SemanticPass {
     }
 
     private func isStandardDirective(_ name: String) -> Bool {
-        name == "landscape" || name == "flatbeams" || name == "titleformat"
+        name == "landscape" || name == "flatbeams" || name == "writefields"
             || name == "dateformat" || name == "footer"
             || name == "straightflags" || name == "graceslurs"
     }
@@ -589,7 +589,7 @@ struct SemanticPass {
                     source: source
                 ))
             }
-        case "landscape", "flatbeams", "ceolkit:justifylast", "titleformat", "dateformat", "footer",
+        case "landscape", "flatbeams", "ceolkit:justifylast", "writefields", "dateformat", "footer",
              "straightflags", "graceslurs":
             var tempDiags: [Diagnostic] = []
             if let d = parseCeolKitDirective(name: name, payload: payload, source: source, diagnostics: &tempDiags) {
@@ -881,8 +881,20 @@ struct SemanticPass {
             diagnostics.append(Diagnostic(severity: .warning, code: .unknownDirective,
                 message: "%%ceolkit:justifylast expects 'true' or 'false'", source: source))
             return nil
-        case "titleformat":
-            return .titleFormat(trimmed)
+        case "writefields":
+            // Syntax: <fieldList> [true|false]
+            // The field list is a run of letters; an optional logical value follows.
+            let parts = trimmed.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
+            let enabled: Bool
+            var fieldList: String
+            if let last = parts.last, let b = parseLogical(last) {
+                enabled = b
+                fieldList = parts.dropLast().joined()
+            } else {
+                enabled = true
+                fieldList = parts.joined()
+            }
+            return .writeFields(fieldList, enabled)
         case "dateformat":
             return .dateFormat(stripQuotes(trimmed))
         case "straightflags":

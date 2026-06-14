@@ -29,11 +29,22 @@ public struct SVGRenderer: CeolKitRenderer {
 
         let usableWidth = effectiveConfig.pageSize.width - effectiveConfig.margins.left - effectiveConfig.margins.right
 
-        var allSystems: [JustifiedSystem] = []
+        // File-preamble directives are promoted to the first tune by the parser.
+        // Build a file-level WriteFieldsConfig from those file-global-scoped directives
+        // so each tune can start from that baseline and layer its own on top.
+        let fileWriteFields: WriteFieldsConfig = {
+            var wf = WriteFieldsConfig.default
+            for scope in score.tunes.first?.directives ?? [] where { if case .fileGlobal = scope.scope { true } else { false } }() {
+                wf.apply(scope.directive)
+            }
+            return wf
+        }()
+
+        var tuneBlocks: [TuneBlock] = []
         var stemDirection: StemDirection = .auto
+        var justifyLastSystem = effectiveConfig.justifyLastSystem
 
         for tune in score.tunes {
-            var justifyLastSystem = effectiveConfig.justifyLastSystem
             for scope in tune.directives {
                 switch scope.directive {
                 case .pipeFormat(true):     stemDirection = .down
@@ -41,6 +52,7 @@ public struct SVGRenderer: CeolKitRenderer {
                 default: break
                 }
             }
+            var tuneSystems: [JustifiedSystem] = []
             var meterForFirstSystem: Meter? = tune.meter
             for voice in tune.voices {
                 // Build (measure, breakAfter) pairs honouring stave boundaries.
@@ -77,81 +89,28 @@ public struct SVGRenderer: CeolKitRenderer {
                 let justified = justifier.justify(systems, usableWidth: usableWidth,
                                                   justifyLastSystem: justifyLastSystem,
                                                   systemHeaderWidths: headerWidths)
-                allSystems.append(contentsOf: justified)
+                tuneSystems.append(contentsOf: justified)
             }
-        }
 
-        // Build the title block from the first tune's %%titleformat directive (if present).
-        let (titleRows, titleBlockHeight) = buildTitleBlock(
-            score: score,
-            config: effectiveConfig
-        )
+            // Build the title block for this tune per §6.1.3.
+            // Title row baselineY values are tune-relative; the layout engine offsets
+            // them to absolute page coordinates when placing the block.
+            let tuneWriteFields: WriteFieldsConfig = {
+                var wf = fileWriteFields
+                for scope in tune.directives { wf.apply(scope.directive) }
+                return wf
+            }()
+            let (titleRows, titleBlockHeight) = SpecTitleBlockBuilder(
+                tune: tune, writeFields: tuneWriteFields, layoutConfig: effectiveConfig
+            ).build()
+            tuneBlocks.append(TuneBlock(systems: tuneSystems, titleRows: titleRows,
+                                        titleBlockHeight: titleBlockHeight))
+        }
 
         let emitter = SVGEmitter(config: effectiveConfig, metadata: metadata, stemDirection: stemDirection)
-        let layout = engine.layout(allSystems, titleRows: titleRows, titleBlockHeight: titleBlockHeight)
+        let layout = engine.layout(tuneBlocks)
         let finalLayout = attachFooters(layout, score: score, config: effectiveConfig)
         return try emitter.emit(finalLayout)
-    }
-
-    // MARK: - Title block
-
-    private func buildTitleBlock(
-        score: Score,
-        config: SVGRenderConfig
-    ) -> (rows: [ResolvedTitleRow], height: Double) {
-        guard let tune = score.tunes.first else { return ([], 0) }
-
-        var formatString: String? = nil
-        for scope in tune.directives {
-            if case .titleFormat(let fmt) = scope.directive {
-                formatString = fmt
-                break
-            }
-        }
-        guard let fmt = formatString, !fmt.isEmpty else { return ([], 0) }
-
-        let spec = TitleFormatParser.parse(fmt)
-        let resolved = TitleResolver(tune: tune).resolve(spec)
-        guard !resolved.isEmpty else { return ([], 0) }
-
-        let lineHeight    = config.staffSize * 2.5
-        let titleFontSize = 18.0
-        let infoFontSize  = 12.0
-
-        let leftX   = config.margins.left
-        let centerX = config.pageSize.width / 2.0
-        let rightX  = config.pageSize.width - config.margins.right
-
-        var rows: [ResolvedTitleRow] = []
-        for (rowIndex, row) in resolved.enumerated() {
-            // Use a slightly larger font for the first row (typically the title).
-            let fontSize = rowIndex == 0 ? titleFontSize : infoFontSize
-            let baselineY = config.margins.top + lineHeight * Double(rowIndex + 1) - lineHeight * 0.25
-
-            let isItalic = rowIndex > 0
-            var items: [ResolvedTitleRow.Item] = []
-            if let text = row.left {
-                items.append(ResolvedTitleRow.Item(
-                    text: text, x: leftX, baselineY: baselineY, anchor: .start,
-                    fontSize: fontSize, isItalic: isItalic))
-            }
-            if let text = row.center {
-                items.append(ResolvedTitleRow.Item(
-                    text: text, x: centerX, baselineY: baselineY, anchor: .middle,
-                    fontSize: fontSize, isItalic: isItalic))
-            }
-            if let text = row.right {
-                items.append(ResolvedTitleRow.Item(
-                    text: text, x: rightX, baselineY: baselineY, anchor: .end,
-                    fontSize: fontSize, isItalic: isItalic))
-            }
-            if !items.isEmpty {
-                rows.append(ResolvedTitleRow(items: items))
-            }
-        }
-
-        let totalHeight = lineHeight * Double(resolved.count) + config.staffSize
-        return (rows, totalHeight)
     }
 
     // MARK: - Footer

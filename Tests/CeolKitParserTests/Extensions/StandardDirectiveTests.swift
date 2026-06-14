@@ -239,10 +239,10 @@ struct StandardDirectiveTests {
             Issue.record("Expected landscape directive")
             return
         }
-        if case .tuneGlobal = d.scope {
+        if case .fileGlobal = d.scope {
             // expected
         } else {
-            Issue.record("Expected .tuneGlobal scope, got \(d.scope)")
+            Issue.record("Expected .fileGlobal scope for preamble directive, got \(d.scope)")
         }
     }
 
@@ -352,10 +352,10 @@ struct StandardDirectiveTests {
             Issue.record("Expected dateFormat directive")
             return
         }
-        if case .tuneGlobal = d.scope {
+        if case .fileGlobal = d.scope {
             // expected
         } else {
-            Issue.record("Expected .tuneGlobal scope, got \(d.scope)")
+            Issue.record("Expected .fileGlobal scope for preamble directive, got \(d.scope)")
         }
     }
 

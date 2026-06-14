@@ -9,7 +9,7 @@ import CeolKitParser
 private let kalabakan = """
     %abc-2.2
     %%ceolkit:pipeformat true
-    %%titleformat T0, R-1 C1
+    %%writefields R
     %%flatbeams true
     %%landscape 1
     X:1
@@ -38,7 +38,7 @@ struct TitleBlockIntegrationTests {
         #expect(firstPage.contains("Kalabakan (Borneo)"))
     }
 
-    @Test("SVG contains the rhythm field text")
+    @Test("SVG contains the rhythm field text when %%writefields R is set")
     func rhythmPresentInSVG() throws {
         let pages = try SVGRenderer().render(parseScore(kalabakan))
         let firstPage = try #require(pages.first)
@@ -56,89 +56,62 @@ struct TitleBlockIntegrationTests {
 
     @Test("Title baseline Y is less than the first system's staff Y (title is above staff)")
     func titleAboveStaff() throws {
-        let score = parseScore(kalabakan)
-        let metadata = try BravuraMetadata.load()
-        let config = SVGRenderConfig()
-        let effectiveConfig: SVGRenderConfig = {
-            var c = config
-            for scope in score.tunes.first?.directives ?? [] {
-                if case .landscape(let on) = scope.directive {
-                    c.pageSize = on ? config.pageSize.landscape : config.pageSize
-                }
-            }
-            return c
-        }()
-
-        let sizer     = MeasureSizer(config: effectiveConfig, metadata: metadata)
-        let breaker   = LineBreaker()
-        let justifier = Justifier()
-        let engine    = VerticalLayoutEngine(config: effectiveConfig, metadata: metadata)
-        let usableWidth = effectiveConfig.pageSize.width - effectiveConfig.margins.left - effectiveConfig.margins.right
-
-        guard let tune = score.tunes.first, let voice = tune.voices.first else {
-            Issue.record("No tune/voice"); return
-        }
-        var pairs: [(measure: SizedMeasure, breakAfter: ScoreLineBreak?)] = []
-        for stave in voice.staves {
-            for m in stave.measures {
-                pairs.append((sizer.size(m, unitNoteLength: tune.unitNoteLength), nil))
-            }
-        }
-        let firstHeaderW = systemHeaderWidth(
-            clef: voice.properties.clef, keySignature: tune.key, meter: tune.meter,
-            metadata: metadata, staffSize: effectiveConfig.staffSize)
-        let laterHeaderW = systemHeaderWidth(
-            clef: voice.properties.clef, keySignature: tune.key, meter: nil,
-            metadata: metadata, staffSize: effectiveConfig.staffSize)
-        let systems = breaker.breakIntoSystems(pairs, usableWidth: usableWidth,
-                                               firstSystemHeaderWidth: firstHeaderW,
-                                               laterSystemHeaderWidth: laterHeaderW,
-                                               clef: voice.properties.clef,
-                                               keySignature: tune.key,
-                                               meter: tune.meter)
-        let headerWidths = systems.enumerated().map { i, _ in i == 0 ? firstHeaderW : laterHeaderW }
-        let justified = justifier.justify(systems, usableWidth: usableWidth,
-                                          justifyLastSystem: false,
-                                          systemHeaderWidths: headerWidths)
-
-        var formatString: String? = nil
-        for scope in tune.directives {
-            if case .titleFormat(let fmt) = scope.directive { formatString = fmt; break }
-        }
-        guard let fmt = formatString else { Issue.record("No titleFormat directive"); return }
-
-        let spec = TitleFormatParser.parse(fmt)
-        let resolved = TitleResolver(tune: tune).resolve(spec)
-        let lineHeight = effectiveConfig.staffSize * 2.5
-        let titleBlockHeight = lineHeight * Double(resolved.count) + effectiveConfig.staffSize
-
-        let layout = engine.layout(justified, titleRows: [], titleBlockHeight: titleBlockHeight)
-
-        guard let firstSystem = layout.pages.first?.systems.first else {
-            Issue.record("No systems in layout"); return
-        }
-        let staffTopY = firstSystem.origin.y + firstSystem.staffOrigin
-        let titleEndY = effectiveConfig.margins.top + titleBlockHeight
-        #expect(staffTopY >= titleEndY,
-                "Expected staff top (\(staffTopY)) ≥ title block bottom (\(titleEndY))")
-    }
-
-    // MARK: - Empty / absent titleformat
-
-    @Test("Empty %%titleformat produces no title text in SVG")
-    func emptyTitleFormatNoRows() throws {
-        let abc = "%%titleformat \nX:1\nT:Test\nM:4/4\nL:1/4\nK:C\nCDEF|"
-        let pages = try SVGRenderer().render(parseScore(abc))
+        let pages = try SVGRenderer().render(parseScore(kalabakan))
         let svg = try #require(pages.first)
-        #expect(!svg.contains(">Test<"))
+
+        let titleYValues: [Double] = svg
+            .components(separatedBy: "<text ")
+            .dropFirst()
+            .filter { $0.contains("Libertinus Serif") && !$0.contains("class=\"footer\"") }
+            .compactMap { segment -> Double? in
+                guard let yStart = segment.range(of: " y=\"") else { return nil }
+                let afterY = segment[yStart.upperBound...]
+                guard let yEnd = afterY.firstIndex(of: "\"") else { return nil }
+                return Double(afterY[afterY.startIndex..<yEnd])
+            }
+
+        let lineMinY: Double = svg
+            .components(separatedBy: "<line ")
+            .dropFirst()
+            .flatMap { segment -> [Double] in
+                var vals: [Double] = []
+                for attr in ["y1=\"", "y2=\""] {
+                    if let s = segment.range(of: attr) {
+                        let after = segment[s.upperBound...]
+                        if let e = after.firstIndex(of: "\""),
+                           let v = Double(after[after.startIndex..<e]) {
+                            vals.append(v)
+                        }
+                    }
+                }
+                return vals
+            }
+            .min() ?? .infinity
+
+        guard !titleYValues.isEmpty else { Issue.record("No Libertinus Serif text found in SVG"); return }
+        guard lineMinY < .infinity   else { Issue.record("No <line> elements found in SVG"); return }
+
+        let titleMaxY = titleYValues.max()!
+        #expect(titleMaxY < lineMinY,
+                "Title baseline (\(titleMaxY)) must be strictly above topmost music line (\(lineMinY))")
     }
 
-    @Test("Tune with no %%titleformat directive has no title block text")
-    func noDirectiveNoTitleBlock() throws {
+    // MARK: - Default field set
+
+    @Test("Title appears in SVG by default with no %%writefields directive")
+    func defaultShowsTitle() throws {
         let abc = "X:1\nT:My Tune\nM:4/4\nL:1/4\nK:C\nCDEF|"
         let pages = try SVGRenderer().render(parseScore(abc))
         let svg = try #require(pages.first)
-        #expect(!svg.contains(">My Tune<"))
+        #expect(svg.contains("My Tune"))
+    }
+
+    @Test("%%writefields T false suppresses title in SVG")
+    func writeFieldsTFalseSuppressesTitle() throws {
+        let abc = "%%writefields T false\nX:1\nT:Test\nM:4/4\nL:1/4\nK:C\nCDEF|"
+        let pages = try SVGRenderer().render(parseScore(abc))
+        let svg = try #require(pages.first)
+        #expect(!svg.contains(">Test<"))
     }
 
     // MARK: - Multi-page: title only on first page

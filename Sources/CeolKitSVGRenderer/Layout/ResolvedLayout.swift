@@ -56,6 +56,23 @@ public struct System: Sendable {
     }
 }
 
+/// Groups the justified systems and optional title block for a single tune.
+///
+/// `titleRows` use `baselineY` values relative to the top of the tune's title area
+/// (i.e. `y = 0` origin). The layout engine adds the actual page y-origin when placing them,
+/// so the same `TuneBlock` can be positioned anywhere on a page.
+public struct TuneBlock: Sendable {
+    public let systems: [JustifiedSystem]
+    public let titleRows: [ResolvedTitleRow]
+    public let titleBlockHeight: Double
+
+    public init(systems: [JustifiedSystem], titleRows: [ResolvedTitleRow] = [], titleBlockHeight: Double = 0) {
+        self.systems = systems
+        self.titleRows = titleRows
+        self.titleBlockHeight = titleBlockHeight
+    }
+}
+
 // MARK: - Pass 3 output
 
 public struct JustifiedSystem: Sendable {
@@ -114,7 +131,7 @@ public struct ResolvedLayout: Sendable {
 
 public struct ResolvedPage: Sendable {
     public let systems: [ResolvedSystem]
-    /// Pre-positioned title rows; non-empty only on the first page.
+    /// Pre-positioned title rows; non-empty on any page that starts a tune.
     public let titleRows: [ResolvedTitleRow]
     /// Pre-positioned footer rows; present on every page that has a %%footer template.
     public let footerRows: [ResolvedTitleRow]

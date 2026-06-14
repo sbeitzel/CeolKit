@@ -12,7 +12,6 @@ import Testing
 private let kalabakan = """
     %abc-2.2
     %%ceolkit:pipeformat true
-    %%titleformat T0, R-1 C1
     %%footer "        Generated: $D"
     %%straightflags false
     %%flatbeams true

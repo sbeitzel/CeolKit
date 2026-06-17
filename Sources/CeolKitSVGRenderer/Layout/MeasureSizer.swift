@@ -102,7 +102,8 @@ public struct MeasureSizer: Sendable {
             return graceGroupWidth(g)
 
         case .spacer(let sp):
-            return s * 0.5 * Double(max(sp.width, 1))
+            guard sp.width > 0 else { return 0 }
+            return s * 0.5 * Double(sp.width)
 
         case .directiveAnchor:
             return 0

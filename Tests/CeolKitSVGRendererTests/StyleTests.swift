@@ -19,7 +19,7 @@ private let multitune = """
 %abc-2.2
 %%ceolkit:pipeformat true
 %%ceolkit:justifylast true
-%%writefields TRC true
+%%writefields TRCQ true
 %%footer "        Generated: $D"
 %%dateformat "%e %B %Y %H:%M"
 %%landscape 1
@@ -75,7 +75,7 @@ K:D
 private let abcTune = """
 %abc-2.2
 %%ceolkit:pipeformat true
-%%writefields TRC true
+%%writefields TRCQ true
 %%footer "        Generated: $D"
 %%straightflags false
 %%flatbeams true
@@ -125,6 +125,9 @@ struct StyleTests {
 
     @Test func tuneRendersOnOnePage() throws {
         let pages = try SVGRenderer().render(score)
+        // we should be able to fit a tune title, rhythm & composer line, 7 systems, and a footer
+        // onto a single landscape 8.5 x 11 page. If we can't, then something is taking up too much
+        // space.
         #expect(pages.count == 1)
     }
 

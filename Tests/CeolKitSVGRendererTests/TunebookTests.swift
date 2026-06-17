@@ -12,6 +12,48 @@ import Testing
 
 struct TunebookTests {
 
+    // Diagnostic test: kalabakan line 1 has 5 measures (pickup + 4 full).
+    // With %%landscape 1 and staffSize=6.0 those must fit on a single system line.
+    @Test func kalalabakanFirstLineFitsOnOneSystem() async throws {
+        let abc = """
+            %abc-2.2
+            %%ceolkit:pipeformat true
+            %%ceolkit:justifylast true
+            %%landscape 1
+            X:1
+            T:Kalabakan (Borneo)
+            R:Reel
+            M:C|
+            L:1/8
+            K:D
+            [|: A/ | {Gdc}d2 {e}A>d {g}B<{d}A{g}B<d | {g}A<{d}A{g}B<d {g}f>e{A}e>f | {Gdc}d2 {e}A>d {g}B<{d}A{g}B<d | {g}A<{d}A{g}f>e {Gdc}d2 {g}d3/2 :|]
+            """
+        let score = CeolKitParser().parse(abc, options: .default).score
+        let metadata = try BravuraMetadata.load()
+        let effectiveConfig: SVGRenderConfig = {
+            var c = SVGRenderConfig()
+            for scope in score.tunes.first?.directives ?? [] {
+                if case .landscape(true) = scope.directive { c.pageSize = c.pageSize.landscape }
+            }
+            return c
+        }()
+        let sizer = MeasureSizer(config: effectiveConfig, metadata: metadata)
+        let voice = try #require(score.tunes.first?.voices.first)
+        let stave = try #require(voice.staves.first)
+        var totalWidth = 0.0
+        let unl = score.tunes.first!.unitNoteLength
+        for m in stave.measures {
+            totalWidth += sizer.size(m, unitNoteLength: unl).naturalWidth
+        }
+        let usable = effectiveConfig.pageSize.width - effectiveConfig.margins.left - effectiveConfig.margins.right
+        let header = systemHeaderWidth(
+            clef: voice.properties.clef, keySignature: score.tunes.first?.key, meter: score.tunes.first?.meter,
+            metadata: metadata, staffSize: effectiveConfig.staffSize)
+        let available = usable - header
+        #expect(totalWidth <= available,
+                "Total measure width \(totalWidth) should fit in available \(available) (usable=\(usable), header=\(header))")
+    }
+
     @Test func numberOfPages() async throws {
         let result = CeolKitParser().parse(tunebook, options: .default)
         let score = result.score
@@ -32,15 +74,25 @@ struct TunebookTests {
         #expect(firstPage.contains("Bob Cooper of Winnipeg"), "The first tune should be on the first page")
         #expect(!firstPage.contains("Archie Beag"), "The second tune should be put on the second page")
 
-        // Radar Racketeer is tune 3; The Parting Glass is short enough to share the same page.
-        let thirdPage = pages[2]
-        #expect(thirdPage.contains("The Radar Racketeer"), "The Radar Racketeer should start at the top of page 3")
-        #expect(thirdPage.contains("The Parting Glass"),
-                "The Parting Glass is short enough to fit on page 3 after the Radar Racketeer")
+        let tuneNames = ["Bob Cooper of Winnipeg", "Archie Beag", "The Radar Racketeer",
+                         "The Parting Glass", "PM Sandy Gordon"]
+        var pageAssignments: [String: Int] = [:]
+        for (i, page) in pages.enumerated() {
+            for name in tuneNames where pageAssignments[name] == nil && page.contains(name) {
+                pageAssignments[name] = i + 1
+            }
+        }
 
-        // PM Sandy Gordon (tune 5) fills page 4 on its own — not enough room on page 3.
-        let fourthPage = pages[3]
-        #expect(fourthPage.contains("PM Sandy Gordon"), "PM Sandy Gordon should be on page 4")
+        let archieBeagPage = try #require(pageAssignments["Archie Beag"], "Archie Beag not found")
+        let radarPage = try #require(pageAssignments["The Radar Racketeer"], "The Radar Racketeer not found")
+        let partingPage = try #require(pageAssignments["The Parting Glass"], "The Parting Glass not found")
+        let sandyPage = try #require(pageAssignments["PM Sandy Gordon"], "PM Sandy Gordon not found")
+
+        // Tunes appear in order across pages.
+        #expect(archieBeagPage == 2, "Archie Beag should start on page 2 (assignments: \(pageAssignments))")
+        #expect(radarPage == 3, "The Radar Racketeer should start on page 3 (assignments: \(pageAssignments))")
+        #expect(partingPage == 4, "The Parting Glass should start on page 4 (assignments: \(pageAssignments))")
+        #expect(sandyPage == 4, "PM Sandy Gordon should start on page 4 (assignments: \(pageAssignments))")
     }
 
     @Test func rhythmAndComposerOnSameRowInTitleBlock() async throws {

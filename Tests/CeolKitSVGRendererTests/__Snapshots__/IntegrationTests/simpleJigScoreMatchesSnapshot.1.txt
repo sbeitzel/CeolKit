@@ -16,42 +16,42 @@
       }
     </style>
   </defs>
-  <text x="306" y="44.438" font-family="Libertinus Serif" font-size="18" fill="black" text-anchor="middle">Simple Jig</text>
-  <line x1="36" y1="51.75" x2="161.121" y2="51.75" stroke="black" stroke-width="0.585"/>
-  <line x1="36" y1="56.25" x2="161.121" y2="56.25" stroke="black" stroke-width="0.585"/>
-  <line x1="36" y1="60.75" x2="161.121" y2="60.75" stroke="black" stroke-width="0.585"/>
-  <line x1="36" y1="65.25" x2="161.121" y2="65.25" stroke="black" stroke-width="0.585"/>
-  <line x1="36" y1="69.75" x2="161.121" y2="69.75" stroke="black" stroke-width="0.585"/>
-  <text x="37.125" y="65.25" font-family="Bravura" font-size="18" fill="black"></text>
-  <text x="50.328" y="56.25" font-family="Bravura" font-size="18" fill="black"></text>
-  <text x="50.328" y="65.25" font-family="Bravura" font-size="18" fill="black"></text>
-  <line x1="111.777" y1="51.75" x2="111.777" y2="69.75" stroke="black" stroke-width="0.72"/>
-  <text x="71.343" y="65.25" font-family="Bravura" font-size="18" fill="black"></text>
-  <text x="77.707" y="63" font-family="Bravura" font-size="18" fill="black"></text>
-  <text x="84.071" y="60.75" font-family="Bravura" font-size="18" fill="black"></text>
-  <text x="90.435" y="58.5" font-family="Bravura" font-size="18" fill="black"></text>
-  <text x="96.799" y="56.25" font-family="Bravura" font-size="18" fill="black"></text>
-  <text x="103.163" y="54" font-family="Bravura" font-size="18" fill="black"></text>
-  <line x1="76.653" y1="45" x2="76.653" y2="65.25" stroke="black" stroke-width="0.54"/>
-  <line x1="83.017" y1="45" x2="83.017" y2="63" stroke="black" stroke-width="0.54"/>
-  <line x1="89.381" y1="45" x2="89.381" y2="60.75" stroke="black" stroke-width="0.54"/>
-  <line x1="90.435" y1="45" x2="90.435" y2="58.5" stroke="black" stroke-width="0.54"/>
-  <line x1="96.799" y1="45" x2="96.799" y2="56.25" stroke="black" stroke-width="0.54"/>
-  <line x1="103.163" y1="45" x2="103.163" y2="54" stroke="black" stroke-width="0.54"/>
-  <line x1="76.653" y1="45" x2="103.163" y2="45" stroke="black" stroke-width="2.25"/>
-  <line x1="157.521" y1="51.75" x2="157.521" y2="69.75" stroke="black" stroke-width="0.72"/>
-  <line x1="161.121" y1="51.75" x2="161.121" y2="69.75" stroke="black" stroke-width="2.25"/>
-  <text x="117.087" y="65.25" font-family="Bravura" font-size="18" fill="black"></text>
-  <text x="123.451" y="63" font-family="Bravura" font-size="18" fill="black"></text>
-  <text x="129.815" y="60.75" font-family="Bravura" font-size="18" fill="black"></text>
-  <text x="136.179" y="58.5" font-family="Bravura" font-size="18" fill="black"></text>
-  <text x="142.543" y="56.25" font-family="Bravura" font-size="18" fill="black"></text>
-  <text x="148.907" y="54" font-family="Bravura" font-size="18" fill="black"></text>
-  <line x1="122.397" y1="45" x2="122.397" y2="65.25" stroke="black" stroke-width="0.54"/>
-  <line x1="128.761" y1="45" x2="128.761" y2="63" stroke="black" stroke-width="0.54"/>
-  <line x1="135.125" y1="45" x2="135.125" y2="60.75" stroke="black" stroke-width="0.54"/>
-  <line x1="136.179" y1="45" x2="136.179" y2="58.5" stroke="black" stroke-width="0.54"/>
-  <line x1="142.543" y1="45" x2="142.543" y2="56.25" stroke="black" stroke-width="0.54"/>
-  <line x1="148.907" y1="45" x2="148.907" y2="54" stroke="black" stroke-width="0.54"/>
-  <line x1="122.397" y1="45" x2="148.907" y2="45" stroke="black" stroke-width="2.25"/>
+  <text x="306" y="47.25" font-family="Libertinus Serif" font-size="18" fill="black" text-anchor="middle">Simple Jig</text>
+  <line x1="36" y1="57" x2="202.827" y2="57" stroke="black" stroke-width="0.78"/>
+  <line x1="36" y1="63" x2="202.827" y2="63" stroke="black" stroke-width="0.78"/>
+  <line x1="36" y1="69" x2="202.827" y2="69" stroke="black" stroke-width="0.78"/>
+  <line x1="36" y1="75" x2="202.827" y2="75" stroke="black" stroke-width="0.78"/>
+  <line x1="36" y1="81" x2="202.827" y2="81" stroke="black" stroke-width="0.78"/>
+  <text x="37.5" y="75" font-family="Bravura" font-size="24" fill="black"></text>
+  <text x="55.104" y="63" font-family="Bravura" font-size="24" fill="black"></text>
+  <text x="55.104" y="75" font-family="Bravura" font-size="24" fill="black"></text>
+  <line x1="137.036" y1="57" x2="137.036" y2="81" stroke="black" stroke-width="0.96"/>
+  <text x="83.124" y="75" font-family="Bravura" font-size="24" fill="black"></text>
+  <text x="91.609" y="72" font-family="Bravura" font-size="24" fill="black"></text>
+  <text x="100.095" y="69" font-family="Bravura" font-size="24" fill="black"></text>
+  <text x="108.58" y="66" font-family="Bravura" font-size="24" fill="black"></text>
+  <text x="117.065" y="63" font-family="Bravura" font-size="24" fill="black"></text>
+  <text x="125.55" y="60" font-family="Bravura" font-size="24" fill="black"></text>
+  <line x1="90.204" y1="48" x2="90.204" y2="75" stroke="black" stroke-width="0.72"/>
+  <line x1="98.689" y1="48" x2="98.689" y2="72" stroke="black" stroke-width="0.72"/>
+  <line x1="107.175" y1="48" x2="107.175" y2="69" stroke="black" stroke-width="0.72"/>
+  <line x1="108.58" y1="48" x2="108.58" y2="66" stroke="black" stroke-width="0.72"/>
+  <line x1="117.065" y1="48" x2="117.065" y2="63" stroke="black" stroke-width="0.72"/>
+  <line x1="125.55" y1="48" x2="125.55" y2="60" stroke="black" stroke-width="0.72"/>
+  <line x1="90.204" y1="48" x2="125.55" y2="48" stroke="black" stroke-width="3"/>
+  <line x1="198.027" y1="57" x2="198.027" y2="81" stroke="black" stroke-width="0.96"/>
+  <line x1="202.827" y1="57" x2="202.827" y2="81" stroke="black" stroke-width="3"/>
+  <text x="144.116" y="75" font-family="Bravura" font-size="24" fill="black"></text>
+  <text x="152.601" y="72" font-family="Bravura" font-size="24" fill="black"></text>
+  <text x="161.086" y="69" font-family="Bravura" font-size="24" fill="black"></text>
+  <text x="169.572" y="66" font-family="Bravura" font-size="24" fill="black"></text>
+  <text x="178.057" y="63" font-family="Bravura" font-size="24" fill="black"></text>
+  <text x="186.542" y="60" font-family="Bravura" font-size="24" fill="black"></text>
+  <line x1="151.196" y1="48" x2="151.196" y2="75" stroke="black" stroke-width="0.72"/>
+  <line x1="159.681" y1="48" x2="159.681" y2="72" stroke="black" stroke-width="0.72"/>
+  <line x1="168.166" y1="48" x2="168.166" y2="69" stroke="black" stroke-width="0.72"/>
+  <line x1="169.572" y1="48" x2="169.572" y2="66" stroke="black" stroke-width="0.72"/>
+  <line x1="178.057" y1="48" x2="178.057" y2="63" stroke="black" stroke-width="0.72"/>
+  <line x1="186.542" y1="48" x2="186.542" y2="60" stroke="black" stroke-width="0.72"/>
+  <line x1="151.196" y1="48" x2="186.542" y2="48" stroke="black" stroke-width="3"/>
 </svg>

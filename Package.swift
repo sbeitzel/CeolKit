@@ -41,6 +41,10 @@ let package = Package(
         "CeolKitParser",
         "CeolKitSVGRenderer",
         .product(name: "SnapshotTesting", package: "swift-snapshot-testing"),
+      ],
+      resources: [
+        .process("tunebook.abc"),
+        .process("__Snapshots__")
       ]
     ),
   ],

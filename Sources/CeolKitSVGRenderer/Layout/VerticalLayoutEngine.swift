@@ -135,7 +135,7 @@ public struct VerticalLayoutEngine: Sendable {
             }
             y += block.titleBlockHeight
 
-            for jsystem in block.systems {
+            for (si, jsystem) in block.systems.enumerated() {
                 let (extraAbove, extraBelow) = verticalExtent(of: jsystem)
                 let totalHeight = extraAbove + staffHeight + extraBelow
 
@@ -177,7 +177,8 @@ public struct VerticalLayoutEngine: Sendable {
                     keySignature: jsystem.keySignature,
                     meter: jsystem.meter
                 ))
-                y += totalHeight + config.systemGap
+                let isLastInBlock = si == block.systems.count - 1
+                y += totalHeight + (isLastInBlock ? config.tuneGap : config.systemGap)
             }
         }
 

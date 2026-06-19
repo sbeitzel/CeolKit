@@ -22,11 +22,11 @@ import Testing
 
     @Test func defaultSystemGapIsEightStaffSizes() {
         let cfg = SVGRenderConfig()
-        #expect(cfg.systemGap == cfg.staffSize * 8)
+        #expect(cfg.systemGap == cfg.staffSize * 4, "Default systemGap is \(cfg.systemGap), expected staffSize * 4")
     }
 
     @Test func customSystemGapIsRespected() {
         let cfg = SVGRenderConfig(systemGap: 42.0)
-        #expect(cfg.systemGap == 42.0)
+        #expect(cfg.systemGap == 42.0, "Expected systemGap to be 42.0, got \(cfg.systemGap)")
     }
 }

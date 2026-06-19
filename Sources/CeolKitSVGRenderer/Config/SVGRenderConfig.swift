@@ -4,7 +4,10 @@ public struct SVGRenderConfig: Sendable {
     public var pageSize: PageSize
     public var margins: EdgeInsets
     public var staffSize: Double
+    /// Vertical gap added between systems within a single tune.
     public var systemGap: Double
+    /// Vertical gap added after the last system of a tune, before the next tune's title block.
+    public var tuneGap: Double
     public var justifyLastSystem: Bool
     public var straightFlags: Bool
     public var graceSlurs: Bool
@@ -14,6 +17,7 @@ public struct SVGRenderConfig: Sendable {
         margins: EdgeInsets = EdgeInsets(top: 36, bottom: 36, left: 36, right: 36),
         staffSize: Double = 6.0,
         systemGap: Double? = nil,
+        tuneGap: Double? = nil,
         justifyLastSystem: Bool = false,
         straightFlags: Bool = false,
         graceSlurs: Bool = true
@@ -21,7 +25,8 @@ public struct SVGRenderConfig: Sendable {
         self.pageSize = pageSize
         self.margins = margins
         self.staffSize = staffSize
-        self.systemGap = systemGap ?? staffSize * 8
+        self.systemGap = systemGap ?? staffSize * 4
+        self.tuneGap = tuneGap ?? staffSize * 16
         self.justifyLastSystem = justifyLastSystem
         self.straightFlags = straightFlags
         self.graceSlurs = graceSlurs

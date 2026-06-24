@@ -385,7 +385,12 @@ struct SemanticPass {
             ctx.openSlurs += 1
 
         case .slurClose:
-            ctx.closeSlurs += 1
+            // `)` is a post-fix on the preceding note, not a prefix for the next.
+            // Retroactively add the close to the last emitted note so that
+            // `(A2 | A2) B` gives A2 `closes:1`, not B.
+            if !ctx.addSlurCloseToLastNote() {
+                ctx.closeSlurs += 1   // fallback: no note yet, carry forward
+            }
 
         case .endingNumber(let nums, _):
             ctx.pendingEndingNumber = nums
@@ -1419,6 +1424,55 @@ private struct BodyContext {
                     beam: n.beam,
                     lyric: n.lyric,
                     source: n.source
+                ))
+                voiceData[currentVoiceId] = acc
+                return true
+            default:
+                return false
+            }
+        }
+        return false
+    }
+
+    /// Retroactively increments the `slurs.closes` count on the last note in
+    /// `currentEvents` (skipping spacers).  Returns true if a note was found and updated.
+    mutating func addSlurCloseToLastNote() -> Bool {
+        guard var acc = voiceData[currentVoiceId] else { return false }
+        for i in stride(from: acc.currentEvents.count - 1, through: 0, by: -1) {
+            switch acc.currentEvents[i] {
+            case .spacer:
+                continue
+            case .note(let n):
+                let updated = SlurState(opens: n.slurs.opens, closes: n.slurs.closes + 1)
+                acc.currentEvents[i] = .note(Note(
+                    pitch: n.pitch,
+                    writtenAccidental: n.writtenAccidental,
+                    displayedAccidental: n.displayedAccidental,
+                    duration: n.duration,
+                    ties: n.ties,
+                    slurs: updated,
+                    decorations: n.decorations,
+                    chordSymbol: n.chordSymbol,
+                    annotations: n.annotations,
+                    beam: n.beam,
+                    lyric: n.lyric,
+                    source: n.source
+                ))
+                voiceData[currentVoiceId] = acc
+                return true
+            case .chord(let c):
+                let updated = SlurState(opens: c.slurs.opens, closes: c.slurs.closes + 1)
+                acc.currentEvents[i] = .chord(Chord(
+                    notes: c.notes,
+                    duration: c.duration,
+                    decorations: c.decorations,
+                    chordSymbol: c.chordSymbol,
+                    annotations: c.annotations,
+                    beam: c.beam,
+                    ties: c.ties,
+                    slurs: updated,
+                    lyric: c.lyric,
+                    source: c.source
                 ))
                 voiceData[currentVoiceId] = acc
                 return true

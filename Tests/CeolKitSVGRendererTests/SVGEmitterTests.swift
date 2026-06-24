@@ -559,6 +559,96 @@ private let quarterUNL = Fraction(numerator: 1, denominator: 4)
 
     // MARK: Augmentation dots
 
+    @Test func fermataIsCenteredOnNotehead() throws {
+        // The fermata glyph's horizontal midpoint must align with the notehead's midpoint.
+        let noteX = 60.0
+        let note = Note(
+            pitch: Pitch(step: .c, alteration: .natural, octave: 5),
+            writtenAccidental: nil, displayedAccidental: nil,
+            duration: Fraction(numerator: 1, denominator: 1),
+            ties: .none, slurs: .none,
+            decorations: [.fermata],
+            chordSymbol: nil, annotations: [],
+            beam: .single, lyric: nil, source: dummyRange
+        )
+        let event = ResolvedEvent(origin: Point(x: noteX, y: 100), kind: .note(note))
+        let measure = ResolvedMeasure(
+            origin: Point(x: 60, y: 50), width: 100, events: [event],
+            openingBar: nil,
+            closingBar: ResolvedBarLine(x: 160, kind: .single),
+            unitNoteLength: quarterUNL
+        )
+        let svgs = try emitter.emit(layout(systems: [system(measures: [measure])]))
+        let svg  = try #require(svgs.first)
+
+        let nhBBox = try #require(metadata.glyphBBoxes["noteheadBlack"])
+        let faBBox = try #require(metadata.glyphBBoxes["fermataAbove"])
+        let nhCenterX  = (nhBBox.swX + nhBBox.neX) / 2.0 * config.staffSize
+        let faCenterX  = (faBBox.swX + faBBox.neX) / 2.0 * config.staffSize
+        let expectedX  = noteX + nhCenterX - faCenterX
+        let b = SVGBuilder()
+        #expect(svg.contains("x=\"\(b.fmt(expectedX))\""))
+    }
+
+    @Test func fermataIsAboveGraceBeamWhenGraceBeamIsHigher() throws {
+        // Grace group {ag} (A4 + G4, beamed) whose clamped beam tip rises above the default
+        // "one space above top staff line" fermata position.  The emitter must push the fermata
+        // higher so its bottom clears the grace-note beam.
+        //
+        // This mirrors the {ag}Ha2 fragment from "L:1/8 {g}de {g}Hf2 {ag}Ha2".
+        let topStaffY    = 100.0
+        let bottomStaffY = topStaffY + 4 * config.staffSize   // 128
+
+        // Build a beamed grace group: A4 (staffPos 3) then G4 (staffPos 2).
+        let graceA4 = graceNote(step: .a, octave: 4)
+        let graceG4 = graceNote(step: .g, octave: 4)
+        let grace = GraceGroup(kind: .appoggiatura, notes: [graceA4, graceG4], source: dummyRange)
+
+        let graceOriginX = 60.0
+        let noteX        = 90.0
+        let graceEvent   = ResolvedEvent(origin: Point(x: graceOriginX, y: topStaffY), kind: .grace(grace))
+        let mainNote     = Note(
+            pitch: Pitch(step: .a, alteration: .natural, octave: 4),
+            writtenAccidental: nil, displayedAccidental: nil,
+            duration: Fraction(numerator: 2, denominator: 1),   // quarter note with UNL=1/8
+            ties: .none, slurs: .none,
+            decorations: [.fermata],
+            chordSymbol: nil, annotations: [],
+            beam: .single, lyric: nil, source: dummyRange
+        )
+        let noteEvent = ResolvedEvent(origin: Point(x: noteX, y: topStaffY), kind: .note(mainNote))
+        let measure = ResolvedMeasure(
+            origin: Point(x: 36, y: 50), width: 220,
+            events: [graceEvent, noteEvent], openingBar: nil,
+            closingBar: ResolvedBarLine(x: 256, kind: .single),
+            unitNoteLength: eighthUNL
+        )
+        let svgs = try emitter.emit(layout(systems: [system(measures: [measure])]))
+        let svg  = try #require(svgs.first)
+
+        // Reproduce the grace-group beam-Y calculation (mirrors emitGraceGroup internals).
+        let s            = config.staffSize
+        let graceScale   = 0.6
+        let beamThick    = metadata.engravingDefaults.beamThickness * s * graceScale
+        let beamSpacing  = metadata.engravingDefaults.beamSpacing   * s * graceScale
+        let beamStep     = beamThick + beamSpacing
+        // A4 (staffPos 3) has the highest notehead (smallest y) of the two grace notes.
+        let highestNHY   = bottomStaffY - 3.0 * s / 2.0          // 117.5
+        let stemLength   = 3.5 * s * graceScale                   // 14.7
+        let rawBeamY     = highestNHY - stemLength                 // 102.8
+        let graceStemTipY = min(rawBeamY, topStaffY - 3.0 * beamStep)  // clamped: 90.55
+
+        // fermataY = min(one-space-above-staff, graceBeamY - gap - fermata-descent)
+        let faBBox      = try #require(metadata.glyphBBoxes["fermataAbove"])
+        let descent     = abs(faBBox.swY) * s
+        let gap         = 0.5 * s
+        let expectedY   = min(topStaffY - s, graceStemTipY - gap - descent)
+        let b = SVGBuilder()
+        #expect(svg.contains("y=\"\(b.fmt(expectedY))\""))
+        // The fermata must genuinely be above the grace beam (smaller SVG y = higher).
+        #expect(expectedY < graceStemTipY)
+    }
+
     @Test func dottedEighthNoteHasAugmentationDot() throws {
         // Dotted eighth: absolute duration = 3/16.
         // With UNL = 1/16 and duration = 3/1: absDur = 3 * (1/16) = 3/16.
@@ -605,6 +695,108 @@ private let quarterUNL = Fraction(numerator: 1, denominator: 4)
         #expect(!svg.contains(String(SMuFLGlyph.augmentationDot.character)))
     }
 
+    // MARK: Fermatas
+
+    @Test func fermataDecorationRendersAboveStaff() throws {
+        let note = Note(
+            pitch: Pitch(step: .c, alteration: .natural, octave: 5),
+            writtenAccidental: nil,
+            displayedAccidental: nil,
+            duration: Fraction(numerator: 1, denominator: 1),
+            ties: .none, slurs: .none,
+            decorations: [.fermata],
+            chordSymbol: nil, annotations: [],
+            beam: .single, lyric: nil, source: dummyRange
+        )
+        let event = ResolvedEvent(origin: Point(x: 60, y: 100), kind: .note(note))
+        let measure = ResolvedMeasure(
+            origin: Point(x: 60, y: 50), width: 100, events: [event],
+            openingBar: nil,
+            closingBar: ResolvedBarLine(x: 160, kind: .single),
+            unitNoteLength: quarterUNL
+        )
+        let svgs = try emitter.emit(layout(systems: [system(measures: [measure])]))
+        let svg  = try #require(svgs.first)
+        #expect(svg.contains(String(SMuFLGlyph.fermataAbove.character)))
+    }
+
+    @Test func invertedFermataDecorationRendersBelowStaff() throws {
+        let note = Note(
+            pitch: Pitch(step: .c, alteration: .natural, octave: 5),
+            writtenAccidental: nil,
+            displayedAccidental: nil,
+            duration: Fraction(numerator: 1, denominator: 1),
+            ties: .none, slurs: .none,
+            decorations: [.invertedFermata],
+            chordSymbol: nil, annotations: [],
+            beam: .single, lyric: nil, source: dummyRange
+        )
+        let event = ResolvedEvent(origin: Point(x: 60, y: 100), kind: .note(note))
+        let measure = ResolvedMeasure(
+            origin: Point(x: 60, y: 50), width: 100, events: [event],
+            openingBar: nil,
+            closingBar: ResolvedBarLine(x: 160, kind: .single),
+            unitNoteLength: quarterUNL
+        )
+        let svgs = try emitter.emit(layout(systems: [system(measures: [measure])]))
+        let svg  = try #require(svgs.first)
+        #expect(svg.contains(String(SMuFLGlyph.fermataBelow.character)))
+    }
+
+    @Test func noteWithNoDecorations_hasNoFermataGlyph() throws {
+        let note = Note(
+            pitch: Pitch(step: .c, alteration: .natural, octave: 5),
+            writtenAccidental: nil,
+            displayedAccidental: nil,
+            duration: Fraction(numerator: 1, denominator: 1),
+            ties: .none, slurs: .none,
+            decorations: [],
+            chordSymbol: nil, annotations: [],
+            beam: .single, lyric: nil, source: dummyRange
+        )
+        let event = ResolvedEvent(origin: Point(x: 60, y: 100), kind: .note(note))
+        let measure = ResolvedMeasure(
+            origin: Point(x: 60, y: 50), width: 100, events: [event],
+            openingBar: nil,
+            closingBar: ResolvedBarLine(x: 160, kind: .single),
+            unitNoteLength: quarterUNL
+        )
+        let svgs = try emitter.emit(layout(systems: [system(measures: [measure])]))
+        let svg  = try #require(svgs.first)
+        #expect(!svg.contains(String(SMuFLGlyph.fermataAbove.character)))
+        #expect(!svg.contains(String(SMuFLGlyph.fermataBelow.character)))
+    }
+
+    @Test func fermataIsAboveTopStaffLine() throws {
+        // topStaffY = system.origin.y + staffOrigin = 50 + 50 = 100
+        // fermata Y = topStaffY - staffSize = 100 - 7 = 93
+        let topStaffY  = 100.0
+        let expectedY  = topStaffY - config.staffSize
+
+        let note = Note(
+            pitch: Pitch(step: .c, alteration: .natural, octave: 5),
+            writtenAccidental: nil,
+            displayedAccidental: nil,
+            duration: Fraction(numerator: 1, denominator: 1),
+            ties: .none, slurs: .none,
+            decorations: [.fermata],
+            chordSymbol: nil, annotations: [],
+            beam: .single, lyric: nil, source: dummyRange
+        )
+        let event = ResolvedEvent(origin: Point(x: 60, y: topStaffY), kind: .note(note))
+        let measure = ResolvedMeasure(
+            origin: Point(x: 60, y: 50), width: 100, events: [event],
+            openingBar: nil,
+            closingBar: ResolvedBarLine(x: 160, kind: .single),
+            unitNoteLength: quarterUNL
+        )
+        let svgs = try emitter.emit(layout(systems: [system(measures: [measure])]))
+        let svg  = try #require(svgs.first)
+        let b = SVGBuilder()
+        #expect(svg.contains("y=\"\(b.fmt(expectedY))\""))
+        #expect(expectedY < topStaffY)
+    }
+
     @Test func dottedQuarterNoteHasAugmentationDot() throws {
         // Dotted quarter: absDur = 3/8.  UNL = 1/8, duration = 3 units.
         let note = Note(
@@ -625,5 +817,160 @@ private let quarterUNL = Fraction(numerator: 1, denominator: 4)
         let svgs = try emitter.emit(layout(systems: [system(measures: [measure])]))
         let svg  = try #require(svgs.first)
         #expect(svg.contains(String(SMuFLGlyph.augmentationDot.character)))
+    }
+
+    // MARK: - Ties
+
+    /// Helper: builds a note with the given tie state and duration (in units of `eighthUNL`).
+    private func tiedNote(step: DiatonicStep, octave: Int, durationUnits: Int,
+                           tieState: TieState) -> Note {
+        Note(
+            pitch: Pitch(step: step, alteration: .natural, octave: octave),
+            writtenAccidental: nil, displayedAccidental: nil,
+            duration: Fraction(numerator: durationUnits, denominator: 1),
+            ties: tieState, slurs: .none, decorations: [],
+            chordSymbol: nil, annotations: [],
+            beam: .single, lyric: nil, source: dummyRange
+        )
+    }
+
+    @Test func tieWithinMeasureEmitsPathElement() throws {
+        // E4 quarter (.startsTie) at x=60, E4 eighth (.endsTie) at x=100.
+        // With UNL = 1/8: 2 units = quarter, 1 unit = eighth.
+        let startNote = tiedNote(step: .e, octave: 4, durationUnits: 2, tieState: .startsTie)
+        let endNote   = tiedNote(step: .e, octave: 4, durationUnits: 1, tieState: .endsTie)
+        let topY = 100.0
+        let e1 = ResolvedEvent(origin: Point(x: 60, y: topY), kind: .note(startNote))
+        let e2 = ResolvedEvent(origin: Point(x: 100, y: topY), kind: .note(endNote))
+        let measure = ResolvedMeasure(
+            origin: Point(x: 36, y: 50), width: 200,
+            events: [e1, e2], openingBar: nil,
+            closingBar: ResolvedBarLine(x: 236, kind: .single),
+            unitNoteLength: eighthUNL
+        )
+        let svgs = try emitter.emit(layout(systems: [system(measures: [measure])]))
+        let svg  = try #require(svgs.first)
+        #expect(svg.contains("<path"))
+    }
+
+    @Test func tieCrossesBarLineEmitsPathElement() throws {
+        // G4 quarter (.startsTie) at the end of measure 1; G4 whole (.endsTie) at the start
+        // of measure 2.  Both measures are in the same system so the arc spans the bar line.
+        let startNote = tiedNote(step: .g, octave: 4, durationUnits: 2, tieState: .startsTie)
+        let endNote   = tiedNote(step: .g, octave: 4, durationUnits: 8, tieState: .endsTie)
+        let topY = 100.0
+        let e1 = ResolvedEvent(origin: Point(x: 160, y: topY), kind: .note(startNote))
+        let m1 = ResolvedMeasure(
+            origin: Point(x: 36, y: 50), width: 160,
+            events: [e1], openingBar: nil,
+            closingBar: ResolvedBarLine(x: 196, kind: .single),
+            unitNoteLength: eighthUNL
+        )
+        let e2 = ResolvedEvent(origin: Point(x: 210, y: topY), kind: .note(endNote))
+        let m2 = ResolvedMeasure(
+            origin: Point(x: 196, y: 50), width: 180,
+            events: [e2], openingBar: nil,
+            closingBar: ResolvedBarLine(x: 376, kind: .single),
+            unitNoteLength: eighthUNL
+        )
+        let svgs = try emitter.emit(layout(systems: [system(measures: [m1, m2])]))
+        let svg  = try #require(svgs.first)
+        #expect(svg.contains("<path"))
+    }
+
+    @Test func notesWithNoTiesProduceNoPathElement() throws {
+        // Same pitches, same layout as tieWithinMeasure, but ties = .none — no arc.
+        let n1 = tiedNote(step: .e, octave: 4, durationUnits: 2, tieState: .none)
+        let n2 = tiedNote(step: .e, octave: 4, durationUnits: 1, tieState: .none)
+        let topY = 100.0
+        let e1 = ResolvedEvent(origin: Point(x: 60, y: topY), kind: .note(n1))
+        let e2 = ResolvedEvent(origin: Point(x: 100, y: topY), kind: .note(n2))
+        let measure = ResolvedMeasure(
+            origin: Point(x: 36, y: 50), width: 200,
+            events: [e1, e2], openingBar: nil,
+            closingBar: ResolvedBarLine(x: 236, kind: .single),
+            unitNoteLength: eighthUNL
+        )
+        let svgs = try emitter.emit(layout(systems: [system(measures: [measure])]))
+        let svg  = try #require(svgs.first)
+        #expect(!svg.contains("<path"))
+    }
+
+    // MARK: - Slurs
+
+    /// Helper: builds a note with the given SlurState.
+    private func slurredNote(step: DiatonicStep, octave: Int, durationUnits: Int,
+                              opens: Int, closes: Int) -> Note {
+        Note(
+            pitch: Pitch(step: step, alteration: .natural, octave: octave),
+            writtenAccidental: nil, displayedAccidental: nil,
+            duration: Fraction(numerator: durationUnits, denominator: 1),
+            ties: .none,
+            slurs: SlurState(opens: opens, closes: closes),
+            decorations: [], chordSymbol: nil, annotations: [],
+            beam: .single, lyric: nil, source: dummyRange
+        )
+    }
+
+    @Test func slurWithinMeasureEmitsPathElement() throws {
+        // E4 quarter (opens slur) → E4 eighth (closes slur): same pattern as the
+        // ABC "(e2 e)" fragment which the parser maps to SlurState, not TieState.
+        let openNote  = slurredNote(step: .e, octave: 4, durationUnits: 2, opens: 1, closes: 0)
+        let closeNote = slurredNote(step: .e, octave: 4, durationUnits: 1, opens: 0, closes: 1)
+        let topY = 100.0
+        let e1 = ResolvedEvent(origin: Point(x: 60, y: topY), kind: .note(openNote))
+        let e2 = ResolvedEvent(origin: Point(x: 100, y: topY), kind: .note(closeNote))
+        let measure = ResolvedMeasure(
+            origin: Point(x: 36, y: 50), width: 200,
+            events: [e1, e2], openingBar: nil,
+            closingBar: ResolvedBarLine(x: 236, kind: .single),
+            unitNoteLength: eighthUNL
+        )
+        let svgs = try emitter.emit(layout(systems: [system(measures: [measure])]))
+        let svg  = try #require(svgs.first)
+        #expect(svg.contains("<path"))
+    }
+
+    @Test func slurCrossesBarLineEmitsPathElement() throws {
+        // G4 quarter (opens slur) in measure 1; G4 whole (closes slur) in measure 2.
+        // Models the ABC "(g2 | g8)" fragment.
+        let openNote  = slurredNote(step: .g, octave: 4, durationUnits: 2, opens: 1, closes: 0)
+        let closeNote = slurredNote(step: .g, octave: 4, durationUnits: 8, opens: 0, closes: 1)
+        let topY = 100.0
+        let e1 = ResolvedEvent(origin: Point(x: 160, y: topY), kind: .note(openNote))
+        let m1 = ResolvedMeasure(
+            origin: Point(x: 36, y: 50), width: 160,
+            events: [e1], openingBar: nil,
+            closingBar: ResolvedBarLine(x: 196, kind: .single),
+            unitNoteLength: eighthUNL
+        )
+        let e2 = ResolvedEvent(origin: Point(x: 210, y: topY), kind: .note(closeNote))
+        let m2 = ResolvedMeasure(
+            origin: Point(x: 196, y: 50), width: 180,
+            events: [e2], openingBar: nil,
+            closingBar: ResolvedBarLine(x: 376, kind: .single),
+            unitNoteLength: eighthUNL
+        )
+        let svgs = try emitter.emit(layout(systems: [system(measures: [m1, m2])]))
+        let svg  = try #require(svgs.first)
+        #expect(svg.contains("<path"))
+    }
+
+    @Test func notesWithNoSlursAndNoTiesProduceNoPathElement() throws {
+        // Baseline: plain notes with neither slurs nor ties → no arc element.
+        let n1 = slurredNote(step: .e, octave: 4, durationUnits: 2, opens: 0, closes: 0)
+        let n2 = slurredNote(step: .e, octave: 4, durationUnits: 1, opens: 0, closes: 0)
+        let topY = 100.0
+        let e1 = ResolvedEvent(origin: Point(x: 60, y: topY), kind: .note(n1))
+        let e2 = ResolvedEvent(origin: Point(x: 100, y: topY), kind: .note(n2))
+        let measure = ResolvedMeasure(
+            origin: Point(x: 36, y: 50), width: 200,
+            events: [e1, e2], openingBar: nil,
+            closingBar: ResolvedBarLine(x: 236, kind: .single),
+            unitNoteLength: eighthUNL
+        )
+        let svgs = try emitter.emit(layout(systems: [system(measures: [measure])]))
+        let svg  = try #require(svgs.first)
+        #expect(!svg.contains("<path"))
     }
 }

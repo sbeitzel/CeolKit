@@ -27,6 +27,7 @@ public struct MeasureSizer: Sendable {
         let quarterInUnits = 0.25 / unl
 
         var offsets: [Double] = []
+        var graceEventIndices: Set<Int> = []
         var x: Double = leftMargin(for: measure)
         var i = 0
 
@@ -40,8 +41,9 @@ public struct MeasureSizer: Sendable {
                 // moves together during justification.
                 let graceW = graceGroupWidth(g)
                 let gap    = graceNoteGap(for: g)
-                offsets.append(x)                    // grace event
-                offsets.append(x + graceW + gap)     // paired note/chord/rest
+                graceEventIndices.insert(offsets.count)  // record before appending
+                offsets.append(x)                        // grace event
+                offsets.append(x + graceW + gap)         // paired note/chord/rest
                 x += graceW + gap + columnWidth(for: measure.events[i + 1], quarterInUnits: quarterInUnits)
                 i += 2
             } else {
@@ -57,7 +59,7 @@ public struct MeasureSizer: Sendable {
         let naturalWidth = x + rightPadding(for: measure)
 
         return SizedMeasure(measure: measure, naturalWidth: naturalWidth, eventOffsets: offsets,
-                            unitNoteLength: unitNoteLength)
+                            unitNoteLength: unitNoteLength, graceEventIndices: graceEventIndices)
     }
 
     // MARK: - Column width

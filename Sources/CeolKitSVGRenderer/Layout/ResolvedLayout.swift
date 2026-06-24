@@ -13,17 +13,23 @@ public struct SizedMeasure: Sendable {
     /// The voice's `L:` unit note length, carried forward so Pass 5 can resolve
     /// absolute durations for notehead-type selection without extra context.
     public let unitNoteLength: Fraction
+    /// Indices into `eventOffsets` that are grace events paired with the immediately
+    /// following event.  The justifier keeps the gap within each such pair fixed so
+    /// grace notes stay visually attached to their melody note when measures are stretched.
+    public let graceEventIndices: Set<Int>
 
     public init(
         measure: Measure,
         naturalWidth: Double,
         eventOffsets: [Double],
-        unitNoteLength: Fraction = Fraction(numerator: 1, denominator: 8)
+        unitNoteLength: Fraction = Fraction(numerator: 1, denominator: 8),
+        graceEventIndices: Set<Int> = []
     ) {
         self.measure = measure
         self.naturalWidth = naturalWidth
         self.eventOffsets = eventOffsets
         self.unitNoteLength = unitNoteLength
+        self.graceEventIndices = graceEventIndices
     }
 }
 
@@ -105,7 +111,8 @@ public struct JustifiedMeasure: Sendable {
     public let source: SizedMeasure
     /// Final rendered width in points; always ≥ `source.naturalWidth`.
     public let finalWidth: Double
-    /// Event x-offsets rescaled from `source.eventOffsets` by `finalWidth / naturalWidth`.
+    /// Event x-offsets after justification.  Grace-to-note gaps are held at their natural
+    /// size; all remaining horizontal slack is distributed among elastic (note-to-note) spacings.
     public let eventOffsets: [Double]
 
     public init(source: SizedMeasure, finalWidth: Double, eventOffsets: [Double]) {

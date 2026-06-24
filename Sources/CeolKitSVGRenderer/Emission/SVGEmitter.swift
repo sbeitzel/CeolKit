@@ -17,6 +17,24 @@ private struct StemInfo {
     let noteheadY: Double  // y of the notehead end (used by emitBeamGroup to draw stems)
 }
 
+/// Pending tie: records where a tied note's arc must start so the arc can be drawn
+/// when the matching end note is encountered (possibly in the next measure).
+private struct TieAnchor {
+    let x: Double       // left-edge x of the notehead where the tie originates
+    let noteY: Double   // y of the notehead
+    let pitch: Pitch    // matched against the end note's pitch
+    let staffPos: Int   // determines whether the arc curves above or below the note
+}
+
+/// Pending slur: records the start position of an open slur bracket so the arc
+/// can be drawn when the matching closing `)` note is encountered.  Stored as a
+/// LIFO stack so that nested slurs resolve correctly (innermost closes first).
+private struct SlurAnchor {
+    let x: Double       // left-edge x of the notehead where the slur opens
+    let noteY: Double   // y of the notehead
+    let staffPos: Int   // determines whether the arc curves above or below
+}
+
 // MARK: - Pass 5
 
 /// Pass 5: converts a `ResolvedLayout` into one self-contained SVG document per page.
@@ -116,8 +134,12 @@ struct SVGEmitter: Sendable {
         if let meter = system.meter {
             emitTimeSignature(meter, system: system, builder: &builder)
         }
+        var pendingTies:  [TieAnchor]  = []
+        var pendingSlurs: [SlurAnchor] = []  // LIFO: innermost slur closes first
         for measure in system.measures {
-            emitMeasure(measure, system: system, builder: &builder)
+            emitMeasure(measure, system: system,
+                        pendingTies: &pendingTies, pendingSlurs: &pendingSlurs,
+                        builder: &builder)
         }
     }
 
@@ -260,7 +282,9 @@ struct SVGEmitter: Sendable {
 
     // MARK: - Measure
 
-    private func emitMeasure(_ measure: ResolvedMeasure, system: ResolvedSystem, builder: inout SVGBuilder) {
+    private func emitMeasure(_ measure: ResolvedMeasure, system: ResolvedSystem,
+                              pendingTies: inout [TieAnchor], pendingSlurs: inout [SlurAnchor],
+                              builder: inout SVGBuilder) {
         let topY    = system.origin.y + system.staffOrigin
         let bottomY = topY + system.staffHeight
 
@@ -271,6 +295,8 @@ struct SVGEmitter: Sendable {
 
         // Beam accumulator: per-note (StemInfo, beamCount) pairs for the current beam run.
         var pendingBeam: [(stem: StemInfo, beamCount: Int)]?
+        // Grace note beam tip Y for the note that immediately follows; reset after each non-grace event.
+        var lastGraceBeamY: Double? = nil
 
         func flushBeam() {
             guard let g = pendingBeam else { return }
@@ -279,8 +305,18 @@ struct SVGEmitter: Sendable {
         }
 
         for event in measure.events {
+            // Grace events are handled here so their stem-tip Y can be forwarded
+            // to the next note for fermata clearance.
+            if case .grace(let g) = event.kind {
+                lastGraceBeamY = emitGraceGroup(g, originX: event.origin.x, topStaffY: topY,
+                                                bottomStaffY: bottomY, builder: &builder)
+                continue
+            }
             let stemInfo = emitEvent(event, topStaffY: topY, bottomStaffY: bottomY,
-                                     unitNoteLength: measure.unitNoteLength, builder: &builder)
+                                     unitNoteLength: measure.unitNoteLength,
+                                     precedingGraceBeamY: lastGraceBeamY,
+                                     builder: &builder)
+            lastGraceBeamY = nil
             if let info = stemInfo, let note = noteFrom(event) {
                 let bc = requiredBeamCount(absoluteDuration(note.duration,
                                                             unitNoteLength: measure.unitNoteLength))
@@ -296,6 +332,43 @@ struct SVGEmitter: Sendable {
                     flushBeam()
                 case .single:
                     break
+                }
+            }
+
+            // Tie handling: resolve incoming ties before recording outgoing ones so that
+            // a .continuesTie note draws the arc from the previous note to itself and
+            // then registers itself as a new tie start.
+            if let note = noteFrom(event), note.ties != .none {
+                let sp = staffPos(for: note.pitch)
+                let ny = noteY(staffPos: sp, bottomStaffY: bottomY)
+
+                if note.ties == .endsTie || note.ties == .continuesTie {
+                    if let idx = pendingTies.firstIndex(where: { $0.pitch == note.pitch }) {
+                        let anchor = pendingTies.remove(at: idx)
+                        emitTieArc(fromX: anchor.x, fromY: anchor.noteY, staffPos: anchor.staffPos,
+                                   toX: event.origin.x, toY: ny, builder: &builder)
+                    }
+                }
+                if note.ties == .startsTie || note.ties == .continuesTie {
+                    pendingTies.append(TieAnchor(x: event.origin.x, noteY: ny,
+                                                 pitch: note.pitch, staffPos: sp))
+                }
+            }
+
+            // Slur handling: close slurs first (innermost first, LIFO), then open new ones.
+            // A slur arc is visually identical to a tie arc; the difference is semantic.
+            if let note = noteFrom(event), note.slurs.opens > 0 || note.slurs.closes > 0 {
+                let sp = staffPos(for: note.pitch)
+                let ny = noteY(staffPos: sp, bottomStaffY: bottomY)
+
+                for _ in 0..<note.slurs.closes {
+                    if let anchor = pendingSlurs.popLast() {
+                        emitTieArc(fromX: anchor.x, fromY: anchor.noteY, staffPos: anchor.staffPos,
+                                   toX: event.origin.x, toY: ny, builder: &builder)
+                    }
+                }
+                for _ in 0..<note.slurs.opens {
+                    pendingSlurs.append(SlurAnchor(x: event.origin.x, noteY: ny, staffPos: sp))
                 }
             }
         }
@@ -484,22 +557,24 @@ struct SVGEmitter: Sendable {
 
     @discardableResult
     private func emitEvent(_ event: ResolvedEvent, topStaffY: Double, bottomStaffY: Double,
-                           unitNoteLength: Fraction, builder: inout SVGBuilder) -> StemInfo? {
+                           unitNoteLength: Fraction, precedingGraceBeamY: Double? = nil,
+                           builder: inout SVGBuilder) -> StemInfo? {
         switch event.kind {
         case .note(let n):
             return emitNote(n, x: event.origin.x, topStaffY: topStaffY, bottomStaffY: bottomStaffY,
-                            unitNoteLength: unitNoteLength, builder: &builder)
+                            unitNoteLength: unitNoteLength, precedingGraceBeamY: precedingGraceBeamY,
+                            builder: &builder)
         case .rest(let r):
             emitRest(r, x: event.origin.x, topStaffY: topStaffY, bottomStaffY: bottomStaffY,
                      unitNoteLength: unitNoteLength, builder: &builder)
         case .chord(let c):
             for note in c.notes {
                 emitNote(note, x: event.origin.x, topStaffY: topStaffY, bottomStaffY: bottomStaffY,
-                         unitNoteLength: unitNoteLength, builder: &builder)
+                         unitNoteLength: unitNoteLength, precedingGraceBeamY: precedingGraceBeamY,
+                         builder: &builder)
             }
-        case .grace(let g):
-            emitGraceGroup(g, originX: event.origin.x, topStaffY: topStaffY,
-                           bottomStaffY: bottomStaffY, builder: &builder)
+        case .grace:
+            break // handled in emitMeasure to capture stem-tip Y
         case .tuplet, .spacer, .directiveAnchor:
             break // deferred to a future pass
         }
@@ -510,7 +585,8 @@ struct SVGEmitter: Sendable {
 
     @discardableResult
     private func emitNote(_ note: Note, x: Double, topStaffY: Double, bottomStaffY: Double,
-                          unitNoteLength: Fraction, builder: inout SVGBuilder) -> StemInfo? {
+                          unitNoteLength: Fraction, precedingGraceBeamY: Double? = nil,
+                          builder: inout SVGBuilder) -> StemInfo? {
         let staffPos  = self.staffPos(for: note.pitch)
         let y         = noteY(staffPos: staffPos, bottomStaffY: bottomStaffY)
         let absDur    = absoluteDuration(note.duration, unitNoteLength: unitNoteLength)
@@ -528,6 +604,9 @@ struct SVGEmitter: Sendable {
             emitAugmentationDot(x: x, noteheadY: y, staffPos: staffPos, fontSize: fontSize,
                                 builder: &builder)
         }
+
+        emitDecorations(note.decorations, x: x, topStaffY: topStaffY, bottomStaffY: bottomStaffY,
+                        fontSize: fontSize, precedingGraceBeamY: precedingGraceBeamY, builder: &builder)
 
         var stemInfo: StemInfo?
         if absDur < 1.0 {
@@ -658,10 +737,11 @@ struct SVGEmitter: Sendable {
     /// Scale factor for grace note glyphs and geometry relative to normal notes.
     private let graceScale = 0.6
 
+    @discardableResult
     private func emitGraceGroup(_ grace: GraceGroup, originX: Double,
                                  topStaffY: Double, bottomStaffY: Double,
-                                 builder: inout SVGBuilder) {
-        guard !grace.notes.isEmpty else { return }
+                                 builder: inout SVGBuilder) -> Double {
+        guard !grace.notes.isEmpty else { return 0 }
 
         let s          = config.staffSize
         let fontSize   = 4.0 * s * graceScale
@@ -750,6 +830,8 @@ struct SVGEmitter: Sendable {
                          x2: first.stemX + slashExt, y2: midStemY - slashExt,
                          stroke: "black", strokeWidth: stemThick)
         }
+
+        return beamY
     }
 
     // MARK: - Rests
@@ -797,6 +879,28 @@ struct SVGEmitter: Sendable {
                      fontFamily: "Bravura", fontSize: fontSize)
     }
 
+    // MARK: - Tie arc
+
+    private func emitTieArc(fromX: Double, fromY: Double, staffPos: Int,
+                             toX: Double, toY: Double, builder: inout SVGBuilder) {
+        let s     = config.staffSize
+        let noteW = noteheadWidth()
+        let x1    = fromX + noteW   // right edge of the starting notehead
+        let x2    = toX             // left edge of the ending notehead
+        // Stems go up for staffPos ≤ 4; tie arcs go to the opposite side of the stem.
+        let tieBelow = staffPos <= 4
+        let dy    = tieBelow ? s * 0.75 : -(s * 0.75)
+        let span  = x2 - x1
+        let cp1x  = x1 + span / 3.0
+        let cp2x  = x2 - span / 3.0
+        let d     = "M \(builder.fmt(x1)) \(builder.fmt(fromY))" +
+                    " C \(builder.fmt(cp1x)) \(builder.fmt(fromY + dy))" +
+                    " \(builder.fmt(cp2x)) \(builder.fmt(toY + dy))" +
+                    " \(builder.fmt(x2)) \(builder.fmt(toY))"
+        let strokeWidth = metadata.engravingDefaults.stemThickness * s * 1.5
+        builder.path(d: d, fill: "none", stroke: "black", strokeWidth: strokeWidth)
+    }
+
     // MARK: - Helpers
 
     private func staffPos(for pitch: Pitch) -> Int {
@@ -842,6 +946,48 @@ struct SVGEmitter: Sendable {
             let y2 = stemUp ? flagTipY + offset + height : flagTipY - offset - height
             builder.line(x1: stemX, y1: y1, x2: stemX + width, y2: y2,
                          stroke: "black", strokeWidth: thick)
+        }
+    }
+
+    private func emitDecorations(_ decorations: [Decoration], x: Double,
+                                  topStaffY: Double, bottomStaffY: Double,
+                                  fontSize: Double, precedingGraceBeamY: Double? = nil,
+                                  builder: inout SVGBuilder) {
+        guard !decorations.isEmpty else { return }
+        let s = config.staffSize
+        // Center x over the notehead: offset from note origin to the glyph's horizontal midpoint.
+        let nhBBox = metadata.glyphBBoxes["noteheadBlack"]
+        let nhCenterX = ((nhBBox?.swX ?? 0.0) + (nhBBox?.neX ?? 1.18)) / 2.0 * s
+
+        for decoration in decorations {
+            switch decoration {
+            case .fermata:
+                let faBBox = metadata.glyphBBoxes["fermataAbove"]
+                let faCenterX = ((faBBox?.swX ?? 0.012) + (faBBox?.neX ?? 2.42)) / 2.0 * s
+                let fermataX = x + nhCenterX - faCenterX
+
+                // Y: at least one staff space above the top line; pushed higher if a preceding
+                // grace group's stem tip would be overlapped.
+                let descent = abs(faBBox?.swY ?? 0.012) * s
+                let gap = 0.5 * s
+                var fermataY = topStaffY - s
+                if let graceBeamY = precedingGraceBeamY {
+                    fermataY = min(fermataY, graceBeamY - gap - descent)
+                }
+                builder.text(String(SMuFLGlyph.fermataAbove.character), x: fermataX, y: fermataY,
+                             fontFamily: "Bravura", fontSize: fontSize)
+
+            case .invertedFermata:
+                let fbBBox = metadata.glyphBBoxes["fermataBelow"]
+                let fbCenterX = ((fbBBox?.swX ?? 0.012) + (fbBBox?.neX ?? 2.42)) / 2.0 * s
+                let fermataX = x + nhCenterX - fbCenterX
+                let fermataY = bottomStaffY + s + fontSize * 0.25
+                builder.text(String(SMuFLGlyph.fermataBelow.character), x: fermataX, y: fermataY,
+                             fontFamily: "Bravura", fontSize: fontSize)
+
+            default:
+                break
+            }
         }
     }
 

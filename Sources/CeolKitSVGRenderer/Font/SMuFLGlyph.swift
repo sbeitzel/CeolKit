@@ -55,6 +55,10 @@ public enum SMuFLGlyph: String, Sendable, CaseIterable {
     // Repeat dots
     case repeatDot
 
+    // Fermatas
+    case fermataAbove
+    case fermataBelow
+
     public var unicodeScalar: Unicode.Scalar {
         // swiftlint:disable:next force_unwrapping — all values are valid PUA codepoints
         Unicode.Scalar(codepoint)!
@@ -103,6 +107,8 @@ public enum SMuFLGlyph: String, Sendable, CaseIterable {
         case .timeSigCutCommon:            return 0xE08B
         case .augmentationDot:             return 0xE1E7
         case .repeatDot:                   return 0xE044
+        case .fermataAbove:                return 0xE4C0
+        case .fermataBelow:                return 0xE4C1
         }
     }
 }

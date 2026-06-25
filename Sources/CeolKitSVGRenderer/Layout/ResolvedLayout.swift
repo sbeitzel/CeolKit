@@ -235,6 +235,9 @@ public struct ResolvedMeasure: Sendable {
     /// Propagated from `SizedMeasure.unitNoteLength`; used by the emitter to compute
     /// absolute note durations for notehead-type selection.
     public let unitNoteLength: Fraction
+    /// Non-nil when an inline `[M:…]` changed the time signature before this measure.
+    /// The emitter draws the corresponding glyph at `origin.x` before the first note.
+    public let meter: Meter?
 
     public init(
         origin: Point,
@@ -242,7 +245,8 @@ public struct ResolvedMeasure: Sendable {
         events: [ResolvedEvent],
         openingBar: ResolvedBarLine?,
         closingBar: ResolvedBarLine,
-        unitNoteLength: Fraction = Fraction(numerator: 1, denominator: 8)
+        unitNoteLength: Fraction = Fraction(numerator: 1, denominator: 8),
+        meter: Meter? = nil
     ) {
         self.origin = origin
         self.width = width
@@ -250,6 +254,7 @@ public struct ResolvedMeasure: Sendable {
         self.openingBar = openingBar
         self.closingBar = closingBar
         self.unitNoteLength = unitNoteLength
+        self.meter = meter
     }
 }
 

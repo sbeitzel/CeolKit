@@ -539,6 +539,7 @@ struct SemanticPass {
             ctx.accidentalScope = AccidentalScope(keyAlterations: keyAlterations(for: k))
         case .meter(let m, _):
             ctx.meter = m
+            ctx.meterChangedSinceLastBar = true
         case .unitNoteLength(let f, _):
             ctx.unitNoteLength = f
         case .tempo:
@@ -1000,7 +1001,8 @@ struct SemanticPass {
                 events: acc.currentEvents,
                 closingBar: finalBar,
                 endingNumber: nil,
-                source: src
+                source: src,
+                meter: acc.pendingMeter
             )
             measures.append(finalMeasure)
         }
@@ -1043,7 +1045,8 @@ struct SemanticPass {
                 events: resolvedEvents,
                 closingBar: m.closingBar,
                 endingNumber: m.endingNumber,
-                source: m.source
+                source: m.source,
+                meter: m.meter
             ))
         }
 
@@ -1055,7 +1058,8 @@ struct SemanticPass {
                 events: resolver.resolve(m.events),
                 closingBar: m.closingBar,
                 endingNumber: m.endingNumber,
-                source: m.source
+                source: m.source,
+                meter: m.meter
             )
         }
         return (beamResolved, diagnostics)
@@ -1144,6 +1148,9 @@ struct VoiceAccumulator {
     var lastBarLine: BarLine? = nil
     var measureSource: SourceRange
     var unitNoteLength: Fraction
+    // Set by BodyContext after a barline when [M:...] changed the meter mid-measure;
+    // consumed by the next closeWith to tag that measure's meter change for renderers.
+    var pendingMeter: Meter? = nil
 
     init(source: SourceRange, unitNoteLength: Fraction) {
         self.measureSource = source
@@ -1168,12 +1175,15 @@ struct VoiceAccumulator {
             return
         }
         let src = currentEvents.first.flatMap { eventSource($0) } ?? measureSource
+        let meterTag = pendingMeter
+        pendingMeter = nil
         let measure = Measure(
             openingBar: lastBarLine,
             events: currentEvents,
             closingBar: barLine,
             endingNumber: endingNumber,
-            source: src
+            source: src,
+            meter: meterTag
         )
         closedMeasures.append(measure)
         currentEvents = []
@@ -1241,6 +1251,9 @@ private struct BodyContext {
     // I:linebreak settings — ABC 2.2 §9.2 — default is I:linebreak <EOL> $
     var linebreakChars: Set<Character> = ["$"] // $ and/or !
     var linebreakOnEOL: Bool = true            // <EOL>
+
+    // Signals that [M:…] fired since the last barline; used to tag the next measure.
+    var meterChangedSinceLastBar: Bool = false
 
     init(
         unitNoteLength: Fraction,
@@ -1310,6 +1323,10 @@ private struct BodyContext {
             unitNoteLength: unitNoteLength
         )].closeWith(barLine: barLine, endingNumber: pendingEndingNumber)
         pendingEndingNumber = nil
+        if meterChangedSinceLastBar {
+            voiceData[currentVoiceId]?.pendingMeter = meter
+            meterChangedSinceLastBar = false
+        }
     }
 
     mutating func switchVoice(id: String, properties: VoiceProperties) {
@@ -1394,7 +1411,8 @@ private struct BodyContext {
                 events: newEvents,
                 closingBar: acc.closedMeasures[i].closingBar,
                 endingNumber: acc.closedMeasures[i].endingNumber,
-                source: acc.closedMeasures[i].source
+                source: acc.closedMeasures[i].source,
+                meter: acc.closedMeasures[i].meter
             )
             offset += count
         }

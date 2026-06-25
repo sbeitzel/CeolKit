@@ -179,18 +179,22 @@ public struct MeasureSizer: Sendable {
     /// For measures that begin with a start-repeat bar line the dots occupy
     /// the space immediately after the bar complex, so the first note is
     /// pushed past them before the standard one-notehead gap is added.
+    /// A mid-line time-signature change adds its glyph width before the note gap.
     private func leftMargin(for measure: Measure) -> Double {
         let nhw = noteheadWidth()
-        guard let opening = measure.openingBar else { return nhw }
+        let thin = metadata.engravingDefaults.thinBarlineThickness * config.staffSize
+        let meterGap = measure.meter != nil ? 2.0 * thin : 0
+        let timeSigW = measure.meter.map { timeSignatureWidth(for: $0, metadata: metadata, staffSize: config.staffSize) } ?? 0
+        guard let opening = measure.openingBar else { return meterGap + timeSigW + nhw }
         switch opening.kind {
         case .repeatStart, .sectionRepeatStart, .repeatBoth:
             let sep     = metadata.engravingDefaults.barlineSeparation * config.staffSize
             let wideSep = sep * 2.0
             let dotW    = metadata.glyphBBoxes["repeatDot"].map { $0.width * config.staffSize }
                           ?? config.staffSize * 0.25
-            return wideSep + sep + dotW + nhw
+            return wideSep + sep + dotW + meterGap + timeSigW + nhw
         default:
-            return nhw
+            return meterGap + timeSigW + nhw
         }
     }
 

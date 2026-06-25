@@ -140,7 +140,8 @@ struct MidLineMeterChangeTests {
         var glyphXValues: [Double] = []
         for segment in svg.components(separatedBy: "<text ").dropFirst() {
             guard segment.contains(six) else { continue }
-            guard let xRange = segment.range(of: " x=\"") else { continue }
+            // x is the first attribute: segment starts with `x="VALUE" y="..."`
+            guard let xRange = segment.range(of: "x=\"") else { continue }
             let after = segment[xRange.upperBound...]
             guard let end = after.firstIndex(of: "\"") else { continue }
             if let x = Double(after[after.startIndex..<end]) {

@@ -204,12 +204,18 @@ struct SVGEmitter: Sendable {
 
     private func emitTimeSignature(_ meter: Meter, system: ResolvedSystem, builder: inout SVGBuilder) {
         let s = config.staffSize
-        let fontSize = 4.0 * s
-        let bottomStaffY = system.origin.y + system.staffOrigin + system.staffHeight
         let keySigW = system.keySignature.map {
             keySignatureWidth(for: $0, metadata: metadata, staffSize: s)
         } ?? 0
         let startX = system.origin.x + clefWidth(for: system.clef.clef) + keySigW
+        emitTimeSignatureGlyph(meter, atX: startX, system: system, builder: &builder)
+    }
+
+    private func emitTimeSignatureGlyph(_ meter: Meter, atX startX: Double,
+                                        system: ResolvedSystem, builder: inout SVGBuilder) {
+        let s = config.staffSize
+        let fontSize = 4.0 * s
+        let bottomStaffY = system.origin.y + system.staffOrigin + system.staffHeight
 
         switch meter {
         case .commonTime:
@@ -292,6 +298,12 @@ struct SVGEmitter: Sendable {
             emitBarLine(opening, topY: topY, bottomY: bottomY, builder: &builder)
         }
         emitBarLine(measure.closingBar, topY: topY, bottomY: bottomY, builder: &builder)
+
+        if let meter = measure.meter {
+            let thin = metadata.engravingDefaults.thinBarlineThickness * config.staffSize
+            emitTimeSignatureGlyph(meter, atX: measure.origin.x + 2.0 * thin,
+                                   system: system, builder: &builder)
+        }
 
         // Beam accumulator: per-note (StemInfo, beamCount) pairs for the current beam run.
         var pendingBeam: [(stem: StemInfo, beamCount: Int)]?

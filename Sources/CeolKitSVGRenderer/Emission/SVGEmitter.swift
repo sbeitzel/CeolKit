@@ -900,15 +900,18 @@ struct SVGEmitter: Sendable {
         let x1    = fromX + noteW   // right edge of the starting notehead
         let x2    = toX             // left edge of the ending notehead
         // Stems go up for staffPos ≤ 4; tie arcs go to the opposite side of the stem.
-        let tieBelow = staffPos <= 4
-        let dy    = tieBelow ? s * 0.75 : -(s * 0.75)
+        let tieBelow  = staffPos <= 4
+        let endOffset = tieBelow ? s : -s     // shift endpoints one staff line away from note centre
+        let dy        = tieBelow ? s * 0.75 : -(s * 0.75)
         let span  = x2 - x1
         let cp1x  = x1 + span / 3.0
         let cp2x  = x2 - span / 3.0
-        let d     = "M \(builder.fmt(x1)) \(builder.fmt(fromY))" +
-                    " C \(builder.fmt(cp1x)) \(builder.fmt(fromY + dy))" +
-                    " \(builder.fmt(cp2x)) \(builder.fmt(toY + dy))" +
-                    " \(builder.fmt(x2)) \(builder.fmt(toY))"
+        let y1    = fromY + endOffset
+        let y2    = toY   + endOffset
+        let d     = "M \(builder.fmt(x1)) \(builder.fmt(y1))" +
+                    " C \(builder.fmt(cp1x)) \(builder.fmt(y1 + dy))" +
+                    " \(builder.fmt(cp2x)) \(builder.fmt(y2 + dy))" +
+                    " \(builder.fmt(x2)) \(builder.fmt(y2))"
         let strokeWidth = metadata.engravingDefaults.stemThickness * s * 1.5
         builder.path(d: d, fill: "none", stroke: "black", strokeWidth: strokeWidth)
     }

@@ -589,6 +589,13 @@ struct SVGEmitter: Sendable {
             break // handled in emitMeasure to capture stem-tip Y
         case .tuplet, .spacer, .directiveAnchor:
             break // deferred to a future pass
+        case .tempoChange(let t):
+            let text = tempoAnnotationText(t)
+            if !text.isEmpty {
+                let fontSize = config.staffSize * 1.5
+                builder.text(text, x: event.origin.x, y: topStaffY - config.staffSize * 1.5,
+                             fontFamily: "Libertinus Serif", fontSize: fontSize)
+            }
         }
         return nil
     }

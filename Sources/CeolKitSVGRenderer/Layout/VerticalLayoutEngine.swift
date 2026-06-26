@@ -239,7 +239,13 @@ public struct VerticalLayoutEngine: Sendable {
         // Grace note stems always point upward (graceScale=0.6) × 3.5 staff spaces above the
         // notehead. Reserve that height so stems never intrude into the title block zone.
         let graceOvershoot = hasGraceGroups ? 3.5 * s * 0.6 : 0
-        let extraAbove = Double(maxLedgerAbove) * s + (hasChordSymbolsOrAnnotations ? s : 0) + graceOvershoot
+        let baseAbove = Double(maxLedgerAbove) * s + (hasChordSymbolsOrAnnotations ? s : 0) + graceOvershoot
+        // Tempo annotations (from inline Q: events) are placed 1.5 staffSizes above the top
+        // staff line; font size is 1.5 staffSizes, so the bounding box extends ~3× above.
+        let hasTempoChanges = system.measures.contains { jm in
+            jm.source.measure.events.contains { if case .tempoChange = $0 { return true }; return false }
+        }
+        let extraAbove = hasTempoChanges ? max(baseAbove, s * 3) : baseAbove
         let extraBelow = Double(maxLedgerBelow) * s + (hasLyrics ? s * 2.0 : 0)
         return (extraAbove, extraBelow)
     }

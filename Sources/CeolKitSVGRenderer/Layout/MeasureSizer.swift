@@ -109,6 +109,9 @@ public struct MeasureSizer: Sendable {
 
         case .directiveAnchor:
             return 0
+
+        case .tempoChange:
+            return s * 6
         }
     }
 

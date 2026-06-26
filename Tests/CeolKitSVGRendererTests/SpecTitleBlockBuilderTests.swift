@@ -11,7 +11,8 @@ private func makeTune(
     rhythm: String? = nil,
     composer: String? = nil,
     origin: [String] = [],
-    reference: Int = 0
+    reference: Int = 0,
+    tempo: Tempo? = nil
 ) -> Tune {
     let titleFields = titles.map { TextString(value: $0, source: dummySrc) }
     let rhythmField = rhythm.map   { TextString(value: $0, source: dummySrc) }
@@ -47,7 +48,7 @@ private func makeTune(
         key: key,
         meter: .fraction(num: 4, den: 4),
         unitNoteLength: Fraction(numerator: 1, denominator: 8),
-        tempo: nil,
+        tempo: tempo,
         parts: nil,
         voices: [Voice(
             id: .named("1"),
@@ -242,6 +243,50 @@ struct SpecTitleBlockBuilderTests {
         #expect(rightItem == nil, "Composer should be suppressed")
         let leftItem = rows[1].items.first { $0.anchor == .start }
         #expect(leftItem?.text == "Waltz")
+    }
+
+    // MARK: - Tempo row (issue #26 — expected to FAIL until SpecTitleBlockBuilder reads tune.tempo)
+
+    /// Q: is in the default write-fields set (`TCOPQwW`).  When `tune.tempo` is set,
+    /// the title block must include a row showing the tempo.  Currently the builder
+    /// never reads `tune.tempo`, so this test fails.
+    @Test("Q: tempo appears in title block when Q is in the default writeFields set")
+    func tempoAppearsInTitleBlock() {
+        let tempo = Tempo(
+            prelude: nil,
+            beats: [Fraction(numerator: 1, denominator: 4)],
+            bpm: 120,
+            postlude: nil
+        )
+        let tune = makeTune(titles: ["T"], tempo: tempo)
+        let (rows, _) = build(tune: tune)
+        // Expect title row + tempo row.
+        #expect(rows.count == 2,
+                "Expected title row + tempo row, got \(rows.count) row(s)")
+        let hasTempoText = rows.contains { row in
+            row.items.contains { $0.text.contains("120") }
+        }
+        #expect(hasTempoText, "Title block must include the BPM value '120' from Q:1/4=120")
+    }
+
+    @Test("Q: tempo is suppressed when Q is disabled in writeFields")
+    func tempoSuppressedWhenDisabled() {
+        let tempo = Tempo(
+            prelude: nil,
+            beats: [Fraction(numerator: 1, denominator: 4)],
+            bpm: 120,
+            postlude: nil
+        )
+        var wf = WriteFieldsConfig.default
+        wf.apply(.writeFields("Q", false))
+        let tune = makeTune(titles: ["T"], tempo: tempo)
+        let (rows, _) = build(tune: tune, writeFields: wf)
+        // Only the title row; no tempo row.
+        #expect(rows.count == 1, "Tempo row must be suppressed when Q is disabled")
+        let hasTempoText = rows.contains { row in
+            row.items.contains { $0.text.contains("120") }
+        }
+        #expect(!hasTempoText, "No tempo text should appear when Q is disabled")
     }
 
     // MARK: - Block height

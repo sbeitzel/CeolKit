@@ -288,6 +288,7 @@ public enum ResolvedEventKind: Sendable {
     case tuplet(Tuplet)
     case spacer(Spacer)
     case directiveAnchor(CeolKitDirective)
+    case tempoChange(Tempo)
 
     init(from event: Event) {
         switch event {
@@ -298,6 +299,7 @@ public enum ResolvedEventKind: Sendable {
         case .tuplet(let t):          self = .tuplet(t)
         case .spacer(let s):          self = .spacer(s)
         case .directiveAnchor(let d): self = .directiveAnchor(d)
+        case .tempoChange(let t):     self = .tempoChange(t)
         }
     }
 }

@@ -15,4 +15,5 @@ public enum Event: Sendable {
     case tuplet(Tuplet)
     case spacer(Spacer)
     case directiveAnchor(CeolKitDirective)   // a directive whose effect attaches to next event
+    case tempoChange(Tempo)      // inline Q: field mid-tune
 }

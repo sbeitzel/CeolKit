@@ -82,6 +82,20 @@ struct SpecTitleBlockBuilder {
             }
         }
 
+        // Tempo row (Q: field).
+        if writeFields.includes("Q"), let tempo = tune.tempo {
+            let tempoText = tempoAnnotationText(tempo)
+            if !tempoText.isEmpty {
+                let baselineY = lineHeight * Double(rows.count + 1) - lineHeight * 0.25
+                rows.append(ResolvedTitleRow(items: [
+                    ResolvedTitleRow.Item(
+                        text: tempoText,
+                        x: leftX, baselineY: baselineY,
+                        anchor: .start, fontSize: infoFontSize, isItalic: false)
+                ]))
+            }
+        }
+
         guard !rows.isEmpty else { return ([], 0) }
         let totalHeight = lineHeight * Double(rows.count) + layoutConfig.staffSize
         return (rows, totalHeight)

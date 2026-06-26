@@ -542,8 +542,8 @@ struct SemanticPass {
             ctx.meterChangedSinceLastBar = true
         case .unitNoteLength(let f, _):
             ctx.unitNoteLength = f
-        case .tempo:
-            break  // tempo changes not tracked per-voice in v0.1
+        case .tempo(let t, _):
+            ctx.emit(.tempoChange(t))
         case .voice(let id, let props, _):
             ctx.switchVoice(id: id, properties: props)
         case .lyric(let tokens, _):
@@ -1074,6 +1074,7 @@ struct SemanticPass {
         case .tuplet(let t): return t.source
         case .spacer(let s): return s.source
         case .directiveAnchor: return nil
+        case .tempoChange: return nil
         }
     }
 
@@ -1199,6 +1200,7 @@ struct VoiceAccumulator {
         case .tuplet(let t): return t.source
         case .spacer(let s): return s.source
         case .directiveAnchor: return nil
+        case .tempoChange: return nil
         }
     }
 }

@@ -45,10 +45,14 @@ public protocol ABCParser {
 }
 
 public struct CeolKitParser: ABCParser {
-    let baseDir: URL?
+    public typealias FileResolver = @Sendable (URL) throws -> Data
 
-    public init(for baseDir: URL? = nil) {
+    let baseDir: URL?
+    let fileResolver: FileResolver?
+
+    public init(for baseDir: URL? = nil, fileResolver: FileResolver? = nil) {
         self.baseDir = baseDir
+        self.fileResolver = fileResolver
     }
 
     public func parse(_ source: String, options: ParseOptions) -> ParseResult {
@@ -59,7 +63,7 @@ public struct CeolKitParser: ABCParser {
         let src = Source(content: source, fileName: nil)
         let classifier = LineClassifier(source: src, dialectHint: dialectHint)
         let lines = classifier.classify()
-        let expander = IncludeExpander(baseDir: baseDir, options: options, dialectHint: dialectHint)
+        let expander = IncludeExpander(baseDir: baseDir, options: options, dialectHint: dialectHint, fileResolver: fileResolver)
         let (expandedLines, includeDiags) = expander.expand(lines)
         let builder = ABCFileBuilder(lines: expandedLines, options: options, preDiagnostics: includeDiags)
         let abcFile = builder.build()
@@ -67,4 +71,12 @@ public struct CeolKitParser: ABCParser {
         let (score, diagnostics) = pass.build()
         return ParseResult(score: score, diagnostics: diagnostics)
     }
+}
+
+public extension CeolKitParser {
+    static let defaultFileResolver: FileResolver = {
+        return { url in
+            return try Data(contentsOf: url)
+        }
+    }()
 }

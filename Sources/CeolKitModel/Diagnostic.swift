@@ -55,4 +55,5 @@ public enum DiagnosticCode: String, Codable, Sendable {
     case includeFileNotFound
     case circularInclude
     case includeIgnoredInline
+    case usingDefaultFileResolver
 }

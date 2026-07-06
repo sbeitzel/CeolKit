@@ -133,6 +133,105 @@ struct IncludeDirectiveTests {
         }
     }
 
+    // MARK: - fileResolver injection
+
+    @Test("Default resolver reads from disk and emits usingDefaultFileResolver info diagnostic")
+    func defaultResolverEmitsInfoDiagnostic() throws {
+        try withTempDir { dir in
+            let includeURL = dir.appendingPathComponent("extra.abc")
+            try "C:Some Composer\n".write(to: includeURL, atomically: true, encoding: .utf8)
+
+            let abc = "X:1\nT:T\nM:4/4\nL:1/4\nI:abc-include extra.abc\nK:C\nCDEF|\n"
+            let result = CeolKitParser(for: dir).parse(abc, options: .default)
+            let infos = result.score.diagnostics.filter { $0.code == .usingDefaultFileResolver }
+            #expect(!infos.isEmpty)
+            #expect(infos.allSatisfy { $0.severity == .info })
+        }
+    }
+
+    @Test("Custom fileResolver supplies content without touching disk")
+    func customResolverBypassesDisk() throws {
+        try withTempDir { dir in
+            // Note: extra.abc is never written to disk — only the resolver knows about it.
+            let abc = "X:1\nT:Main Title\nM:4/4\nL:1/4\nI:abc-include extra.abc\nK:C\nCDEF|\n"
+            let result = CeolKitParser(for: dir, fileResolver: { _ in
+                Data("T:Subtitle\nC:The Composer\n".utf8)
+            }).parse(abc, options: .default)
+
+            #expect(result.score.tunes.count == 1)
+            let titles = result.score.tunes.first?.titles ?? []
+            #expect(titles.count == 2)
+            let infos = result.score.diagnostics.filter { $0.code == .usingDefaultFileResolver }
+            #expect(infos.isEmpty)
+        }
+    }
+
+    @Test("Custom fileResolver receives the resolved include URL")
+    func customResolverReceivesResolvedURL() throws {
+        try withTempDir { dir in
+            let expectedURL = dir.appendingPathComponent("extra.abc").standardized
+            nonisolated(unsafe) var receivedURLs: [URL] = []
+
+            let abc = "X:1\nT:T\nM:4/4\nL:1/4\nI:abc-include extra.abc\nK:C\nCDEF|\n"
+            _ = CeolKitParser(for: dir, fileResolver: { url in
+                receivedURLs.append(url)
+                return Data()
+            }).parse(abc, options: .default)
+
+            #expect(receivedURLs == [expectedURL])
+        }
+    }
+
+    @Test("Custom fileResolver throwing surfaces as includeFileNotFound and still produces a Tune")
+    func customResolverThrowingEmitsError() throws {
+        struct ResolverFailure: Error {}
+        try withTempDir { dir in
+            let abc = "X:1\nT:T\nM:4/4\nL:1/4\nI:abc-include extra.abc\nK:C\nCDEF|\n"
+            let result = CeolKitParser(for: dir, fileResolver: { _ in
+                throw ResolverFailure()
+            }).parse(abc, options: .default)
+
+            let errors = result.score.diagnostics.filter { $0.code == .includeFileNotFound }
+            #expect(!errors.isEmpty)
+            #expect(result.score.tunes.count == 1)
+        }
+    }
+
+    @Test("fileResolver is not invoked when there is no base directory")
+    func resolverNotInvokedWithoutBaseDir() {
+        nonisolated(unsafe) var wasCalled = false
+        let abc = "X:1\nT:T\nM:4/4\nL:1/4\nI:abc-include extra.abc\nK:C\nCDEF|\n"
+        let result = CeolKitParser(fileResolver: { url in
+            wasCalled = true
+            return Data()
+        }).parse(abc, options: .default)
+
+        #expect(!wasCalled)
+        let warnings = result.score.diagnostics.filter { $0.code == .includeNoBaseDirectory }
+        #expect(!warnings.isEmpty)
+    }
+
+    @Test("Custom fileResolver is reused across nested includes")
+    func customResolverReusedAcrossNestedIncludes() throws {
+        try withTempDir { dir in
+            // Neither file exists on disk — the resolver serves both levels from memory.
+            let content: [String: String] = [
+                dir.appendingPathComponent("a.abc").standardized.path: "I:abc-include b.abc\nT:From A\n",
+                dir.appendingPathComponent("b.abc").standardized.path: "T:From B\n",
+            ]
+
+            let abc = "X:1\nT:Main\nM:4/4\nL:1/4\nI:abc-include a.abc\nK:C\nCDEF|\n"
+            let result = CeolKitParser(for: dir, fileResolver: { url in
+                guard let text = content[url.path] else { throw CocoaError(.fileNoSuchFile) }
+                return Data(text.utf8)
+            }).parse(abc, options: .default)
+
+            #expect(result.score.tunes.count == 1)
+            let titles = result.score.tunes.first?.titles ?? []
+            #expect(titles.count == 3)
+        }
+    }
+
     // MARK: - Inline I:abc-include
 
     @Test("Inline [I:abc-include] in music body emits includeIgnoredInline warning")

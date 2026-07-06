@@ -5,6 +5,7 @@ struct IncludeExpander {
     let baseDir: URL?
     let options: ParseOptions
     let dialectHint: Dialect?
+    let fileResolver: CeolKitParser.FileResolver?
 
     func expand(_ lines: [LogicalLine], seen: Set<URL> = []) -> ([LogicalLine], [Diagnostic]) {
         var result: [LogicalLine] = []
@@ -58,14 +59,34 @@ struct IncludeExpander {
                 continue
             }
 
-            let text: String
+            let data: Data
             do {
-                text = try String(contentsOf: resolvedURL, encoding: .utf8)
+                if let fileResolver {
+                    data = try fileResolver(resolvedURL)
+                } else {
+                    diagnostics.append(Diagnostic(
+                        severity: .info,
+                        code: .usingDefaultFileResolver,
+                        message: "No fileResolver provided; reading '\(resolvedURL.path)' via Data(contentsOf:)",
+                        source: source
+                    ))
+                    data = try CeolKitParser.defaultFileResolver(resolvedURL)
+                }
             } catch {
                 diagnostics.append(Diagnostic(
                     severity: .error,
                     code: .includeFileNotFound,
                     message: "Cannot read include file '\(resolvedURL.path)': \(error.localizedDescription)",
+                    source: source
+                ))
+                continue
+            }
+
+            guard let text = String(data: data, encoding: .utf8) else {
+                diagnostics.append(Diagnostic(
+                    severity: .error,
+                    code: .includeFileNotFound,
+                    message: "Include file '\(resolvedURL.path)' is not valid UTF-8",
                     source: source
                 ))
                 continue

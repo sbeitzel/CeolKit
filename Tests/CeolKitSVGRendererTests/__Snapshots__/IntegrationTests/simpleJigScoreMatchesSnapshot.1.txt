@@ -16,6 +16,7 @@
       }
     </style>
   </defs>
+  <!-- ceolkit-meta: {"page": 1, "anchors": [{"abcLine": 0, "y": 57}]} -->
   <text x="306" y="47.25" font-family="Libertinus Serif" font-size="18" fill="black" text-anchor="middle">Simple Jig</text>
   <line x1="36" y1="57" x2="202.827" y2="57" stroke="black" stroke-width="0.78"/>
   <line x1="36" y1="63" x2="202.827" y2="63" stroke="black" stroke-width="0.78"/>

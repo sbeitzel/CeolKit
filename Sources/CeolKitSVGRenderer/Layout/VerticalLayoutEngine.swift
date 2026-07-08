@@ -78,7 +78,8 @@ public struct VerticalLayoutEngine: Sendable {
                 totalHeight: totalHeight,
                 clef: jsystem.clef,
                 keySignature: jsystem.keySignature,
-                meter: jsystem.meter
+                meter: jsystem.meter,
+                abcLine: firstAbcLine(of: jsystem)
             ))
 
             y += totalHeight + config.systemGap
@@ -175,7 +176,8 @@ public struct VerticalLayoutEngine: Sendable {
                     totalHeight: totalHeight,
                     clef: jsystem.clef,
                     keySignature: jsystem.keySignature,
-                    meter: jsystem.meter
+                    meter: jsystem.meter,
+                    abcLine: firstAbcLine(of: jsystem)
                 ))
                 let isLastInBlock = si == block.systems.count - 1
                 y += totalHeight + (isLastInBlock ? config.tuneGap : config.systemGap)
@@ -211,6 +213,12 @@ public struct VerticalLayoutEngine: Sendable {
 
     private func clefStartWidth(for spec: ClefSpec) -> Double {
         clefHeaderWidth(for: spec, metadata: metadata, staffSize: config.staffSize)
+    }
+
+    /// The 1-based ABC source line of the first measure that contributes content
+    /// to `jsystem`, used for scroll-sync anchor metadata (issue #25).
+    private func firstAbcLine(of jsystem: JustifiedSystem) -> Int {
+        jsystem.measures.first?.source.measure.source.line ?? 1
     }
 
     // MARK: - Vertical extent

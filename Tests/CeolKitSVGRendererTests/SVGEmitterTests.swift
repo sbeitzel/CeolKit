@@ -22,16 +22,17 @@ private func layout(systems: [ResolvedSystem]) -> ResolvedLayout {
 
 /// Minimal system with the given measures at a known vertical position.
 /// `origin.y = 50`, `extraAbove = 50`, so top staff line y = 100.
-private func system(measures: [ResolvedMeasure]) -> ResolvedSystem {
+private func system(measures: [ResolvedMeasure], abcLine: Int = 1, originY: Double = 50) -> ResolvedSystem {
     let staffHeight = 4.0 * config.staffSize
     return ResolvedSystem(
-        origin: Point(x: config.margins.left, y: 50),
+        origin: Point(x: config.margins.left, y: originY),
         measures: measures,
         staffOrigin: 50,
         staffHeight: staffHeight,
         extraAbove: 50,
         extraBelow: 0,
-        totalHeight: 50 + staffHeight
+        totalHeight: 50 + staffHeight,
+        abcLine: abcLine
     )
 }
 
@@ -972,5 +973,40 @@ private let quarterUNL = Fraction(numerator: 1, denominator: 4)
         let svgs = try emitter.emit(layout(systems: [system(measures: [measure])]))
         let svg  = try #require(svgs.first)
         #expect(!svg.contains("<path"))
+    }
+
+    // MARK: - Scroll-sync metadata (issue #25)
+
+    @Test func scrollSyncCommentListsOneAnchorPerSystem() throws {
+        let s1 = system(measures: [emptyMeasure()], abcLine: 3, originY: 100)
+        let s2 = system(measures: [emptyMeasure()], abcLine: 9, originY: 250)
+        let svgs = try emitter.emit(layout(systems: [s1, s2]))
+        let svg  = try #require(svgs.first)
+        #expect(svg.contains(
+            "<!-- ceolkit-meta: {\"page\": 1, \"anchors\": " +
+            "[{\"abcLine\": 3, \"y\": 100}, {\"abcLine\": 9, \"y\": 250}]} -->"
+        ))
+    }
+
+    @Test func scrollSyncCommentPrecedesOtherPageContent() throws {
+        let svgs = try emitter.emit(layout(systems: [system(measures: [emptyMeasure()])]))
+        let svg  = try #require(svgs.first)
+        let commentRange = try #require(svg.range(of: "<!-- ceolkit-meta:"))
+        let lineRange = try #require(svg.range(of: "<line"))
+        #expect(commentRange.lowerBound < lineRange.lowerBound)
+    }
+
+    @Test func scrollSyncCommentUsesCorrectPageNumber() throws {
+        let layout = ResolvedLayout(
+            pageSize: Size(width: 612, height: 792),
+            margins: config.margins,
+            pages: [
+                ResolvedPage(systems: [system(measures: [emptyMeasure()])]),
+                ResolvedPage(systems: [system(measures: [emptyMeasure()])])
+            ]
+        )
+        let svgs = try emitter.emit(layout)
+        #expect(svgs[0].contains("\"page\": 1"))
+        #expect(svgs[1].contains("\"page\": 2"))
     }
 }

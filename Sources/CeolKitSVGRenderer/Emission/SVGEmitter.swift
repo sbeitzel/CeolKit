@@ -58,8 +58,8 @@ struct SVGEmitter: Sendable {
         let bravuraBase64             = try loadBravuraBase64()
         let libertinusSerifBase64     = try LibertinusSerifMetrics.loadBase64()
         let libertinusSerifItalicBase64 = try LibertinusSerifMetrics.loadItalicBase64()
-        return layout.pages.map {
-            emitPage($0, layout: layout,
+        return layout.pages.enumerated().map { pageIndex, page in
+            emitPage(page, pageNumber: pageIndex + 1, layout: layout,
                      bravuraBase64: bravuraBase64,
                      libertinusSerifBase64: libertinusSerifBase64,
                      libertinusSerifItalicBase64: libertinusSerifItalicBase64)
@@ -68,11 +68,12 @@ struct SVGEmitter: Sendable {
 
     // MARK: - Page
 
-    private func emitPage(_ page: ResolvedPage, layout: ResolvedLayout,
+    private func emitPage(_ page: ResolvedPage, pageNumber: Int, layout: ResolvedLayout,
                            bravuraBase64: String,
                            libertinusSerifBase64: String,
                            libertinusSerifItalicBase64: String) -> String {
         var builder = SVGBuilder()
+        emitScrollSyncMetadata(for: page, pageNumber: pageNumber, builder: &builder)
         emitTitleBlock(page.titleRows, builder: &builder)
         for system in page.systems {
             emitSystem(system, builder: &builder)
@@ -85,6 +86,18 @@ struct SVGEmitter: Sendable {
             libertinusSerifBase64: libertinusSerifBase64,
             libertinusSerifItalicBase64: libertinusSerifItalicBase64
         )
+    }
+
+    // MARK: - Scroll-sync metadata
+
+    /// Emits the `ceolkit-meta` comment (issue #25) listing each staff system's
+    /// originating ABC source line and page Y coordinate, so editor consumers
+    /// (e.g. ScoreEdit) can synchronise scroll position with the source.
+    private func emitScrollSyncMetadata(for page: ResolvedPage, pageNumber: Int, builder: inout SVGBuilder) {
+        let anchors = page.systems.map { system in
+            "{\"abcLine\": \(system.abcLine), \"y\": \(builder.fmt(system.origin.y))}"
+        }.joined(separator: ", ")
+        builder.comment("ceolkit-meta: {\"page\": \(pageNumber), \"anchors\": [\(anchors)]}")
     }
 
     // MARK: - Title block

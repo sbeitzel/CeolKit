@@ -48,6 +48,10 @@ struct SVGBuilder: Sendable {
         elements.append("<path \(attrs)/>")
     }
 
+    mutating func comment(_ text: String) {
+        elements.append("<!-- \(text) -->")
+    }
+
     mutating func rect(
         x: Double, y: Double, width: Double, height: Double,
         fill: String = "none",

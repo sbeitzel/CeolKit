@@ -200,6 +200,9 @@ public struct ResolvedSystem: Sendable {
     public let keySignature: KeySignature?
     /// Non-nil only on the first system of a tune; time signatures do not repeat at line breaks.
     public let meter: Meter?
+    /// 1-based ABC source line that first contributed content to this staff system.
+    /// Used to emit scroll-sync anchor metadata (see `%%ceolkit` extension, issue #25).
+    public let abcLine: Int
 
     public init(
         origin: Point,
@@ -211,7 +214,8 @@ public struct ResolvedSystem: Sendable {
         totalHeight: Double,
         clef: ClefSpec = ClefSpec(clef: .treble, octaveShift: 0),
         keySignature: KeySignature? = nil,
-        meter: Meter? = nil
+        meter: Meter? = nil,
+        abcLine: Int = 1
     ) {
         self.origin = origin
         self.measures = measures
@@ -223,6 +227,7 @@ public struct ResolvedSystem: Sendable {
         self.clef = clef
         self.keySignature = keySignature
         self.meter = meter
+        self.abcLine = abcLine
     }
 }
 

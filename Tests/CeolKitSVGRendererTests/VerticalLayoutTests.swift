@@ -8,8 +8,9 @@ private let dummyRange = SourceRange(file: nil, byteOffset: 0, length: 0, line: 
 private let dummyBar   = BarLine(kind: .single, source: dummyRange)
 private let dummyFraction = Fraction(numerator: 1, denominator: 4)
 
-private func emptyMeasure() -> Measure {
-    Measure(openingBar: nil, events: [], closingBar: dummyBar, endingNumber: nil, source: dummyRange)
+private func emptyMeasure(line: Int = 0) -> Measure {
+    let source = SourceRange(file: nil, byteOffset: 0, length: 0, line: line, column: 0)
+    return Measure(openingBar: nil, events: [], closingBar: dummyBar, endingNumber: nil, source: source)
 }
 
 private func measureWith(events: [Event]) -> Measure {
@@ -143,5 +144,25 @@ private let metadata      = try! BravuraMetadata.load()
         for m in layout.pages[0].systems[0].measures {
             #expect(abs(m.closingBar.x - (m.origin.x + m.width)) < 1e-9)
         }
+    }
+
+    // ResolvedSystem.abcLine (issue #25) is taken from the first measure's source line.
+    @Test func abcLineIsFirstMeasuresSourceLine() {
+        let system = justifiedSystem(
+            measures: [emptyMeasure(line: 15), emptyMeasure(line: 16)],
+            isLast: true
+        )
+        let layout = engine.layout([system])
+        #expect(layout.pages[0].systems[0].abcLine == 15)
+    }
+
+    // Each system in a page reports the source line of its own first measure, not the tune's.
+    @Test func abcLineDiffersAcrossSystems() {
+        let s1 = justifiedSystem(measures: [emptyMeasure(line: 1)], isLast: false)
+        let s2 = justifiedSystem(measures: [emptyMeasure(line: 7)], isLast: true)
+        let layout = engine.layout([s1, s2])
+        let systems = layout.pages[0].systems
+        #expect(systems[0].abcLine == 1)
+        #expect(systems[1].abcLine == 7)
     }
 }

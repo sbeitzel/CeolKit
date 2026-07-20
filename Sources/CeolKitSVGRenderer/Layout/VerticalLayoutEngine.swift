@@ -33,6 +33,7 @@ public struct VerticalLayoutEngine: Sendable {
         var pageSystems: [ResolvedSystem] = []
         var isFirstPage = true
         var y = config.margins.top + titleBlockHeight
+        var previousAbcLine: Int?
 
         for jsystem in systems {
             let (extraAbove, extraBelow) = verticalExtent(of: jsystem)
@@ -68,6 +69,8 @@ public struct VerticalLayoutEngine: Sendable {
                 systemStartWidth: startWidth
             )
 
+            let abcLine = resolvedAbcLine(of: jsystem, previous: previousAbcLine)
+            previousAbcLine = abcLine
             pageSystems.append(ResolvedSystem(
                 origin: systemOrigin,
                 measures: measures,
@@ -79,7 +82,7 @@ public struct VerticalLayoutEngine: Sendable {
                 clef: jsystem.clef,
                 keySignature: jsystem.keySignature,
                 meter: jsystem.meter,
-                abcLine: firstAbcLine(of: jsystem)
+                abcLine: abcLine
             ))
 
             y += totalHeight + config.systemGap
@@ -110,6 +113,7 @@ public struct VerticalLayoutEngine: Sendable {
         var pageSystems: [ResolvedSystem] = []
         var pageTitleRows: [ResolvedTitleRow] = []
         var y = config.margins.top
+        var previousAbcLine: Int?
 
         for block in tuneBlocks {
             // If the current page already has content, check whether the entire tune
@@ -166,6 +170,8 @@ public struct VerticalLayoutEngine: Sendable {
                     extraAbove: extraAbove,
                     systemStartWidth: startWidth
                 )
+                let abcLine = resolvedAbcLine(of: jsystem, previous: previousAbcLine)
+                previousAbcLine = abcLine
                 pageSystems.append(ResolvedSystem(
                     origin: systemOrigin,
                     measures: measures,
@@ -177,7 +183,7 @@ public struct VerticalLayoutEngine: Sendable {
                     clef: jsystem.clef,
                     keySignature: jsystem.keySignature,
                     meter: jsystem.meter,
-                    abcLine: firstAbcLine(of: jsystem)
+                    abcLine: abcLine
                 ))
                 let isLastInBlock = si == block.systems.count - 1
                 y += totalHeight + (isLastInBlock ? config.tuneGap : config.systemGap)
@@ -217,8 +223,18 @@ public struct VerticalLayoutEngine: Sendable {
 
     /// The 1-based ABC source line of the first measure that contributes content
     /// to `jsystem`, used for scroll-sync anchor metadata (issue #25).
-    private func firstAbcLine(of jsystem: JustifiedSystem) -> Int {
-        jsystem.measures.first?.source.measure.source.line ?? 1
+    ///
+    /// When `jsystem` has no measure to resolve a line from, falls back to
+    /// `previous + 1` rather than a fixed constant, so a system whose own line
+    /// can't be determined still reports a position consistent with its place in
+    /// the document instead of a bogus jump back to the top (issue #30). A fallback
+    /// of `1` only applies to a genuinely first, lineless system — a case that in
+    /// practice never arises, since a source with no lines produces no systems at all.
+    private func resolvedAbcLine(of jsystem: JustifiedSystem, previous: Int?) -> Int {
+        if let line = jsystem.measures.first?.source.measure.source.line {
+            return line
+        }
+        return previous.map { $0 + 1 } ?? 1
     }
 
     // MARK: - Vertical extent

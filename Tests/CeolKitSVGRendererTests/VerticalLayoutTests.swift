@@ -165,4 +165,35 @@ private let metadata      = try! BravuraMetadata.load()
         #expect(systems[0].abcLine == 1)
         #expect(systems[1].abcLine == 7)
     }
+
+    // A system with no measures to resolve a line from (issue #30) inherits the previous
+    // system's line plus one, instead of falling back to a hardcoded 1.
+    @Test func abcLineFallsBackToPreviousLinePlusOneWhenUnresolvable() {
+        let s1 = justifiedSystem(measures: [emptyMeasure(line: 20)], isLast: false)
+        let s2 = justifiedSystem(measures: [], isLast: false)
+        let s3 = justifiedSystem(measures: [emptyMeasure(line: 30)], isLast: true)
+        let layout = engine.layout([s1, s2, s3])
+        let systems = layout.pages[0].systems
+        #expect(systems[0].abcLine == 20)
+        #expect(systems[1].abcLine == 21)
+        #expect(systems[2].abcLine == 30)
+    }
+
+    // The fallback-from-previous-line still applies to the tune-block layout overload,
+    // and must survive a page break: reset per-page state must not wipe the running line.
+    @Test func abcLineFallbackSurvivesPageBreakInTuneBlockLayout() {
+        let a4Engine = VerticalLayoutEngine(config: a4Config, metadata: metadata)
+        var systems = (0..<24).map { i in
+            justifiedSystem(measures: [emptyMeasure(line: 100 + i)], isLast: false)
+        }
+        // A system with unresolvable content lands near a forced page break.
+        systems.append(justifiedSystem(measures: [], isLast: true))
+        let block = TuneBlock(systems: systems)
+        let layout = a4Engine.layout([block])
+        #expect(layout.pages.count >= 2)
+        let allSystems = layout.pages.flatMap { $0.systems }
+        let last = allSystems[allSystems.count - 1]
+        let secondToLast = allSystems[allSystems.count - 2]
+        #expect(last.abcLine == secondToLast.abcLine + 1)
+    }
 }

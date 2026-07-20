@@ -975,6 +975,106 @@ private let quarterUNL = Fraction(numerator: 1, denominator: 4)
         #expect(!svg.contains("<path"))
     }
 
+    // MARK: - Cross-system / cross-page ties and slurs (issue #27)
+
+    @Test func tieAcrossSystemBreakEmitsDepartingAndArrivingArcs() throws {
+        // G4 quarter (.startsTie) as the only note in system 1; G4 whole (.endsTie) as the
+        // only note in system 2. Previously the anchor was dropped at the system break and
+        // no arc was drawn at all; now a departing arc closes out system 1 and an arriving
+        // arc opens system 2.
+        let startNote = tiedNote(step: .g, octave: 4, durationUnits: 2, tieState: .startsTie)
+        let endNote   = tiedNote(step: .g, octave: 4, durationUnits: 8, tieState: .endsTie)
+        let topY = 100.0
+        let e1 = ResolvedEvent(origin: Point(x: 160, y: topY), kind: .note(startNote))
+        let m1 = ResolvedMeasure(
+            origin: Point(x: 36, y: 50), width: 160,
+            events: [e1], openingBar: nil,
+            closingBar: ResolvedBarLine(x: 196, kind: .single),
+            unitNoteLength: eighthUNL
+        )
+        let s1 = system(measures: [m1], abcLine: 1, originY: 50)
+
+        let e2 = ResolvedEvent(origin: Point(x: 60, y: 250), kind: .note(endNote))
+        let m2 = ResolvedMeasure(
+            origin: Point(x: 36, y: 250), width: 200,
+            events: [e2], openingBar: nil,
+            closingBar: ResolvedBarLine(x: 236, kind: .single),
+            unitNoteLength: eighthUNL
+        )
+        let s2 = system(measures: [m2], abcLine: 2, originY: 250)
+
+        let svgs = try emitter.emit(layout(systems: [s1, s2]))
+        let svg  = try #require(svgs.first)
+        let pathCount = svg.components(separatedBy: "<path").count - 1
+        #expect(pathCount == 2,
+                "Expected a departing arc in system 1 and an arriving arc in system 2, got \(pathCount)")
+    }
+
+    @Test func slurAcrossSystemBreakEmitsDepartingAndArrivingArcs() throws {
+        // Same shape as tieAcrossSystemBreakEmitsDepartingAndArrivingArcs but for a slur.
+        let openNote  = slurredNote(step: .g, octave: 4, durationUnits: 2, opens: 1, closes: 0)
+        let closeNote = slurredNote(step: .g, octave: 4, durationUnits: 8, opens: 0, closes: 1)
+        let topY = 100.0
+        let e1 = ResolvedEvent(origin: Point(x: 160, y: topY), kind: .note(openNote))
+        let m1 = ResolvedMeasure(
+            origin: Point(x: 36, y: 50), width: 160,
+            events: [e1], openingBar: nil,
+            closingBar: ResolvedBarLine(x: 196, kind: .single),
+            unitNoteLength: eighthUNL
+        )
+        let s1 = system(measures: [m1], abcLine: 1, originY: 50)
+
+        let e2 = ResolvedEvent(origin: Point(x: 60, y: 250), kind: .note(closeNote))
+        let m2 = ResolvedMeasure(
+            origin: Point(x: 36, y: 250), width: 200,
+            events: [e2], openingBar: nil,
+            closingBar: ResolvedBarLine(x: 236, kind: .single),
+            unitNoteLength: eighthUNL
+        )
+        let s2 = system(measures: [m2], abcLine: 2, originY: 250)
+
+        let svgs = try emitter.emit(layout(systems: [s1, s2]))
+        let svg  = try #require(svgs.first)
+        let pathCount = svg.components(separatedBy: "<path").count - 1
+        #expect(pathCount == 2,
+                "Expected a departing arc in system 1 and an arriving arc in system 2, got \(pathCount)")
+    }
+
+    @Test func tieAcrossPageBreakEmitsDepartingAndArrivingArcs() throws {
+        // Same as the cross-system case, but the break falls between two pages: the
+        // departing arc must land on page 1's document and the arriving arc on page 2's.
+        let startNote = tiedNote(step: .g, octave: 4, durationUnits: 2, tieState: .startsTie)
+        let endNote   = tiedNote(step: .g, octave: 4, durationUnits: 8, tieState: .endsTie)
+        let topY = 100.0
+        let e1 = ResolvedEvent(origin: Point(x: 160, y: topY), kind: .note(startNote))
+        let m1 = ResolvedMeasure(
+            origin: Point(x: 36, y: 50), width: 160,
+            events: [e1], openingBar: nil,
+            closingBar: ResolvedBarLine(x: 196, kind: .single),
+            unitNoteLength: eighthUNL
+        )
+        let e2 = ResolvedEvent(origin: Point(x: 60, y: topY), kind: .note(endNote))
+        let m2 = ResolvedMeasure(
+            origin: Point(x: 36, y: 50), width: 200,
+            events: [e2], openingBar: nil,
+            closingBar: ResolvedBarLine(x: 236, kind: .single),
+            unitNoteLength: eighthUNL
+        )
+        let pagedLayout = ResolvedLayout(
+            pageSize: Size(width: 612, height: 792),
+            margins: config.margins,
+            pages: [
+                ResolvedPage(systems: [system(measures: [m1])]),
+                ResolvedPage(systems: [system(measures: [m2])])
+            ]
+        )
+        let svgs = try emitter.emit(pagedLayout)
+        #expect(svgs[0].components(separatedBy: "<path").count - 1 == 1,
+                "Expected a departing arc on page 1")
+        #expect(svgs[1].components(separatedBy: "<path").count - 1 == 1,
+                "Expected an arriving arc on page 2")
+    }
+
     // MARK: - Scroll-sync metadata (issue #25)
 
     @Test func scrollSyncCommentListsOneAnchorPerSystem() throws {

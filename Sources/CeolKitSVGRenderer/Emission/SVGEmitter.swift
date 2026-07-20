@@ -20,19 +20,24 @@ private struct StemInfo {
 /// Pending tie: records where a tied note's arc must start so the arc can be drawn
 /// when the matching end note is encountered (possibly in the next measure).
 private struct TieAnchor {
-    let x: Double       // left-edge x of the notehead where the tie originates
+    let x: Double       // left-edge x of the notehead where the tie originates (or a staff edge, see below)
     let noteY: Double   // y of the notehead
     let pitch: Pitch    // matched against the end note's pitch
     let staffPos: Int   // determines whether the arc curves above or below the note
+    // True once this anchor has been carried across a system/page break: `x` then refers
+    // to the left staff edge of the new system rather than a real notehead, so the arc
+    // drawn to resolve it must not add notehead-width clearance on that side (see #27).
+    var isCarriedOver: Bool = false
 }
 
 /// Pending slur: records the start position of an open slur bracket so the arc
 /// can be drawn when the matching closing `)` note is encountered.  Stored as a
 /// LIFO stack so that nested slurs resolve correctly (innermost closes first).
 private struct SlurAnchor {
-    let x: Double       // left-edge x of the notehead where the slur opens
+    let x: Double       // left-edge x of the notehead where the slur opens (or a staff edge, see below)
     let noteY: Double   // y of the notehead
     let staffPos: Int   // determines whether the arc curves above or below
+    var isCarriedOver: Bool = false  // see TieAnchor.isCarriedOver
 }
 
 // MARK: - Pass 5
@@ -58,12 +63,21 @@ struct SVGEmitter: Sendable {
         let bravuraBase64             = try loadBravuraBase64()
         let libertinusSerifBase64     = try LibertinusSerifMetrics.loadBase64()
         let libertinusSerifItalicBase64 = try LibertinusSerifMetrics.loadItalicBase64()
-        return layout.pages.enumerated().map { pageIndex, page in
-            emitPage(page, pageNumber: pageIndex + 1, layout: layout,
-                     bravuraBase64: bravuraBase64,
-                     libertinusSerifBase64: libertinusSerifBase64,
-                     libertinusSerifItalicBase64: libertinusSerifItalicBase64)
+        // Threaded across every page/system so ties and slurs that span a system or page
+        // break (#27) are resolved with dangling arcs instead of being silently dropped.
+        var pendingTies:  [TieAnchor]  = []
+        var pendingSlurs: [SlurAnchor] = []
+        var documents: [String] = []
+        documents.reserveCapacity(layout.pages.count)
+        for (pageIndex, page) in layout.pages.enumerated() {
+            let document = emitPage(page, pageNumber: pageIndex + 1, layout: layout,
+                                     bravuraBase64: bravuraBase64,
+                                     libertinusSerifBase64: libertinusSerifBase64,
+                                     libertinusSerifItalicBase64: libertinusSerifItalicBase64,
+                                     pendingTies: &pendingTies, pendingSlurs: &pendingSlurs)
+            documents.append(document)
         }
+        return documents
     }
 
     // MARK: - Page
@@ -71,12 +85,13 @@ struct SVGEmitter: Sendable {
     private func emitPage(_ page: ResolvedPage, pageNumber: Int, layout: ResolvedLayout,
                            bravuraBase64: String,
                            libertinusSerifBase64: String,
-                           libertinusSerifItalicBase64: String) -> String {
+                           libertinusSerifItalicBase64: String,
+                           pendingTies: inout [TieAnchor], pendingSlurs: inout [SlurAnchor]) -> String {
         var builder = SVGBuilder()
         emitScrollSyncMetadata(for: page, pageNumber: pageNumber, builder: &builder)
         emitTitleBlock(page.titleRows, builder: &builder)
         for system in page.systems {
-            emitSystem(system, builder: &builder)
+            emitSystem(system, pendingTies: &pendingTies, pendingSlurs: &pendingSlurs, builder: &builder)
         }
         emitFooterBlock(page.footerRows, builder: &builder)
         return builder.buildDocument(
@@ -138,7 +153,9 @@ struct SVGEmitter: Sendable {
 
     // MARK: - System
 
-    private func emitSystem(_ system: ResolvedSystem, builder: inout SVGBuilder) {
+    private func emitSystem(_ system: ResolvedSystem,
+                             pendingTies: inout [TieAnchor], pendingSlurs: inout [SlurAnchor],
+                             builder: inout SVGBuilder) {
         emitStaffLines(system, builder: &builder)
         emitClef(system, builder: &builder)
         if let keySig = system.keySignature {
@@ -147,12 +164,38 @@ struct SVGEmitter: Sendable {
         if let meter = system.meter {
             emitTimeSignature(meter, system: system, builder: &builder)
         }
-        var pendingTies:  [TieAnchor]  = []
-        var pendingSlurs: [SlurAnchor] = []  // LIFO: innermost slur closes first
+
+        // Anchors still open from the previous system/page (#27) are dangling ties/slurs.
+        // Re-anchor them to this system's left staff edge so the closing logic in
+        // emitMeasure draws an "arriving" arc when the matching note is found.
+        let leftEdge = system.origin.x
+        pendingTies = pendingTies.map {
+            TieAnchor(x: leftEdge, noteY: $0.noteY, pitch: $0.pitch, staffPos: $0.staffPos, isCarriedOver: true)
+        }
+        pendingSlurs = pendingSlurs.map {
+            SlurAnchor(x: leftEdge, noteY: $0.noteY, staffPos: $0.staffPos, isCarriedOver: true)
+        }
+
         for measure in system.measures {
             emitMeasure(measure, system: system,
                         pendingTies: &pendingTies, pendingSlurs: &pendingSlurs,
                         builder: &builder)
+        }
+
+        // Anchors still open at the end of this system span into the next system/page.
+        // Draw a departing dangling arc to the right staff edge; the anchor itself is left
+        // in place (still holding pitch/staffPos) so the next emitSystem call can resolve
+        // or re-dangle it in turn.
+        if let lastMeasure = system.measures.last {
+            let rightEdge = lastMeasure.origin.x + lastMeasure.width
+            for anchor in pendingTies {
+                emitDanglingArc(fromX: anchor.x, y: anchor.noteY, staffPos: anchor.staffPos,
+                                toEdgeX: rightEdge, isCarriedOver: anchor.isCarriedOver, builder: &builder)
+            }
+            for anchor in pendingSlurs {
+                emitDanglingArc(fromX: anchor.x, y: anchor.noteY, staffPos: anchor.staffPos,
+                                toEdgeX: rightEdge, isCarriedOver: anchor.isCarriedOver, builder: &builder)
+            }
         }
     }
 
@@ -370,8 +413,13 @@ struct SVGEmitter: Sendable {
                 if note.ties == .endsTie || note.ties == .continuesTie {
                     if let idx = pendingTies.firstIndex(where: { $0.pitch == note.pitch }) {
                         let anchor = pendingTies.remove(at: idx)
-                        emitTieArc(fromX: anchor.x, fromY: anchor.noteY, staffPos: anchor.staffPos,
-                                   toX: event.origin.x, toY: ny, builder: &builder)
+                        if anchor.isCarriedOver {
+                            emitArrivingTieArc(edgeX: anchor.x, staffPos: anchor.staffPos,
+                                               toX: event.origin.x, toY: ny, builder: &builder)
+                        } else {
+                            emitTieArc(fromX: anchor.x, fromY: anchor.noteY, staffPos: anchor.staffPos,
+                                       toX: event.origin.x, toY: ny, builder: &builder)
+                        }
                     }
                 }
                 if note.ties == .startsTie || note.ties == .continuesTie {
@@ -388,8 +436,13 @@ struct SVGEmitter: Sendable {
 
                 for _ in 0..<note.slurs.closes {
                     if let anchor = pendingSlurs.popLast() {
-                        emitTieArc(fromX: anchor.x, fromY: anchor.noteY, staffPos: anchor.staffPos,
-                                   toX: event.origin.x, toY: ny, builder: &builder)
+                        if anchor.isCarriedOver {
+                            emitArrivingTieArc(edgeX: anchor.x, staffPos: anchor.staffPos,
+                                               toX: event.origin.x, toY: ny, builder: &builder)
+                        } else {
+                            emitTieArc(fromX: anchor.x, fromY: anchor.noteY, staffPos: anchor.staffPos,
+                                       toX: event.origin.x, toY: ny, builder: &builder)
+                        }
                     }
                 }
                 for _ in 0..<note.slurs.opens {
@@ -913,27 +966,55 @@ struct SVGEmitter: Sendable {
 
     // MARK: - Tie arc
 
-    private func emitTieArc(fromX: Double, fromY: Double, staffPos: Int,
-                             toX: Double, toY: Double, builder: inout SVGBuilder) {
-        let s     = config.staffSize
-        let noteW = noteheadWidth()
-        let x1    = fromX + noteW   // right edge of the starting notehead
-        let x2    = toX             // left edge of the ending notehead
-        // Stems go up for staffPos ≤ 4; tie arcs go to the opposite side of the stem.
+    /// Draws the cubic-bezier arc shared by ties and slurs, given final endpoint x's and
+    /// each endpoint's un-offset (notehead-centre) y. Stems go up for staffPos ≤ 4; arcs
+    /// curve to the opposite side of the stem.
+    private func emitArc(x1: Double, rawY1: Double, x2: Double, rawY2: Double, staffPos: Int,
+                          builder: inout SVGBuilder) {
+        let s = config.staffSize
         let tieBelow  = staffPos <= 4
         let endOffset = tieBelow ? s : -s     // shift endpoints one staff line away from note centre
         let dy        = tieBelow ? s * 0.75 : -(s * 0.75)
-        let span  = x2 - x1
-        let cp1x  = x1 + span / 3.0
-        let cp2x  = x2 - span / 3.0
-        let y1    = fromY + endOffset
-        let y2    = toY   + endOffset
-        let d     = "M \(builder.fmt(x1)) \(builder.fmt(y1))" +
-                    " C \(builder.fmt(cp1x)) \(builder.fmt(y1 + dy))" +
-                    " \(builder.fmt(cp2x)) \(builder.fmt(y2 + dy))" +
-                    " \(builder.fmt(x2)) \(builder.fmt(y2))"
+        let span = x2 - x1
+        let cp1x = x1 + span / 3.0
+        let cp2x = x2 - span / 3.0
+        let y1   = rawY1 + endOffset
+        let y2   = rawY2 + endOffset
+        let d    = "M \(builder.fmt(x1)) \(builder.fmt(y1))" +
+                   " C \(builder.fmt(cp1x)) \(builder.fmt(y1 + dy))" +
+                   " \(builder.fmt(cp2x)) \(builder.fmt(y2 + dy))" +
+                   " \(builder.fmt(x2)) \(builder.fmt(y2))"
         let strokeWidth = metadata.engravingDefaults.stemThickness * s * 1.5
         builder.path(d: d, fill: "none", stroke: "black", strokeWidth: strokeWidth)
+    }
+
+    /// Note-to-note tie/slur arc: the start point clears the starting notehead's width,
+    /// the end point sits at the ending notehead's left edge.
+    private func emitTieArc(fromX: Double, fromY: Double, staffPos: Int,
+                             toX: Double, toY: Double, builder: inout SVGBuilder) {
+        emitArc(x1: fromX + noteheadWidth(), rawY1: fromY, x2: toX, rawY2: toY,
+               staffPos: staffPos, builder: &builder)
+    }
+
+    /// Arriving arc for a tie/slur carried over from a previous system (#27): starts
+    /// exactly at the staff's left edge (no notehead clearance, since there's no note
+    /// there) and curves in to the resolving note.
+    private func emitArrivingTieArc(edgeX: Double, staffPos: Int,
+                                     toX: Double, toY: Double, builder: inout SVGBuilder) {
+        emitArc(x1: edgeX, rawY1: toY, x2: toX, rawY2: toY, staffPos: staffPos, builder: &builder)
+    }
+
+    /// Departing dangling arc for a tie/slur still open at the end of a system (#27):
+    /// curves from the anchor out to the staff's right edge (open-ended). If the anchor
+    /// itself was already carried in from a previous system (never resolved within this
+    /// one), both ends are open edges and neither gets notehead-width clearance.
+    private func emitDanglingArc(fromX: Double, y: Double, staffPos: Int, toEdgeX: Double,
+                                  isCarriedOver: Bool, builder: inout SVGBuilder) {
+        if isCarriedOver {
+            emitArc(x1: fromX, rawY1: y, x2: toEdgeX, rawY2: y, staffPos: staffPos, builder: &builder)
+        } else {
+            emitTieArc(fromX: fromX, fromY: y, staffPos: staffPos, toX: toEdgeX, toY: y, builder: &builder)
+        }
     }
 
     // MARK: - Helpers

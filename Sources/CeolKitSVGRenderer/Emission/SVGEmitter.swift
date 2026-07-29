@@ -1,12 +1,6 @@
 import CeolKitModel
 import Foundation
 
-// MARK: - Error
-
-enum SVGEmitterError: Error {
-    case bravuraFontNotFound
-}
-
 // MARK: - Internal geometry
 
 /// Stem geometry returned by `emitStem` so the caller can draw beam strokes.
@@ -60,7 +54,7 @@ struct SVGEmitter: Sendable {
     // MARK: - Public entry point
 
     func emit(_ layout: ResolvedLayout) throws -> [String] {
-        let bravuraBase64             = try loadBravuraBase64()
+        let bravuraBase64             = try CeolKitFonts.base64(for: .bravura)
         let libertinusSerifBase64     = try LibertinusSerifMetrics.loadBase64()
         let libertinusSerifItalicBase64 = try LibertinusSerifMetrics.loadItalicBase64()
         // Threaded across every page/system so ties and slurs that span a system or page
@@ -1121,13 +1115,5 @@ struct SVGEmitter: Sendable {
     private func noteheadWidth() -> Double {
         metadata.glyphBBoxes["noteheadBlack"].map { $0.width * config.staffSize }
             ?? config.staffSize * 1.2
-    }
-
-    private func loadBravuraBase64() throws -> String {
-        guard let url = Bundle.module.url(forResource: "Bravura", withExtension: "otf") else {
-            throw SVGEmitterError.bravuraFontNotFound
-        }
-        let data = try Data(contentsOf: url)
-        return data.base64EncodedString()
     }
 }

@@ -24,27 +24,15 @@ public struct LibertinusSerifMetrics: Sendable {
     /// Derived from OS/2 sxHeight (429 / 1000).
     public static let xHeightRatio: Double = 429.0 / 1000.0    // 0.429
 
-    /// Loads the Libertinus Serif Regular OTF from the module bundle and returns it
-    /// as a base64-encoded string suitable for embedding in an SVG `@font-face` rule.
+    /// The bundled Libertinus Serif Regular OTF, base64-encoded for embedding in an
+    /// SVG `@font-face` rule. Equivalent to ``CeolKitFonts/base64(for:)``.
     public static func loadBase64() throws -> String {
-        try loadFontBase64(resource: "LibertinusSerif-Regular")
+        try CeolKitFonts.base64(for: .libertinusSerifRegular)
     }
 
-    /// Loads the Libertinus Serif Italic OTF from the module bundle and returns it
-    /// as a base64-encoded string suitable for embedding in an SVG `@font-face` rule.
+    /// The bundled Libertinus Serif Italic OTF, base64-encoded for embedding in an
+    /// SVG `@font-face` rule. Equivalent to ``CeolKitFonts/base64(for:)``.
     public static func loadItalicBase64() throws -> String {
-        try loadFontBase64(resource: "LibertinusSerif-Italic")
+        try CeolKitFonts.base64(for: .libertinusSerifItalic)
     }
-
-    private static func loadFontBase64(resource: String) throws -> String {
-        guard let url = Bundle.module.url(forResource: resource, withExtension: "otf") else {
-            throw LibertinusSerifMetricsError.resourceNotFound
-        }
-        let data = try Data(contentsOf: url)
-        return data.base64EncodedString()
-    }
-}
-
-enum LibertinusSerifMetricsError: Error {
-    case resourceNotFound
 }

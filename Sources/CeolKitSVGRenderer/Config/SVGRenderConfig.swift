@@ -31,6 +31,18 @@ public struct SVGRenderConfig: Sendable {
         self.straightFlags = straightFlags
         self.graceSlurs = graceSlurs
     }
+
+    /// Returns a copy with `staffSize` and the vertical gaps derived from it multiplied
+    /// by `factor` (`%%ceolkit:scale`).  Page size and margins are absolute and unchanged:
+    /// scaling the music must not resize the page.
+    public func scaled(by factor: Double) -> SVGRenderConfig {
+        guard factor != 1.0 else { return self }
+        var copy = self
+        copy.staffSize = staffSize * factor
+        copy.systemGap = systemGap * factor
+        copy.tuneGap = tuneGap * factor
+        return copy
+    }
 }
 
 public struct PageSize: Sendable {

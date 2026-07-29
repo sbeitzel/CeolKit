@@ -38,7 +38,7 @@ private func makeVoice(id: String, measures: [Measure]) -> Voice {
         properties: VoiceProperties(
             clef:            ClefSpec(clef: .treble, octaveShift: 0),
             transposition:   .none,
-            staffProperties: StaffProperties(staffLines: 5, scale: nil),
+            staffProperties: StaffProperties(staffLines: 5),
             name:            nil,
             subname:         nil,
             stemDirection:   .auto,
@@ -64,7 +64,7 @@ private func makeTune(
         explicit:        false,
         clef:            ClefSpec(clef: .treble, octaveShift: 0),
         transposition:   .none,
-        staffProperties: StaffProperties(staffLines: 5, scale: nil),
+        staffProperties: StaffProperties(staffLines: 5),
         source:          dummyRange
     )
     let meta = TuneMetadata(

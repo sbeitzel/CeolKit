@@ -146,6 +146,94 @@ file preamble or at the very start of a tune header).
 
 ---
 
+## `%%ceolkit:scale`
+
+**Syntax:** `%%ceolkit:scale <positive number>`
+
+**Type:** floating-point number, greater than zero
+
+**Default:** `1.0` (the renderer's own staff size, unmodified)
+
+**Scope:** global (file preamble or tune header); tune-wide, never per-voice
+
+### Description
+
+Scales the rendered music relative to the renderer's default size, so
+`%%ceolkit:scale 0.8` engraves everything at 80%. This is the in-source
+counterpart to the SVG renderer's `staffSize` configuration value, and it is
+the way to fit a long tune onto one page or to match the size of an adjacent
+engraving without changing the caller's render configuration.
+
+The factor multiplies the staff size, and with it every dimension derived from
+it: note heads, stems, beams, accidentals, clefs, and the vertical gaps between
+systems and between tunes.
+
+Page size and margins are **not** scaled — they stay in absolute points, so
+scaling the music never resizes the page. Because the usable width is
+unchanged, a smaller factor fits more measures onto each staff line. Title,
+subtitle, and composer rows are also unscaled; they are typeset in absolute
+point sizes.
+
+The value must be greater than zero. A missing, zero, negative, or non-numeric
+argument produces a warning and the directive is ignored, leaving the tune at
+the renderer's default size.
+
+Per-voice scaling is not supported: a scale set in a tune body applies to the
+whole tune regardless of which voice is current.
+
+### Scoping
+
+Like the other CeolKit directives, the value is set where it is encountered and
+persists until changed. A factor in the file preamble therefore governs every
+tune in the file, and a tune header can override it for that tune and the ones
+that follow.
+
+### Examples
+
+#### Fit a long tune onto one page
+
+```abc
+X:1
+T:A Long Reel
+M:4/4
+L:1/8
+%%ceolkit:scale 0.75
+K:D
+|:DEFD ADFD|DEFD AFEC|DEFD ADFD|1 EFED CDEC:|2 EFED CEAc||
+```
+
+#### File-wide default with a per-tune override
+
+```abc
+%%ceolkit:scale 0.8
+X:1
+T:Rendered at 80%
+M:4/4
+L:1/8
+K:G
+GABG|DEFD|
+
+X:2
+T:Rendered at 60%
+M:4/4
+L:1/8
+%%ceolkit:scale 0.6
+K:G
+GABG|DEFD|
+```
+
+The first tune (and any tune that follows without its own directive) renders at
+80%; the second, and every tune after it, renders at 60%.
+
+### Relationship to `%%scale`
+
+`abcm2ps` spells this `%%scale`. CeolKit uses the `%%ceolkit:` namespace instead,
+both for consistency with the rest of these extensions and to avoid implying
+full `%%scale` compatibility. A bare `%%scale` is still reported as an
+unsupported stylesheet directive.
+
+---
+
 ## `%%ceolkit:stemalignment`
 
 **Syntax:** `%%ceolkit:stemalignment <integer>`

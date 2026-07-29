@@ -85,7 +85,11 @@ struct SVGEmitter: Sendable {
         emitScrollSyncMetadata(for: page, pageNumber: pageNumber, builder: &builder)
         emitTitleBlock(page.titleRows, builder: &builder)
         for system in page.systems {
-            emitSystem(system, pendingTies: &pendingTies, pendingSlurs: &pendingSlurs, builder: &builder)
+            // Systems on one page can come from tunes with different %%ceolkit:scale factors,
+            // so each is emitted through a copy of self whose staffSize matches that system.
+            sized(to: system.staffSize)
+                .emitSystem(system, pendingTies: &pendingTies, pendingSlurs: &pendingSlurs,
+                            builder: &builder)
         }
         emitFooterBlock(page.footerRows, builder: &builder)
         return builder.buildDocument(
@@ -95,6 +99,18 @@ struct SVGEmitter: Sendable {
             libertinusSerifBase64: libertinusSerifBase64,
             libertinusSerifItalicBase64: libertinusSerifItalicBase64
         )
+    }
+
+    /// Returns a copy of this emitter whose `config.staffSize` is `staffSize`.
+    ///
+    /// Every staff, glyph, stem, and beam dimension below `emitSystem` is expressed as a
+    /// multiple of `config.staffSize`, so swapping it here scales an entire system without
+    /// threading a size argument through the whole emission tree.
+    private func sized(to staffSize: Double) -> SVGEmitter {
+        guard staffSize != config.staffSize else { return self }
+        var scaledConfig = config
+        scaledConfig.staffSize = staffSize
+        return SVGEmitter(config: scaledConfig, metadata: metadata, stemDirection: stemDirection)
     }
 
     // MARK: - Scroll-sync metadata

@@ -595,8 +595,8 @@ struct SemanticPass {
                     source: source
                 ))
             }
-        case "landscape", "flatbeams", "ceolkit:justifylast", "writefields", "dateformat", "footer",
-             "straightflags", "graceslurs":
+        case "landscape", "flatbeams", "ceolkit:justifylast", "ceolkit:scale", "writefields",
+             "dateformat", "footer", "straightflags", "graceslurs":
             var tempDiags: [Diagnostic] = []
             if let d = parseCeolKitDirective(name: name, payload: payload, source: source, diagnostics: &tempDiags) {
                 ctx.bodyTuneDirectives.append(CeolKitDirectiveScope(directive: d, scope: .tuneGlobal, source: source))
@@ -763,7 +763,7 @@ struct SemanticPass {
             explicit: false,
             clef: ClefSpec(clef: .treble, octaveShift: 0),
             transposition: .none,
-            staffProperties: StaffProperties(staffLines: 5, scale: nil),
+            staffProperties: StaffProperties(staffLines: 5),
             source: source
         )
     }
@@ -871,6 +871,18 @@ struct SemanticPass {
             if let n = Int(trimmed) { return .stemAlignment(n) }
             diagnostics.append(Diagnostic(severity: .warning, code: .misplacedStemAlignment,
                 message: "%%ceolkit:stemalignment expects an integer", source: source))
+            return nil
+        case "ceolkit:scale":
+            if let f = Double(trimmed) {
+                if f <= 0 || !f.isFinite {
+                    diagnostics.append(Diagnostic(severity: .warning, code: .invalidScale,
+                        message: "%%ceolkit:scale must be a positive number (got \(trimmed))", source: source))
+                    return nil
+                }
+                return .scale(f)
+            }
+            diagnostics.append(Diagnostic(severity: .warning, code: .invalidScale,
+                message: "%%ceolkit:scale expects a number (got '\(trimmed)')", source: source))
             return nil
         case "landscape":
             if let value = parseLogical(trimmed) { return .landscape(value) }
@@ -1082,7 +1094,7 @@ struct SemanticPass {
         VoiceProperties(
             clef: ClefSpec(clef: .treble, octaveShift: 0),
             transposition: .none,
-            staffProperties: StaffProperties(staffLines: 5, scale: nil),
+            staffProperties: StaffProperties(staffLines: 5),
             name: nil,
             subname: nil,
             stemDirection: .auto,
@@ -1344,7 +1356,7 @@ private struct BodyContext {
             voiceProperties[id] = VoiceProperties(
                 clef: properties.clef != defaultClef ? properties.clef : existing.clef,
                 transposition: properties.transposition != .none ? properties.transposition : existing.transposition,
-                staffProperties: (properties.staffProperties.staffLines != 5 || properties.staffProperties.scale != nil)
+                staffProperties: properties.staffProperties.staffLines != 5
                     ? properties.staffProperties : existing.staffProperties,
                 name: properties.name ?? existing.name,
                 subname: properties.subname ?? existing.subname,

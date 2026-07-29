@@ -28,6 +28,7 @@ private func system(measures: [ResolvedMeasure], abcLine: Int = 1, originY: Doub
         origin: Point(x: config.margins.left, y: originY),
         measures: measures,
         staffOrigin: 50,
+        staffSize: config.staffSize,
         staffHeight: staffHeight,
         extraAbove: 50,
         extraBelow: 0,

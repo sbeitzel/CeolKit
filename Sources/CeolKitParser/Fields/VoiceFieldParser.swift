@@ -67,7 +67,7 @@ enum VoiceFieldParser {
         let props = VoiceProperties(
             clef: ClefSpec(clef: clef, octaveShift: octaveShift),
             transposition: Transposition(semitones: transposeSemitones, octave: transposeOctave),
-            staffProperties: StaffProperties(staffLines: staffLines, scale: nil),
+            staffProperties: StaffProperties(staffLines: staffLines),
             name: name,
             subname: subname,
             stemDirection: stem,

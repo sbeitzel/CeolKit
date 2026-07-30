@@ -38,7 +38,7 @@ private func makeTune(
         explicit: false,
         clef: ClefSpec(clef: .treble, octaveShift: 0),
         transposition: .none,
-        staffProperties: StaffProperties(staffLines: 5, scale: nil),
+        staffProperties: StaffProperties(staffLines: 5),
         source: dummySrc
     )
     return Tune(
@@ -55,7 +55,7 @@ private func makeTune(
             properties: VoiceProperties(
                 clef: ClefSpec(clef: .treble, octaveShift: 0),
                 transposition: .none,
-                staffProperties: StaffProperties(staffLines: 5, scale: nil),
+                staffProperties: StaffProperties(staffLines: 5),
                 name: nil, subname: nil, stemDirection: .auto, middleNote: nil
             ),
             staves: [Staff(measures: [], overlays: [])],

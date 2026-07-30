@@ -45,6 +45,7 @@ public enum DiagnosticCode: String, Codable, Sendable {
     // CeolKit extensions
     case invalidPageNumber
     case misplacedStemAlignment
+    case invalidScale
     // Directives
     case unknownDirective
     case redundantDirective

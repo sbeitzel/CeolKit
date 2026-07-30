@@ -1,12 +1,6 @@
 import CeolKitModel
 import Foundation
 
-// MARK: - Error
-
-enum SVGEmitterError: Error {
-    case bravuraFontNotFound
-}
-
 // MARK: - Internal geometry
 
 /// Stem geometry returned by `emitStem` so the caller can draw beam strokes.
@@ -60,7 +54,7 @@ struct SVGEmitter: Sendable {
     // MARK: - Public entry point
 
     func emit(_ layout: ResolvedLayout) throws -> [String] {
-        let bravuraBase64             = try loadBravuraBase64()
+        let bravuraBase64             = try CeolKitFonts.base64(for: .bravura)
         let libertinusSerifBase64     = try LibertinusSerifMetrics.loadBase64()
         let libertinusSerifItalicBase64 = try LibertinusSerifMetrics.loadItalicBase64()
         // Threaded across every page/system so ties and slurs that span a system or page
@@ -91,7 +85,11 @@ struct SVGEmitter: Sendable {
         emitScrollSyncMetadata(for: page, pageNumber: pageNumber, builder: &builder)
         emitTitleBlock(page.titleRows, builder: &builder)
         for system in page.systems {
-            emitSystem(system, pendingTies: &pendingTies, pendingSlurs: &pendingSlurs, builder: &builder)
+            // Systems on one page can come from tunes with different %%ceolkit:scale factors,
+            // so each is emitted through a copy of self whose staffSize matches that system.
+            sized(to: system.staffSize)
+                .emitSystem(system, pendingTies: &pendingTies, pendingSlurs: &pendingSlurs,
+                            builder: &builder)
         }
         emitFooterBlock(page.footerRows, builder: &builder)
         return builder.buildDocument(
@@ -101,6 +99,18 @@ struct SVGEmitter: Sendable {
             libertinusSerifBase64: libertinusSerifBase64,
             libertinusSerifItalicBase64: libertinusSerifItalicBase64
         )
+    }
+
+    /// Returns a copy of this emitter whose `config.staffSize` is `staffSize`.
+    ///
+    /// Every staff, glyph, stem, and beam dimension below `emitSystem` is expressed as a
+    /// multiple of `config.staffSize`, so swapping it here scales an entire system without
+    /// threading a size argument through the whole emission tree.
+    private func sized(to staffSize: Double) -> SVGEmitter {
+        guard staffSize != config.staffSize else { return self }
+        var scaledConfig = config
+        scaledConfig.staffSize = staffSize
+        return SVGEmitter(config: scaledConfig, metadata: metadata, stemDirection: stemDirection)
     }
 
     // MARK: - Scroll-sync metadata
@@ -1121,13 +1131,5 @@ struct SVGEmitter: Sendable {
     private func noteheadWidth() -> Double {
         metadata.glyphBBoxes["noteheadBlack"].map { $0.width * config.staffSize }
             ?? config.staffSize * 1.2
-    }
-
-    private func loadBravuraBase64() throws -> String {
-        guard let url = Bundle.module.url(forResource: "Bravura", withExtension: "otf") else {
-            throw SVGEmitterError.bravuraFontNotFound
-        }
-        let data = try Data(contentsOf: url)
-        return data.base64EncodedString()
     }
 }

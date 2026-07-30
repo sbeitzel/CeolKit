@@ -71,11 +71,17 @@ public struct TuneBlock: Sendable {
     public let systems: [JustifiedSystem]
     public let titleRows: [ResolvedTitleRow]
     public let titleBlockHeight: Double
+    /// Multiplier applied to `SVGRenderConfig.staffSize` (and the inter-system/inter-tune gaps
+    /// derived from it) for this tune's music, from `%%ceolkit:scale`.  `1.0` = renderer default.
+    /// The title block is laid out in absolute points and is unaffected.
+    public let scale: Double
 
-    public init(systems: [JustifiedSystem], titleRows: [ResolvedTitleRow] = [], titleBlockHeight: Double = 0) {
+    public init(systems: [JustifiedSystem], titleRows: [ResolvedTitleRow] = [],
+                titleBlockHeight: Double = 0, scale: Double = 1.0) {
         self.systems = systems
         self.titleRows = titleRows
         self.titleBlockHeight = titleBlockHeight
+        self.scale = scale
     }
 }
 
@@ -188,6 +194,9 @@ public struct ResolvedSystem: Sendable {
     public let measures: [ResolvedMeasure]
     /// Y offset of the top staff line relative to `origin.y`.
     public let staffOrigin: Double
+    /// Distance between adjacent staff lines, after `%%ceolkit:scale` has been applied.
+    /// The emitter derives every glyph and stem dimension in this system from it.
+    public let staffSize: Double
     /// Height of the staff body: 4 × staffSize (five lines, four spaces).
     public let staffHeight: Double
     /// Space above the top staff line (ledger lines, chord symbols, annotations).
@@ -208,6 +217,7 @@ public struct ResolvedSystem: Sendable {
         origin: Point,
         measures: [ResolvedMeasure],
         staffOrigin: Double,
+        staffSize: Double,
         staffHeight: Double,
         extraAbove: Double,
         extraBelow: Double,
@@ -220,6 +230,7 @@ public struct ResolvedSystem: Sendable {
         self.origin = origin
         self.measures = measures
         self.staffOrigin = staffOrigin
+        self.staffSize = staffSize
         self.staffHeight = staffHeight
         self.extraAbove = extraAbove
         self.extraBelow = extraBelow

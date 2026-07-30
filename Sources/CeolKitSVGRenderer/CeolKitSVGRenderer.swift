@@ -22,7 +22,6 @@ public struct SVGRenderer: CeolKitRenderer {
         // File-preamble directives are promoted to the first tune by the parser.
         let effectiveConfig = applyingScoreDirectives(score)
 
-        let sizer     = MeasureSizer(config: effectiveConfig, metadata: metadata)
         let breaker   = LineBreaker()
         let justifier = Justifier()
         let engine    = VerticalLayoutEngine(config: effectiveConfig, metadata: metadata)
@@ -43,15 +42,23 @@ public struct SVGRenderer: CeolKitRenderer {
         var tuneBlocks: [TuneBlock] = []
         var stemDirection: StemDirection = .auto
         var justifyLastSystem = effectiveConfig.justifyLastSystem
+        // %%ceolkit:scale is tune-scoped but sticky: a preamble value governs every following
+        // tune until a later tune header overrides it.
+        var scale = 1.0
 
         for tune in score.tunes {
             for scope in tune.directives {
                 switch scope.directive {
                 case .pipeFormat(true):     stemDirection = .down
                 case .justifyLast(let on):  justifyLastSystem = on
+                case .scale(let factor):    scale = factor
                 default: break
                 }
             }
+            // The music scales; the page does not. Sizing and header widths are therefore
+            // derived from a per-tune staff size, while `usableWidth` stays absolute.
+            let tuneConfig = effectiveConfig.scaled(by: scale)
+            let sizer = MeasureSizer(config: tuneConfig, metadata: metadata)
             var tuneSystems: [JustifiedSystem] = []
             var meterForFirstSystem: Meter? = tune.meter
             for voice in tune.voices {
@@ -74,10 +81,10 @@ public struct SVGRenderer: CeolKitRenderer {
                 // Header widths differ between the first system (has time sig) and later ones.
                 let firstHeaderW = systemHeaderWidth(
                     clef: voice.properties.clef, keySignature: tune.key, meter: meterForFirstSystem,
-                    metadata: metadata, staffSize: effectiveConfig.staffSize)
+                    metadata: metadata, staffSize: tuneConfig.staffSize)
                 let laterHeaderW = systemHeaderWidth(
                     clef: voice.properties.clef, keySignature: tune.key, meter: nil,
-                    metadata: metadata, staffSize: effectiveConfig.staffSize)
+                    metadata: metadata, staffSize: tuneConfig.staffSize)
                 let systems = breaker.breakIntoSystems(pairs, usableWidth: usableWidth,
                                                        firstSystemHeaderWidth: firstHeaderW,
                                                        laterSystemHeaderWidth: laterHeaderW,
@@ -104,7 +111,7 @@ public struct SVGRenderer: CeolKitRenderer {
                 tune: tune, writeFields: tuneWriteFields, layoutConfig: effectiveConfig
             ).build()
             tuneBlocks.append(TuneBlock(systems: tuneSystems, titleRows: titleRows,
-                                        titleBlockHeight: titleBlockHeight))
+                                        titleBlockHeight: titleBlockHeight, scale: scale))
         }
 
         let emitter = SVGEmitter(config: effectiveConfig, metadata: metadata, stemDirection: stemDirection)

@@ -36,7 +36,7 @@ public struct VerticalLayoutEngine: Sendable {
         var previousAbcLine: Int?
 
         for jsystem in systems {
-            let (extraAbove, extraBelow) = verticalExtent(of: jsystem)
+            let (extraAbove, extraBelow) = verticalExtent(of: jsystem, staffSize: config.staffSize)
             let totalHeight = extraAbove + staffHeight + extraBelow
 
             if !pageSystems.isEmpty && y + totalHeight > config.pageSize.height - config.margins.bottom {
@@ -48,20 +48,7 @@ public struct VerticalLayoutEngine: Sendable {
             }
 
             let systemOrigin = Point(x: config.margins.left, y: y)
-            let timeSigW = jsystem.meter.map {
-                timeSignatureWidth(for: $0, metadata: metadata, staffSize: config.staffSize)
-            } ?? 0
-            // When no time signature follows, use noteheadWidth as the trailing gap after the key
-            // signature so the space to the first bar line equals one note head.
-            let keySigTrailing: Double? = timeSigW > 0 ? nil : {
-                metadata.glyphBBoxes["noteheadBlack"].map { $0.width * config.staffSize }
-                    ?? config.staffSize * 1.2
-            }()
-            let keySigW = jsystem.keySignature.map {
-                keySignatureWidth(for: $0, metadata: metadata, staffSize: config.staffSize,
-                                  trailingGap: keySigTrailing)
-            } ?? 0
-            let startWidth = clefStartWidth(for: jsystem.clef) + keySigW + timeSigW
+            let startWidth = systemStartWidth(for: jsystem, staffSize: config.staffSize)
             let measures = resolveMeasures(
                 jsystem.measures,
                 systemOrigin: systemOrigin,
@@ -75,6 +62,7 @@ public struct VerticalLayoutEngine: Sendable {
                 origin: systemOrigin,
                 measures: measures,
                 staffOrigin: extraAbove,
+                staffSize: config.staffSize,
                 staffHeight: staffHeight,
                 extraAbove: extraAbove,
                 extraBelow: extraBelow,
@@ -107,8 +95,6 @@ public struct VerticalLayoutEngine: Sendable {
     /// Each tune's title rows are offset from their tune-relative `baselineY` values
     /// by the actual page y-origin at the moment they are placed.
     public func layout(_ tuneBlocks: [TuneBlock]) -> ResolvedLayout {
-        let staffHeight = 4.0 * config.staffSize
-
         var pages: [ResolvedPage] = []
         var pageSystems: [ResolvedSystem] = []
         var pageTitleRows: [ResolvedTitleRow] = []
@@ -116,6 +102,14 @@ public struct VerticalLayoutEngine: Sendable {
         var previousAbcLine: Int?
 
         for block in tuneBlocks {
+            // %%ceolkit:scale sizes this tune's music (and the gaps derived from staffSize)
+            // relative to the renderer default. Page size and margins stay absolute.
+            let tuneConfig  = config.scaled(by: block.scale)
+            let staffSize   = tuneConfig.staffSize
+            let staffHeight = 4.0 * staffSize
+            let systemGap   = tuneConfig.systemGap
+            let tuneGap     = tuneConfig.tuneGap
+
             // If the current page already has content, check whether the entire tune
             // fits in the remaining space. If not, close the current page. Tunes that
             // are taller than a full page are still forced to a fresh page here; the
@@ -141,7 +135,7 @@ public struct VerticalLayoutEngine: Sendable {
             y += block.titleBlockHeight
 
             for (si, jsystem) in block.systems.enumerated() {
-                let (extraAbove, extraBelow) = verticalExtent(of: jsystem)
+                let (extraAbove, extraBelow) = verticalExtent(of: jsystem, staffSize: staffSize)
                 let totalHeight = extraAbove + staffHeight + extraBelow
 
                 if !pageSystems.isEmpty && y + totalHeight > config.pageSize.height - config.margins.bottom {
@@ -152,18 +146,7 @@ public struct VerticalLayoutEngine: Sendable {
                 }
 
                 let systemOrigin = Point(x: config.margins.left, y: y)
-                let timeSigW = jsystem.meter.map {
-                    timeSignatureWidth(for: $0, metadata: metadata, staffSize: config.staffSize)
-                } ?? 0
-                let keySigTrailing: Double? = timeSigW > 0 ? nil : {
-                    metadata.glyphBBoxes["noteheadBlack"].map { $0.width * config.staffSize }
-                        ?? config.staffSize * 1.2
-                }()
-                let keySigW = jsystem.keySignature.map {
-                    keySignatureWidth(for: $0, metadata: metadata, staffSize: config.staffSize,
-                                      trailingGap: keySigTrailing)
-                } ?? 0
-                let startWidth = clefStartWidth(for: jsystem.clef) + keySigW + timeSigW
+                let startWidth = systemStartWidth(for: jsystem, staffSize: staffSize)
                 let measures = resolveMeasures(
                     jsystem.measures,
                     systemOrigin: systemOrigin,
@@ -176,6 +159,7 @@ public struct VerticalLayoutEngine: Sendable {
                     origin: systemOrigin,
                     measures: measures,
                     staffOrigin: extraAbove,
+                    staffSize: staffSize,
                     staffHeight: staffHeight,
                     extraAbove: extraAbove,
                     extraBelow: extraBelow,
@@ -186,7 +170,7 @@ public struct VerticalLayoutEngine: Sendable {
                     abcLine: abcLine
                 ))
                 let isLastInBlock = si == block.systems.count - 1
-                y += totalHeight + (isLastInBlock ? config.tuneGap : config.systemGap)
+                y += totalHeight + (isLastInBlock ? tuneGap : systemGap)
             }
         }
 
@@ -207,18 +191,35 @@ public struct VerticalLayoutEngine: Sendable {
     /// including its title block, all systems, and inter-system gaps (but not the
     /// trailing gap that follows the last system).
     private func totalHeight(of block: TuneBlock) -> Double {
-        let staffHeight = 4.0 * config.staffSize
+        let tuneConfig  = config.scaled(by: block.scale)
+        let staffHeight = 4.0 * tuneConfig.staffSize
         var h = block.titleBlockHeight
         for (i, jsystem) in block.systems.enumerated() {
-            let (ea, eb) = verticalExtent(of: jsystem)
+            let (ea, eb) = verticalExtent(of: jsystem, staffSize: tuneConfig.staffSize)
             h += ea + staffHeight + eb
-            if i < block.systems.count - 1 { h += config.systemGap }
+            if i < block.systems.count - 1 { h += tuneConfig.systemGap }
         }
         return h
     }
 
-    private func clefStartWidth(for spec: ClefSpec) -> Double {
-        clefHeaderWidth(for: spec, metadata: metadata, staffSize: config.staffSize)
+    /// Width of the clef + key signature + time signature run that precedes the first
+    /// measure of `jsystem`, at the given staff size.
+    private func systemStartWidth(for jsystem: JustifiedSystem, staffSize: Double) -> Double {
+        let timeSigW = jsystem.meter.map {
+            timeSignatureWidth(for: $0, metadata: metadata, staffSize: staffSize)
+        } ?? 0
+        // When no time signature follows, use noteheadWidth as the trailing gap after the key
+        // signature so the space to the first bar line equals one note head.
+        let keySigTrailing: Double? = timeSigW > 0 ? nil : {
+            metadata.glyphBBoxes["noteheadBlack"].map { $0.width * staffSize }
+                ?? staffSize * 1.2
+        }()
+        let keySigW = jsystem.keySignature.map {
+            keySignatureWidth(for: $0, metadata: metadata, staffSize: staffSize,
+                              trailingGap: keySigTrailing)
+        } ?? 0
+        let clefW = clefHeaderWidth(for: jsystem.clef, metadata: metadata, staffSize: staffSize)
+        return clefW + keySigW + timeSigW
     }
 
     /// The 1-based ABC source line of the first measure that contributes content
@@ -239,7 +240,8 @@ public struct VerticalLayoutEngine: Sendable {
 
     // MARK: - Vertical extent
 
-    private func verticalExtent(of system: JustifiedSystem) -> (extraAbove: Double, extraBelow: Double) {
+    private func verticalExtent(of system: JustifiedSystem,
+                                staffSize: Double) -> (extraAbove: Double, extraBelow: Double) {
         var maxLedgerAbove = 0
         var maxLedgerBelow = 0
         var hasChordSymbolsOrAnnotations = false
@@ -259,7 +261,7 @@ public struct VerticalLayoutEngine: Sendable {
             }
         }
 
-        let s = config.staffSize
+        let s = staffSize
         // Grace note stems always point upward (graceScale=0.6) × 3.5 staff spaces above the
         // notehead. Reserve that height so stems never intrude into the title block zone.
         let graceOvershoot = hasGraceGroups ? 3.5 * s * 0.6 : 0

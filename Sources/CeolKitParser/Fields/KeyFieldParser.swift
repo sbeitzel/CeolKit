@@ -79,7 +79,7 @@ enum KeyFieldParser {
             explicit: explicit,
             clef: ClefSpec(clef: clef, octaveShift: octaveShift),
             transposition: .none,
-            staffProperties: StaffProperties(staffLines: staffLines, scale: nil),
+            staffProperties: StaffProperties(staffLines: staffLines),
             source: source
         )
         return (key, [])
@@ -218,7 +218,7 @@ enum KeyFieldParser {
             explicit: false,
             clef: ClefSpec(clef: .treble, octaveShift: 0),
             transposition: .none,
-            staffProperties: StaffProperties(staffLines: 5, scale: nil),
+            staffProperties: StaffProperties(staffLines: 5),
             source: source
         )
     }

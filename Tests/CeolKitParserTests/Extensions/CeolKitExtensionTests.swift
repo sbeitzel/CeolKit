@@ -1,6 +1,6 @@
 // CeolKit extension directive conformance tests.
 // Tests %%ceolkit:pipeformat, %%ceolkit:pagenumber, %%ceolkit:stemalignment,
-// %%ceolkit:justifylast.
+// %%ceolkit:justifylast, %%ceolkit:scale.
 // See EXTENSIONS.md and CeolKit spec §7.
 import Testing
 import CeolKitModel
@@ -355,5 +355,113 @@ struct CeolKitExtensionTests {
             return false
         }
         #expect(!hasDirective)
+    }
+
+    // MARK: %%ceolkit:scale
+
+    /// Returns the scale factor from the first `.scale` directive on any tune, if present.
+    private func scaleFactor(in result: ParseResult) -> Double? {
+        result.score.tunes.flatMap(\.directives).compactMap {
+            if case .scale(let f) = $0.directive { return f }
+            return nil
+        }.first
+    }
+
+    @Test("%%ceolkit:scale 0.8 attaches scale(0.8) directive at tune scope")
+    func scaleValidFactor() {
+        let abc = """
+        X:1
+        T:Test
+        M:4/4
+        L:1/4
+        %%ceolkit:scale 0.8
+        K:G
+        GABC|
+        """
+        let result = parse(abc)
+        let directive = result.score.firstTune?.directives.first(where: {
+            if case .scale = $0.directive { return true }
+            return false
+        })
+        #expect(directive != nil)
+        #expect(scaleFactor(in: result) == 0.8)
+        if let d = directive, case .tuneGlobal = d.scope {} else {
+            Issue.record("Expected .tuneGlobal scope, got \(String(describing: directive?.scope))")
+        }
+    }
+
+    @Test("%%ceolkit:scale accepts a factor greater than 1")
+    func scaleGreaterThanOne() {
+        let abc = "X:1\nT:T\nM:4/4\nL:1/4\n%%ceolkit:scale 1.5\nK:C\nC|"
+        #expect(scaleFactor(in: parse(abc)) == 1.5)
+    }
+
+    @Test("%%ceolkit:scale accepts an integer payload")
+    func scaleIntegerPayload() {
+        let abc = "X:1\nT:T\nM:4/4\nL:1/4\n%%ceolkit:scale 2\nK:C\nC|"
+        #expect(scaleFactor(in: parse(abc)) == 2.0)
+    }
+
+    @Test("%%ceolkit:scale in the file preamble is promoted to the first tune")
+    func scaleInPreamble() {
+        let abc = "%%ceolkit:scale 0.5\nX:1\nT:T\nM:4/4\nL:1/4\nK:C\nC|"
+        #expect(scaleFactor(in: parse(abc)) == 0.5)
+    }
+
+    @Test("%%ceolkit:scale in the tune body is accepted, not reported as unknown")
+    func scaleInBody() {
+        let abc = """
+        X:1
+        T:Test
+        M:4/4
+        L:1/4
+        K:C
+        CDEC|
+        %%ceolkit:scale 0.75
+        CDEC|
+        """
+        let result = parse(abc)
+        #expect(scaleFactor(in: result) == 0.75)
+        let unknowns = result.score.diagnostics.filter { $0.code == .unknownDirective }
+        #expect(unknowns.isEmpty)
+    }
+
+    @Test("%%ceolkit:scale 0 is invalid — emits warning and drops directive")
+    func scaleZeroEmitsWarning() {
+        let abc = "%%ceolkit:scale 0\nX:1\nT:T\nM:4/4\nL:1/4\nK:C\nC|"
+        let result = parse(abc)
+        let warnings = result.score.diagnostics.filter {
+            $0.severity == .warning && $0.code == .invalidScale
+        }
+        #expect(!warnings.isEmpty)
+        #expect(scaleFactor(in: result) == nil)
+    }
+
+    @Test("%%ceolkit:scale -0.5 is invalid — emits warning and drops directive")
+    func scaleNegativeEmitsWarning() {
+        let abc = "%%ceolkit:scale -0.5\nX:1\nT:T\nM:4/4\nL:1/4\nK:C\nC|"
+        let result = parse(abc)
+        let warnings = result.score.diagnostics.filter { $0.code == .invalidScale }
+        #expect(!warnings.isEmpty)
+        #expect(scaleFactor(in: result) == nil)
+    }
+
+    @Test("%%ceolkit:scale big (non-numeric) emits warning and drops directive")
+    func scaleNonNumericEmitsWarning() {
+        let abc = "%%ceolkit:scale big\nX:1\nT:T\nM:4/4\nL:1/4\nK:C\nC|"
+        let result = parse(abc)
+        let warnings = result.score.diagnostics.filter { $0.code == .invalidScale }
+        #expect(!warnings.isEmpty)
+        #expect(scaleFactor(in: result) == nil)
+    }
+
+    @Test("%%ceolkit:scale with a non-finite payload emits warning and drops directive")
+    func scaleNonFiniteEmitsWarning() {
+        for payload in ["inf", "nan"] {
+            let result = parse("%%ceolkit:scale \(payload)\nX:1\nT:T\nM:4/4\nL:1/4\nK:C\nC|")
+            #expect(result.score.diagnostics.contains { $0.code == .invalidScale },
+                    "expected invalidScale for payload '\(payload)'")
+            #expect(scaleFactor(in: result) == nil)
+        }
     }
 }

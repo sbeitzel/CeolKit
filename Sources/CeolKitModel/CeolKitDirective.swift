@@ -11,6 +11,7 @@ public enum CeolKitDirective: Hashable, Sendable {
     case pipeFormat(Bool)              // %%ceolkit:pipeformat true|false
     case pageNumber(Int)               // %%ceolkit:pagenumber N  (N >= 1)
     case stemAlignment(Int)            // %%ceolkit:stemalignment N  (signed integer)
+    case scale(Double)                 // %%ceolkit:scale F  (F > 0)
     case landscape(Bool)               // %%landscape 0|1  (ABC v2.2 §9.1)
     case flatBeams(Bool)               // %%flatbeams true|false  (abcm2ps; implicit in pipeFormat)
     case justifyLast(Bool)             // %%ceolkit:justifylast true|false

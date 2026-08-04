@@ -11,6 +11,13 @@ public struct SVGRenderConfig: Sendable {
     public var justifyLastSystem: Bool
     public var straightFlags: Bool
     public var graceSlurs: Bool
+    /// Step between adjacent grace noteheads within one grace group, as a multiple of the
+    /// grace notehead width.
+    ///
+    /// The notes of a beamed embellishment (a grip, taorluath or birl) share a beam and are
+    /// engraved nearly adjacent, so this stays close to `1.0`.  It does not affect the padding
+    /// at the outer edges of the group, nor the gap before the principal note.
+    public var graceNoteSpacing: Double
 
     public init(
         pageSize: PageSize = .letter,
@@ -20,7 +27,8 @@ public struct SVGRenderConfig: Sendable {
         tuneGap: Double? = nil,
         justifyLastSystem: Bool = false,
         straightFlags: Bool = false,
-        graceSlurs: Bool = true
+        graceSlurs: Bool = true,
+        graceNoteSpacing: Double = 1.05
     ) {
         self.pageSize = pageSize
         self.margins = margins
@@ -30,6 +38,7 @@ public struct SVGRenderConfig: Sendable {
         self.justifyLastSystem = justifyLastSystem
         self.straightFlags = straightFlags
         self.graceSlurs = graceSlurs
+        self.graceNoteSpacing = graceNoteSpacing
     }
 
     /// Returns a copy with `staffSize` and the vertical gaps derived from it multiplied

@@ -358,6 +358,35 @@ private let quarterUNL = Fraction(numerator: 1, denominator: 4)
         #expect(lineCount == 11)
     }
 
+    /// The emitter must draw grace noteheads at the positions `GraceMetrics` describes —
+    /// the same source the sizer used to reserve the group's width (issue #39).
+    @Test func beamedGraceNoteheadsAreDrawnAtMetricsOffsets() throws {
+        let notes = [graceNote(step: .f, octave: 4),
+                     graceNote(step: .g, octave: 4),
+                     graceNote(step: .a, octave: 4)]
+        let grace   = GraceGroup(kind: .appoggiatura, notes: notes, source: dummyRange)
+        let originX = 60.0
+        let svgs = try emitter.emit(layout(systems: [system(measures: [measureWithGrace(grace, x: originX)])]))
+        let svg  = try #require(svgs.first)
+
+        let metrics  = GraceMetrics(config: config, metadata: metadata)
+        let expected = metrics.noteheadOffsets(notes).map { originX + $0 }
+
+        // Notehead glyphs are emitted in order, one <text> per grace note.
+        let noteheadXs = svg.components(separatedBy: "<text ").dropFirst()
+            .filter { $0.contains(String(SMuFLGlyph.noteheadBlack.character)) }
+            .compactMap { chunk -> Double? in
+                guard let range = chunk.range(of: #"x="([0-9.\-]+)""#, options: .regularExpression)
+                else { return nil }
+                return Double(chunk[range].dropFirst(3).dropLast())
+            }
+
+        #expect(noteheadXs.count == expected.count)
+        for (drawn, want) in zip(noteheadXs, expected) {
+            #expect(abs(drawn - want) < 0.001)
+        }
+    }
+
     @Test func acciaccaturaHasSlashLine() throws {
         let grace = GraceGroup(kind: .acciaccatura, notes: [graceNote(step: .g, octave: 4)],
                                source: dummyRange)

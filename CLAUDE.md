@@ -36,15 +36,43 @@ Sources/
     Extensions/       — %%ceolkit:* directive parsing and scoping
   CeolKitRenderer/     — renderer protocol + shared rendering utilities
                         depends on CeolKitModel only
+  CeolKitSVGGeometry/  — reads emitted SVG back into layout geometry (systems,
+                        staff size, spans, barlines). Depends on nothing.
+  ckprobe/             — development CLI over the parser + renderer + geometry
 
 Tests/
   CeolKitParserTests/
     Conformance/      — all examples from ABC v2.2 §14
     Extensions/
     Recovery/         — malformed inputs that must still produce a Score
+  CeolKitSVGGeometryTests/
 ```
 
 `CeolKitRenderer` defines the protocol(s) all renderers conform to and any layout/metrics helpers shared across backends. Each renderer target is a standalone library product; consumers link only what they need.
+
+### Development tooling
+
+`ckprobe` parses and renders an ABC file and reports what came out — diagnostics, tune
+structure, and the geometry of every system on every page. It is the fastest way to answer
+a layout question without a GUI:
+
+```bash
+swift run ckprobe tune.abc                          # full report
+swift run ckprobe tune.abc --scale 0.85             # override %%ceolkit:scale
+swift run ckprobe tune.abc --sweep 1.5,1.0,0.85     # systems/pages per scale factor
+swift run ckprobe tune.abc --natural                # unstretched system widths
+swift run ckprobe tune.abc --out /tmp/out --json
+rsvg-convert -w 1500 /tmp/out/page0.svg -o /tmp/page0.png   # to look at a page
+```
+
+`CeolKitSVGGeometry` deliberately imports no other CeolKit module: it reads what the
+renderer *drew*, so it can be used to check that against what the layout engine believed.
+
+**Do not make `ckprobe` a product.** SwiftPM synthesises the product for executable
+targets in the root package, so `swift run` works without one, and leaving it unexported
+keeps it out of consumers' dependency graphs. `CeolKitSVGGeometry` *is* a product only
+because Tuist (4.202.6) fails to load a graph containing a product-less library target
+that anything references — see the comment in `Package.swift`.
 
 ## Key Design Decisions
 

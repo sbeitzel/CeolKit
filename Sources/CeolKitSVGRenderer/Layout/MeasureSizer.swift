@@ -9,11 +9,13 @@ public struct MeasureSizer: Sendable {
     private let config: SVGRenderConfig
     private let metadata: BravuraMetadata
     private let graceMetrics: GraceMetrics
+    private let accidentalMetrics: AccidentalMetrics
 
     public init(config: SVGRenderConfig, metadata: BravuraMetadata) {
         self.config = config
         self.metadata = metadata
         self.graceMetrics = GraceMetrics(config: config, metadata: metadata)
+        self.accidentalMetrics = AccidentalMetrics(config: config, metadata: metadata)
     }
 
     /// Sizes a single measure.
@@ -75,7 +77,7 @@ public struct MeasureSizer: Sendable {
         case .note(let n):
             let rawCol = base * durationFactor(n.duration, quarterInUnits: quarterInUnits)
             var col = max(minCol, rawCol)
-            let accWidth = n.displayedAccidental != nil ? s * 0.75 : 0
+            let accWidth = accidentalMetrics.reservation(for: n.displayedAccidental)
             // Very short notes (at the minimum floor) get a dot-gap equivalent of extra space
             // so consecutive beamed notes aren't visually pressed against each other.
             let breathingRoom = rawCol < minCol ? noteheadWidth() * 0.2 : 0
@@ -91,8 +93,11 @@ public struct MeasureSizer: Sendable {
 
         case .chord(let c):
             let col = max(minCol, base * durationFactor(c.duration, quarterInUnits: quarterInUnits))
-            let hasAcc = c.notes.contains { $0.displayedAccidental != nil }
-            return col + (hasAcc ? s * 0.75 : 0)
+            // Chord accidentals are not yet stacked, so reserve for the widest of them.
+            let accWidth = c.notes
+                .map { accidentalMetrics.reservation(for: $0.displayedAccidental) }
+                .max() ?? 0
+            return col + accWidth
 
         case .tuplet(let t):
             var totalUnits = 0.0

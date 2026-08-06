@@ -44,11 +44,13 @@ struct SVGEmitter: Sendable {
     let config: SVGRenderConfig
     let metadata: BravuraMetadata
     let stemDirection: StemDirection
+    let accidentalMetrics: AccidentalMetrics
 
     init(config: SVGRenderConfig, metadata: BravuraMetadata, stemDirection: StemDirection = .auto) {
         self.config = config
         self.metadata = metadata
         self.stemDirection = stemDirection
+        self.accidentalMetrics = AccidentalMetrics(config: config, metadata: metadata)
     }
 
     // MARK: - Public entry point
@@ -792,11 +794,16 @@ struct SVGEmitter: Sendable {
                         noteheadY: noteheadY)
     }
 
+    /// Draws an accidental left of the notehead at `x`.
+    ///
+    /// The offset is the glyph's own width plus a clearance gap — a fixed offset would let
+    /// the wider glyphs (a double flat is 1.644 staff spaces) run over the notehead.
     private func emitAccidental(_ alt: Alteration, x: Double, y: Double,
-                                fontSize: Double, builder: inout SVGBuilder) {
-        guard let glyph = accidentalGlyph(for: alt) else { return }
-        let accWidth = config.staffSize * 0.75
-        builder.text(String(glyph.character), x: x - accWidth, y: y,
+                                fontSize: Double, scale: Double = 1.0,
+                                builder: inout SVGBuilder) {
+        guard let glyph = SMuFLGlyph.accidental(for: alt) else { return }
+        let offset = accidentalMetrics.offset(for: alt, scale: scale)
+        builder.text(String(glyph.character), x: x - offset, y: y,
                      fontFamily: "Bravura", fontSize: fontSize)
     }
 
@@ -878,9 +885,9 @@ struct SVGEmitter: Sendable {
             builder.text(String(SMuFLGlyph.noteheadBlack.character), x: pos.x, y: pos.noteheadY,
                          fontFamily: "Bravura", fontSize: fontSize)
 
-            if let acc = note.displayedAccidental, let glyph = accidentalGlyph(for: acc) {
-                builder.text(String(glyph.character), x: pos.x - s * 0.75 * graceScale, y: pos.noteheadY,
-                             fontFamily: "Bravura", fontSize: fontSize)
+            if let acc = note.displayedAccidental {
+                emitAccidental(acc, x: pos.x, y: pos.noteheadY, fontSize: fontSize,
+                               scale: graceScale, builder: &builder)
             }
 
             // Stem runs from the notehead up to beamY; the highest note has exactly stemLength,
@@ -1113,17 +1120,6 @@ struct SVGEmitter: Sendable {
             default:
                 break
             }
-        }
-    }
-
-    private func accidentalGlyph(for alt: Alteration) -> SMuFLGlyph? {
-        switch (alt.numerator, alt.denominator) {
-        case (1, 1):  return .accidentalSharp
-        case (-1, 1): return .accidentalFlat
-        case (0, _):  return .accidentalNatural
-        case (2, 1):  return .accidentalDoubleSharp
-        case (-2, 1): return .accidentalDoubleFlat
-        default:      return nil  // microtonal — no glyph in v0.1 set
         }
     }
 

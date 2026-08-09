@@ -7,8 +7,9 @@ import CeolKitModel
 private let dummyRange = SourceRange(file: nil, byteOffset: 0, length: 0, line: 0, column: 0)
 private let dummyBar   = BarLine(kind: .single, source: dummyRange)
 
-/// Default staffSize = 7.0, so staffHeight = 28.0
-private let config = SVGRenderConfig()
+/// Default staffSize = 7.0, so staffHeight = 28.0.  Pinned to `.fontFace` because every
+/// assertion below reads a glyph's position out of a `<text>` element — see `textProbeRenderer`.
+private let config = SVGRenderConfig(textRendering: .fontFace)
 private let metadata = try! BravuraMetadata.load()
 
 /// Builds a minimal `ResolvedLayout` from the given systems.

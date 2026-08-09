@@ -1,38 +1,43 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 612 792" width="612" height="792">
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 612 792" width="612" height="792">
   <defs>
-    <style>
-      @font-face {
-        font-family: "Bravura";
-        src: url('data:font/otf;base64,<BRAVURA>') format('opentype');
-      }
-      @font-face {
-        font-family: "Libertinus Serif";
-        src: url('data:font/otf;base64,<BRAVURA>') format('opentype');
-      }
-      @font-face {
-        font-family: "Libertinus Serif";
-        font-style: italic;
-        src: url('data:font/otf;base64,<BRAVURA>') format('opentype');
-      }
-    </style>
+    <path id="libertinusSerif-g52" d="<OUTLINE>"/>
+    <path id="libertinusSerif-g74" d="<OUTLINE>"/>
+    <path id="libertinusSerif-g78" d="<OUTLINE>"/>
+    <path id="libertinusSerif-g81" d="<OUTLINE>"/>
+    <path id="libertinusSerif-g77" d="<OUTLINE>"/>
+    <path id="libertinusSerif-g70" d="<OUTLINE>"/>
+    <path id="libertinusSerif-g43" d="<OUTLINE>"/>
+    <path id="libertinusSerif-g72" d="<OUTLINE>"/>
+    <path id="bravura-g74" d="<OUTLINE>"/>
+    <path id="bravura-g128" d="<OUTLINE>"/>
+    <path id="bravura-g130" d="<OUTLINE>"/>
+    <path id="bravura-g158" d="<OUTLINE>"/>
   </defs>
   <!-- ceolkit-meta: {"page": 1, "anchors": [{"abcLine": 0, "y": 57}]} -->
-  <text x="306" y="47.25" font-family="Libertinus Serif" font-size="18" fill="black" text-anchor="middle">Simple Jig</text>
+  <use href="#libertinusSerif-g52" xlink:href="#libertinusSerif-g52" transform="translate(268.929 47.25) scale(0.018 -0.018)"/>
+  <use href="#libertinusSerif-g74" xlink:href="#libertinusSerif-g74" transform="translate(277.659 47.25) scale(0.018 -0.018)"/>
+  <use href="#libertinusSerif-g78" xlink:href="#libertinusSerif-g78" transform="translate(282.537 47.25) scale(0.018 -0.018)"/>
+  <use href="#libertinusSerif-g81" xlink:href="#libertinusSerif-g81" transform="translate(296.757 47.25) scale(0.018 -0.018)"/>
+  <use href="#libertinusSerif-g77" xlink:href="#libertinusSerif-g77" transform="translate(306.099 47.25) scale(0.018 -0.018)"/>
+  <use href="#libertinusSerif-g70" xlink:href="#libertinusSerif-g70" transform="translate(310.851 47.25) scale(0.018 -0.018)"/>
+  <use href="#libertinusSerif-g43" xlink:href="#libertinusSerif-g43" transform="translate(323.397 47.25) scale(0.018 -0.018)"/>
+  <use href="#libertinusSerif-g74" xlink:href="#libertinusSerif-g74" transform="translate(329.193 47.25) scale(0.018 -0.018)"/>
+  <use href="#libertinusSerif-g72" xlink:href="#libertinusSerif-g72" transform="translate(334.071 47.25) scale(0.018 -0.018)"/>
   <line x1="36" y1="57" x2="202.827" y2="57" stroke="black" stroke-width="0.78"/>
   <line x1="36" y1="63" x2="202.827" y2="63" stroke="black" stroke-width="0.78"/>
   <line x1="36" y1="69" x2="202.827" y2="69" stroke="black" stroke-width="0.78"/>
   <line x1="36" y1="75" x2="202.827" y2="75" stroke="black" stroke-width="0.78"/>
   <line x1="36" y1="81" x2="202.827" y2="81" stroke="black" stroke-width="0.78"/>
-  <text x="37.5" y="75" font-family="Bravura" font-size="24" fill="black"></text>
-  <text x="55.104" y="63" font-family="Bravura" font-size="24" fill="black"></text>
-  <text x="55.104" y="75" font-family="Bravura" font-size="24" fill="black"></text>
+  <use href="#bravura-g74" xlink:href="#bravura-g74" transform="translate(37.5 75) scale(0.024 -0.024)"/>
+  <use href="#bravura-g128" xlink:href="#bravura-g128" transform="translate(55.104 63) scale(0.024 -0.024)"/>
+  <use href="#bravura-g130" xlink:href="#bravura-g130" transform="translate(55.104 75) scale(0.024 -0.024)"/>
   <line x1="137.036" y1="57" x2="137.036" y2="81" stroke="black" stroke-width="0.96"/>
-  <text x="83.124" y="75" font-family="Bravura" font-size="24" fill="black"></text>
-  <text x="91.609" y="72" font-family="Bravura" font-size="24" fill="black"></text>
-  <text x="100.095" y="69" font-family="Bravura" font-size="24" fill="black"></text>
-  <text x="108.58" y="66" font-family="Bravura" font-size="24" fill="black"></text>
-  <text x="117.065" y="63" font-family="Bravura" font-size="24" fill="black"></text>
-  <text x="125.55" y="60" font-family="Bravura" font-size="24" fill="black"></text>
+  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(83.124 75) scale(0.024 -0.024)"/>
+  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(91.609 72) scale(0.024 -0.024)"/>
+  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(100.095 69) scale(0.024 -0.024)"/>
+  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(108.58 66) scale(0.024 -0.024)"/>
+  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(117.065 63) scale(0.024 -0.024)"/>
+  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(125.55 60) scale(0.024 -0.024)"/>
   <line x1="90.204" y1="48" x2="90.204" y2="75" stroke="black" stroke-width="0.72"/>
   <line x1="98.689" y1="48" x2="98.689" y2="72" stroke="black" stroke-width="0.72"/>
   <line x1="107.175" y1="48" x2="107.175" y2="69" stroke="black" stroke-width="0.72"/>
@@ -42,12 +47,12 @@
   <line x1="90.204" y1="48" x2="125.55" y2="48" stroke="black" stroke-width="3"/>
   <line x1="198.027" y1="57" x2="198.027" y2="81" stroke="black" stroke-width="0.96"/>
   <line x1="202.827" y1="57" x2="202.827" y2="81" stroke="black" stroke-width="3"/>
-  <text x="144.116" y="75" font-family="Bravura" font-size="24" fill="black"></text>
-  <text x="152.601" y="72" font-family="Bravura" font-size="24" fill="black"></text>
-  <text x="161.086" y="69" font-family="Bravura" font-size="24" fill="black"></text>
-  <text x="169.572" y="66" font-family="Bravura" font-size="24" fill="black"></text>
-  <text x="178.057" y="63" font-family="Bravura" font-size="24" fill="black"></text>
-  <text x="186.542" y="60" font-family="Bravura" font-size="24" fill="black"></text>
+  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(144.116 75) scale(0.024 -0.024)"/>
+  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(152.601 72) scale(0.024 -0.024)"/>
+  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(161.086 69) scale(0.024 -0.024)"/>
+  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(169.572 66) scale(0.024 -0.024)"/>
+  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(178.057 63) scale(0.024 -0.024)"/>
+  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(186.542 60) scale(0.024 -0.024)"/>
   <line x1="151.196" y1="48" x2="151.196" y2="75" stroke="black" stroke-width="0.72"/>
   <line x1="159.681" y1="48" x2="159.681" y2="72" stroke="black" stroke-width="0.72"/>
   <line x1="168.166" y1="48" x2="168.166" y2="69" stroke="black" stroke-width="0.72"/>

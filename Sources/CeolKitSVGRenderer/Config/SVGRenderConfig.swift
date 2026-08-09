@@ -18,6 +18,8 @@ public struct SVGRenderConfig: Sendable {
     /// engraved nearly adjacent, so this stays close to `1.0`.  It does not affect the padding
     /// at the outer edges of the group, nor the gap before the principal note.
     public var graceNoteSpacing: Double
+    /// How glyphs reach the page: as `<text>` resolved through a font, or as geometry.
+    public var textRendering: TextRendering
 
     public init(
         pageSize: PageSize = .letter,
@@ -28,7 +30,8 @@ public struct SVGRenderConfig: Sendable {
         justifyLastSystem: Bool = false,
         straightFlags: Bool = false,
         graceSlurs: Bool = true,
-        graceNoteSpacing: Double = 1.05
+        graceNoteSpacing: Double = 1.05,
+        textRendering: TextRendering = .outlines
     ) {
         self.pageSize = pageSize
         self.margins = margins
@@ -39,6 +42,7 @@ public struct SVGRenderConfig: Sendable {
         self.straightFlags = straightFlags
         self.graceSlurs = graceSlurs
         self.graceNoteSpacing = graceNoteSpacing
+        self.textRendering = textRendering
     }
 
     /// Returns a copy with `staffSize` and the vertical gaps derived from it multiplied
@@ -52,6 +56,41 @@ public struct SVGRenderConfig: Sendable {
         copy.tuneGap = tuneGap * factor
         return copy
     }
+}
+
+/// How the emitter puts glyphs on the page.
+///
+/// Defaults to ``outlines``, because embedding the faces is self-contained *for browsers
+/// only*: no non-browser SVG rasteriser honours `@font-face`. resvg, librsvg, CairoSVG,
+/// Skia, QtSvg, Inkscape and CoreGraphics all resolve `font-family` through a host font
+/// database that the document cannot populate, so a score rendered by any of them shows
+/// staff lines and stems but no noteheads, clefs, or rests unless the host installed the
+/// faces out-of-band — a silent, plausible-looking failure rather than an error. Even
+/// where the host did install them, the installed faces and the embedded ones can drift,
+/// so the same document rasterises differently on two machines.
+///
+/// Emitting outlines moves that geometry into the document, which is the only way the same
+/// score rasterises identically on macOS and in a Linux container.
+public enum TextRendering: String, Sendable, CaseIterable {
+    /// `<text>` elements plus the bundled faces as base64 `@font-face` sources.
+    /// Text stays selectable and searchable; correct rendering needs a browser, or a host
+    /// that has installed the faces itself (see ``CeolKitFonts``).
+    case fontFace
+    /// `<path>` outlines only, and no `@font-face` block. The default: renders identically
+    /// everywhere and drops the embedded faces, at the cost of text that is no longer
+    /// selectable or searchable — use ``both`` where that matters.
+    case outlines
+    /// Outlines for the geometry, plus non-painting `<text>` elements carrying the same
+    /// strings so the document stays selectable, searchable, and accessible. Renders like
+    /// ``outlines`` everywhere, but keeps the embedded faces and so the document size that
+    /// goes with them.
+    case both
+
+    /// Whether the document embeds the bundled faces as `@font-face` sources.
+    public var embedsFontFaces: Bool { self != .outlines }
+
+    /// Whether glyph geometry is written into the document as outlines.
+    public var emitsOutlines: Bool { self != .fontFace }
 }
 
 public struct PageSize: Sendable {

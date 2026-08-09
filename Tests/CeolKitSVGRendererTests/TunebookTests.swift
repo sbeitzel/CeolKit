@@ -71,7 +71,7 @@ struct TunebookTests {
         let tunebook = loader.tunebook
         let result = CeolKitParser().parse(tunebook, options: .default)
         let score = result.score
-        let renderer = SVGRenderer()
+        let renderer = textProbeRenderer()
         let pages = try renderer.render(score)
 
         #expect(pages.count == 16, "Expected to find 16 pages")
@@ -82,7 +82,7 @@ struct TunebookTests {
         let tunebook = loader.tunebook
         let result = CeolKitParser().parse(tunebook, options: .default)
         let score = result.score
-        let renderer = SVGRenderer()
+        let renderer = textProbeRenderer()
         let pages = try renderer.render(score)
 
         let firstPage = try #require(pages.first)
@@ -116,7 +116,7 @@ struct TunebookTests {
         let tunebook = loader.tunebook
         let result = CeolKitParser().parse(tunebook, options: .default)
         let score = result.score
-        let pages = try SVGRenderer().render(score)
+        let pages = try textProbeRenderer().render(score)
 
         // Page 3 contains The Radar Racketeer (R:Jig, C:Murray Blair & Adrian Melvin).
         // %%writefields TRCQ true is in the preamble, so R should appear in every tune's title block.

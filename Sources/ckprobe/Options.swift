@@ -8,6 +8,7 @@
 //  it for six flags.
 //
 
+import CeolKitSVGRenderer
 import Foundation
 
 struct Options {
@@ -21,6 +22,9 @@ struct Options {
     /// Directory to write `page0.svg`, `page1.svg`, … into.
     var outputDirectory: URL?
     var json: Bool = false
+    /// Defaults to whatever the library defaults to, so `ckprobe` sees what a consumer
+    /// sees unless asked otherwise.
+    var textRendering: TextRendering = SVGRenderConfig().textRendering
 
     static let usage = """
         usage: ckprobe <file.abc> [options]
@@ -35,6 +39,11 @@ struct Options {
                                 are reported unstretched.
           --out <dir>           Write page0.svg, page1.svg, … into <dir>.
           --json                Emit JSON instead of the text report.
+          --outlines            Emit glyph outlines only (the default).
+          --both                Emit outlines plus non-painting <text>.
+          --font-face           Emit <text> + @font-face instead of outlines.  Only
+                                renders correctly in a browser, or on a host that has
+                                the bundled faces installed.
           -h, --help            Show this message.
 
         To look at a page:
@@ -54,6 +63,7 @@ struct Options {
         var natural = false
         var outputDirectory: URL?
         var json = false
+        var textRendering = SVGRenderConfig().textRendering
 
         /// Consumes the value that follows a flag.
         func value(after index: inout Int, of flag: String, in args: [String]) throws -> String {
@@ -95,6 +105,15 @@ struct Options {
             case "--json":
                 json = true
 
+            case "--outlines":
+                textRendering = .outlines
+
+            case "--both":
+                textRendering = .both
+
+            case "--font-face":
+                textRendering = .fontFace
+
             default:
                 guard !argument.hasPrefix("-") else {
                     throw ParseError(description: "unknown option '\(argument)'")
@@ -116,7 +135,8 @@ struct Options {
             sweep: sweep,
             natural: natural,
             outputDirectory: outputDirectory,
-            json: json
+            json: json,
+            textRendering: textRendering
         )
     }
 }

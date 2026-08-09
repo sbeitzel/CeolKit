@@ -33,21 +33,21 @@ struct TitleBlockIntegrationTests {
 
     @Test("SVG contains the tune title text")
     func titlePresentInSVG() throws {
-        let pages = try SVGRenderer().render(parseScore(kalabakan))
+        let pages = try textProbeRenderer().render(parseScore(kalabakan))
         let firstPage = try #require(pages.first)
         #expect(firstPage.contains("Kalabakan (Borneo)"))
     }
 
     @Test("SVG contains the rhythm field text when %%writefields R is set")
     func rhythmPresentInSVG() throws {
-        let pages = try SVGRenderer().render(parseScore(kalabakan))
+        let pages = try textProbeRenderer().render(parseScore(kalabakan))
         let firstPage = try #require(pages.first)
         #expect(firstPage.contains("Reel"))
     }
 
     @Test("SVG contains the composer field text")
     func composerPresentInSVG() throws {
-        let pages = try SVGRenderer().render(parseScore(kalabakan))
+        let pages = try textProbeRenderer().render(parseScore(kalabakan))
         let firstPage = try #require(pages.first)
         #expect(firstPage.contains("P/M A. MacDonald"))
     }
@@ -56,7 +56,7 @@ struct TitleBlockIntegrationTests {
 
     @Test("Title baseline Y is less than the first system's staff Y (title is above staff)")
     func titleAboveStaff() throws {
-        let pages = try SVGRenderer().render(parseScore(kalabakan))
+        let pages = try textProbeRenderer().render(parseScore(kalabakan))
         let svg = try #require(pages.first)
 
         let titleYValues: [Double] = svg
@@ -101,7 +101,7 @@ struct TitleBlockIntegrationTests {
     @Test("Title appears in SVG by default with no %%writefields directive")
     func defaultShowsTitle() throws {
         let abc = "X:1\nT:My Tune\nM:4/4\nL:1/4\nK:C\nCDEF|"
-        let pages = try SVGRenderer().render(parseScore(abc))
+        let pages = try textProbeRenderer().render(parseScore(abc))
         let svg = try #require(pages.first)
         #expect(svg.contains("My Tune"))
     }
@@ -109,7 +109,7 @@ struct TitleBlockIntegrationTests {
     @Test("%%writefields T false suppresses title in SVG")
     func writeFieldsTFalseSuppressesTitle() throws {
         let abc = "%%writefields T false\nX:1\nT:Test\nM:4/4\nL:1/4\nK:C\nCDEF|"
-        let pages = try SVGRenderer().render(parseScore(abc))
+        let pages = try textProbeRenderer().render(parseScore(abc))
         let svg = try #require(pages.first)
         #expect(!svg.contains(">Test<"))
     }

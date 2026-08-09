@@ -32,7 +32,7 @@ struct InlineTempoTests {
             ABCD [Q:1/4=120] | EFGA |]
             """
         let score = CeolKitParser().parse(abc, options: .default).score
-        let pages = try SVGRenderer().render(score)
+        let pages = try textProbeRenderer().render(score)
         let svg = try #require(pages.first)
 
         // "= 120" appears in tempo text like "♩ = 120"; it cannot appear in SVG attributes.
@@ -57,7 +57,7 @@ struct InlineTempoTests {
             ABCD [Q:1/4=120] | EFGA |]
             """
         let score = CeolKitParser().parse(abc, options: .default).score
-        let pages = try SVGRenderer().render(score)
+        let pages = try textProbeRenderer().render(score)
         let svg = try #require(pages.first)
 
         // "= 80" must come from the header Q: rendered in the title block (issue #26 Part 1).

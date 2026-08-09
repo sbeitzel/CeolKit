@@ -38,8 +38,10 @@ private struct SlurAnchor {
 
 /// Pass 5: converts a `ResolvedLayout` into one self-contained SVG document per page.
 ///
-/// Each SVG embeds Bravura as a base64 `@font-face` source so the output is
-/// fully self-contained regardless of the viewer's font environment.
+/// How self-contained depends on `config.textRendering`: the default writes the glyph
+/// geometry into the document, which needs no font environment at all, while `.fontFace`
+/// embeds each face as a base64 `@font-face` source, which browsers honour and no other
+/// rasteriser does. See ``TextRendering``.
 struct SVGEmitter: Sendable {
     let config: SVGRenderConfig
     let metadata: BravuraMetadata
@@ -56,9 +58,16 @@ struct SVGEmitter: Sendable {
     // MARK: - Public entry point
 
     func emit(_ layout: ResolvedLayout) throws -> [String] {
-        let bravuraBase64             = try CeolKitFonts.base64(for: .bravura)
-        let libertinusSerifBase64     = try LibertinusSerifMetrics.loadBase64()
-        let libertinusSerifItalicBase64 = try LibertinusSerifMetrics.loadItalicBase64()
+        // Each is skipped when the mode does not need it: reading and base64-encoding three
+        // OTFs is the emitter's most expensive step, and parsing them for outlines is not
+        // free either.
+        let embeddedFaces = config.textRendering.embedsFontFaces
+            ? EmbeddedFaces(
+                bravura: try CeolKitFonts.base64(for: .bravura),
+                libertinusSerif: try LibertinusSerifMetrics.loadBase64(),
+                libertinusSerifItalic: try LibertinusSerifMetrics.loadItalicBase64())
+            : nil
+        let fonts = config.textRendering.emitsOutlines ? try OutlineFontSet.shared() : nil
         // Threaded across every page/system so ties and slurs that span a system or page
         // break (#27) are resolved with dangling arcs instead of being silently dropped.
         var pendingTies:  [TieAnchor]  = []
@@ -67,9 +76,7 @@ struct SVGEmitter: Sendable {
         documents.reserveCapacity(layout.pages.count)
         for (pageIndex, page) in layout.pages.enumerated() {
             let document = emitPage(page, pageNumber: pageIndex + 1, layout: layout,
-                                     bravuraBase64: bravuraBase64,
-                                     libertinusSerifBase64: libertinusSerifBase64,
-                                     libertinusSerifItalicBase64: libertinusSerifItalicBase64,
+                                     embeddedFaces: embeddedFaces, fonts: fonts,
                                      pendingTies: &pendingTies, pendingSlurs: &pendingSlurs)
             documents.append(document)
         }
@@ -79,11 +86,9 @@ struct SVGEmitter: Sendable {
     // MARK: - Page
 
     private func emitPage(_ page: ResolvedPage, pageNumber: Int, layout: ResolvedLayout,
-                           bravuraBase64: String,
-                           libertinusSerifBase64: String,
-                           libertinusSerifItalicBase64: String,
+                           embeddedFaces: EmbeddedFaces?, fonts: OutlineFontSet?,
                            pendingTies: inout [TieAnchor], pendingSlurs: inout [SlurAnchor]) -> String {
-        var builder = SVGBuilder()
+        var builder = SVGBuilder(textRendering: config.textRendering, fonts: fonts)
         emitScrollSyncMetadata(for: page, pageNumber: pageNumber, builder: &builder)
         emitTitleBlock(page.titleRows, builder: &builder)
         for system in page.systems {
@@ -97,9 +102,7 @@ struct SVGEmitter: Sendable {
         return builder.buildDocument(
             width: layout.pageSize.width,
             height: layout.pageSize.height,
-            bravuraBase64: bravuraBase64,
-            libertinusSerifBase64: libertinusSerifBase64,
-            libertinusSerifItalicBase64: libertinusSerifItalicBase64
+            embeddedFaces: embeddedFaces
         )
     }
 

@@ -5,9 +5,15 @@ import CoreText
 
 /// Access to the fonts bundled with CeolKitSVGRenderer.
 ///
-/// The emitted SVG embeds every face via `@font-face` data URIs, so browser-based
-/// consumers need nothing from this type. Native rasterizers (e.g. SVGKit, which
-/// resolves `font-family` through CoreText/NSFontManager) ignore `@font-face` and
+/// Not needed by default. `SVGRenderConfig.textRendering` defaults to
+/// ``TextRendering/outlines``, which writes the glyph geometry into the document, so those
+/// documents carry no dependency on the host's font environment and nothing below applies
+/// to them. This type exists for hosts that have opted into ``TextRendering/fontFace`` and
+/// rasterize it themselves.
+///
+/// In `.fontFace` mode the emitted SVG embeds every face via `@font-face` data URIs, so
+/// browser-based consumers need nothing from this type. Native rasterizers (e.g. SVGKit,
+/// which resolves `font-family` through CoreText/NSFontManager) ignore `@font-face` and
 /// can only match fonts already known to the process or to the system font
 /// configuration. Such hosts must make the faces resolvable by family name before
 /// rasterizing, or the score renders with staff lines and stems but no noteheads,
@@ -16,7 +22,9 @@ import CoreText
 /// On Apple platforms call ``register()`` once at startup. Elsewhere there is no
 /// process font manager to register with; use ``install(into:)`` or ``data(for:)``
 /// to hand the faces to whatever font system the rasterizer consults (fontconfig,
-/// resvg's `fontdb`, FreeType, …).
+/// resvg's `fontdb`, FreeType, …). Note that this makes correct output depend on the
+/// host's font database matching the bundled faces: the two can drift, and the same
+/// document then rasterizes differently on two machines.
 public enum CeolKitFonts {
 
     /// A font face bundled with CeolKitSVGRenderer.

@@ -24,6 +24,9 @@ public struct BravuraMetadata: Sendable {
         public var height: Double { neY - swY }
     }
 
+    /// The `fontVersion` declared by the metadata — the only reliable way to tell which
+    /// release of the face the metadata was generated from.
+    public let fontVersion: Double
     public let engravingDefaults: EngravingDefaults
     /// Bounding boxes in staff spaces; multiply by `staffSize` to get points.
     public let glyphBBoxes: [String: BoundingBox]
@@ -53,25 +56,48 @@ private struct RawBBox: Decodable {
     let bBoxSW: [Double]
 }
 
+/// The engraving defaults CeolKit consumes, named to match the SMuFL metadata keys.
+///
+/// Decoded as an explicit struct rather than a `[String: Double]` because the object is
+/// not homogeneous: SMuFL 1.4 / Bravura 1.392 added `textFontFamily`, an array of strings,
+/// which makes a dictionary decode fail outright with `typeMismatch`. Naming only what is
+/// used means later releases can add keys of any shape without breaking `load()`.
+///
+/// Every value is optional so a face that omits one still decodes; the missing default
+/// falls back to `0`, as it did when these were dictionary lookups.
+private struct RawEngravingDefaults: Decodable {
+    let staffLineThickness: Double?
+    let stemThickness: Double?
+    let beamThickness: Double?
+    let beamSpacing: Double?
+    let legerLineThickness: Double?
+    let legerLineExtension: Double?
+    let thinBarlineThickness: Double?
+    let thickBarlineThickness: Double?
+    let barlineSeparation: Double?
+}
+
 private struct RawMetadata: Decodable {
-    let engravingDefaults: [String: Double]
+    let fontVersion: Double
+    let engravingDefaults: RawEngravingDefaults
     let glyphBBoxes: [String: RawBBox]
     let glyphsWithAnchors: [String: [String: [Double]]]
 }
 
 private extension BravuraMetadata {
     init(raw: RawMetadata) {
+        fontVersion = raw.fontVersion
         let ed = raw.engravingDefaults
         engravingDefaults = EngravingDefaults(
-            staffLineThickness: ed["staffLineThickness"] ?? 0,
-            stemThickness:      ed["stemThickness"]      ?? 0,
-            beamThickness:      ed["beamThickness"]      ?? 0,
-            beamSpacing:        ed["beamSpacing"]        ?? 0,
-            legerLineThickness: ed["legerLineThickness"] ?? 0,
-            legerLineExtension: ed["legerLineExtension"] ?? 0,
-            thinBarlineThickness:  ed["thinBarlineThickness"]  ?? 0,
-            thickBarlineThickness: ed["thickBarlineThickness"] ?? 0,
-            barlineSeparation:     ed["barlineSeparation"]     ?? 0
+            staffLineThickness: ed.staffLineThickness ?? 0,
+            stemThickness:      ed.stemThickness      ?? 0,
+            beamThickness:      ed.beamThickness      ?? 0,
+            beamSpacing:        ed.beamSpacing        ?? 0,
+            legerLineThickness: ed.legerLineThickness ?? 0,
+            legerLineExtension: ed.legerLineExtension ?? 0,
+            thinBarlineThickness:  ed.thinBarlineThickness  ?? 0,
+            thickBarlineThickness: ed.thickBarlineThickness ?? 0,
+            barlineSeparation:     ed.barlineSeparation     ?? 0
         )
         glyphBBoxes = raw.glyphBBoxes.compactMapValues { box in
             guard box.bBoxNE.count == 2, box.bBoxSW.count == 2 else { return nil }

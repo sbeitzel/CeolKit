@@ -18,8 +18,7 @@ import CeolKitModel
 /// tighter than the outer padding implies (see `SVGRenderConfig.graceNoteSpacing`).
 ///
 /// A note carrying a displayed accidental is the exception: its accidental glyph is drawn to
-/// the left of its notehead, so it needs the wider `accidentalAdvance` to keep clear of the
-/// preceding note.
+/// the left of its notehead, so the step into it grows by whatever that glyph needs.
 struct GraceMetrics {
     /// Scale factor for grace note glyphs and geometry relative to normal notes.
     static let scale = 0.6
@@ -27,32 +26,43 @@ struct GraceMetrics {
     /// Padding at each outer edge of a group, in grace notehead widths.
     static let edgePad = 0.25
 
-    /// Step for a note whose notehead is preceded by an accidental glyph, in grace
-    /// notehead widths.  Accidental placement within the group is unchanged from before
-    /// grace groups were tightened, so this keeps the space that placement assumes.
-    static let accidentalAdvance = 1.5
-
     /// Width of a grace notehead.
     let noteheadWidth: Double
 
-    /// Step between the x of one notehead and the next within the same group.
+    /// Step between the x of one notehead and the next within the same group, for notes
+    /// with no accidental.
     let advance: Double
+
+    private let accidentalMetrics: AccidentalMetrics
 
     init(config: SVGRenderConfig, metadata: BravuraMetadata) {
         let fullNoteheadWidth = metadata.glyphBBoxes["noteheadBlack"].map { $0.width * config.staffSize }
                                 ?? config.staffSize * 1.2
         self.noteheadWidth = fullNoteheadWidth * Self.scale
         self.advance = self.noteheadWidth * config.graceNoteSpacing
+        self.accidentalMetrics = AccidentalMetrics(config: config, metadata: metadata)
+    }
+
+    /// Space an accidental on `note` needs to the left of its notehead, at grace scale.
+    private func accidentalSpace(_ note: Note) -> Double {
+        accidentalMetrics.reservation(for: note.displayedAccidental, scale: Self.scale)
     }
 
     /// x of each notehead's left edge, relative to the group's left edge.
     func noteheadOffsets(_ notes: [Note]) -> [Double] {
-        var x = noteheadWidth * Self.edgePad
+        var x = 0.0
         var offsets: [Double] = []
         offsets.reserveCapacity(notes.count)
         for (i, note) in notes.enumerated() {
-            if i > 0 {
-                x += note.displayedAccidental != nil ? noteheadWidth * Self.accidentalAdvance : advance
+            let accSpace = accidentalSpace(note)
+            if i == 0 {
+                // Leading edge: an accidental on the first note needs at least its own
+                // width before the notehead, otherwise the standard outer padding.
+                x = max(noteheadWidth * Self.edgePad, accSpace)
+            } else {
+                // The previous note's stem sits at the right edge of its notehead, so an
+                // accidental on this note has to clear that as well as the usual advance.
+                x += max(advance, noteheadWidth + accSpace)
             }
             offsets.append(x)
         }

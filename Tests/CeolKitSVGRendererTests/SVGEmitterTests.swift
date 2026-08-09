@@ -358,6 +358,39 @@ private let quarterUNL = Fraction(numerator: 1, denominator: 4)
         #expect(lineCount == 11)
     }
 
+    // MARK: Accidental placement (issue #44)
+
+    /// Every accidental must be drawn far enough left that its own glyph clears the notehead.
+    /// A fixed offset does not work: `accidentalDoubleFlat` is 1.644 staff spaces wide against
+    /// `accidentalNatural`'s 0.672.
+    @Test func accidentalGlyphsClearTheirNoteheads() throws {
+        let metrics = AccidentalMetrics(config: config, metadata: metadata)
+
+        for alt in [Alteration.sharp, .flat, .natural, .doubleSharp, .doubleFlat] {
+            let glyph = try #require(SMuFLGlyph.accidental(for: alt))
+            let n     = quarterNote(step: .c, octave: 5, accidental: alt)
+            let noteX = 60.0
+            let event = ResolvedEvent(origin: Point(x: noteX, y: 100), kind: .note(n))
+            let m = ResolvedMeasure(
+                origin: Point(x: noteX, y: 50), width: 150, events: [event],
+                openingBar: nil, closingBar: ResolvedBarLine(x: noteX + 150, kind: .single),
+                unitNoteLength: quarterUNL
+            )
+            let svgs = try emitter.emit(layout(systems: [system(measures: [m])]))
+            let svg  = try #require(svgs.first)
+
+            let chunk = try #require(svg.components(separatedBy: "<text ")
+                .first { $0.contains(String(glyph.character)) })
+            let range = try #require(chunk.range(of: #"x="([0-9.\-]+)""#, options: .regularExpression))
+            let drawnX = try #require(Double(chunk[range].dropFirst(3).dropLast()))
+
+            let glyphWidth = try #require(metrics.width(for: alt))
+            // The glyph's right edge must land left of the notehead's left edge.
+            #expect(drawnX + glyphWidth <= noteX,
+                    "\(glyph.rawValue) overruns its notehead by \(drawnX + glyphWidth - noteX)")
+        }
+    }
+
     /// The emitter must draw grace noteheads at the positions `GraceMetrics` describes —
     /// the same source the sizer used to reserve the group's width (issue #39).
     @Test func beamedGraceNoteheadsAreDrawnAtMetricsOffsets() throws {

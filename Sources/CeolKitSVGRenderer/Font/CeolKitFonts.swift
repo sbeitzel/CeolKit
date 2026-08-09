@@ -5,10 +5,11 @@ import CoreText
 
 /// Access to the fonts bundled with CeolKitSVGRenderer.
 ///
-/// Only needed by hosts that rasterize `TextRendering/fontFace` output themselves.
-/// Setting `SVGRenderConfig.textRendering` to ``TextRendering/outlines`` emits the glyph
-/// geometry into the document instead, which needs no font environment at all and is the
-/// better answer wherever it is available — nothing below applies to those documents.
+/// Not needed by default. `SVGRenderConfig.textRendering` defaults to
+/// ``TextRendering/outlines``, which writes the glyph geometry into the document, so those
+/// documents carry no dependency on the host's font environment and nothing below applies
+/// to them. This type exists for hosts that have opted into ``TextRendering/fontFace`` and
+/// rasterize it themselves.
 ///
 /// In `.fontFace` mode the emitted SVG embeds every face via `@font-face` data URIs, so
 /// browser-based consumers need nothing from this type. Native rasterizers (e.g. SVGKit,

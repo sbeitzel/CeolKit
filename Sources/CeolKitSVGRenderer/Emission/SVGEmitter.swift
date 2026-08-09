@@ -38,10 +38,10 @@ private struct SlurAnchor {
 
 /// Pass 5: converts a `ResolvedLayout` into one self-contained SVG document per page.
 ///
-/// How self-contained depends on `config.textRendering`: the default embeds each face as a
-/// base64 `@font-face` source, which browsers honour and no other rasteriser does, while
-/// `.outlines` writes the glyph geometry into the document and needs no font environment
-/// at all. See ``TextRendering``.
+/// How self-contained depends on `config.textRendering`: the default writes the glyph
+/// geometry into the document, which needs no font environment at all, while `.fontFace`
+/// embeds each face as a base64 `@font-face` source, which browsers honour and no other
+/// rasteriser does. See ``TextRendering``.
 struct SVGEmitter: Sendable {
     let config: SVGRenderConfig
     let metadata: BravuraMetadata

@@ -209,14 +209,27 @@ struct OutlineEmissionTests {
         #expect(page.contains("Outline Test"))
     }
 
-    /// `.fontFace` is the default and must stay byte-for-byte what it was, so that adopting
-    /// this feature is opt-in for every existing consumer.
-    @Test func fontFaceModeIsUnchangedAndDefault() throws {
-        #expect(SVGRenderConfig().textRendering == .fontFace)
+    /// Consumers get font-independent output without asking for it. This is the whole point
+    /// of the default: the failure mode it avoids is silent, so anyone who would have needed
+    /// to opt in is exactly the person who would not have known to.
+    @Test func outlinesAreTheDefault() throws {
+        #expect(SVGRenderConfig().textRendering == .outlines)
+        let page = try #require(try SVGRenderer()
+            .render(CeolKitParser().parse(sampleABC, options: .default).score).first)
+        #expect(page.contains("<use "))
+        #expect(!page.contains("@font-face"))
+        #expect(!page.contains("<text"))
+    }
+
+    /// `.fontFace` remains available and unchanged for hosts that want selectable text and
+    /// control their own font environment.
+    @Test func fontFaceModeIsStillAvailableAndUnchanged() throws {
         let page = try #require(try render(.fontFace).first)
         #expect(page.contains("<text "))
         #expect(page.contains("@font-face"))
         #expect(!page.contains("<use "))
+        // The xlink namespace is declared only when something references a glyph, so
+        // `.fontFace` documents are byte-for-byte what they were before outlines existed.
         #expect(!page.contains("xmlns:xlink"))
     }
 

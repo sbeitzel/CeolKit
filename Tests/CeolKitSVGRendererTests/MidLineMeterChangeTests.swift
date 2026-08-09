@@ -53,7 +53,7 @@ struct MidLineMeterChangeTests {
             ABCD [M:6/8] | EFG |]
             """
         let score = CeolKitParser().parse(abc, options: .default).score
-        let pages = try SVGRenderer().render(score)
+        let pages = try textProbeRenderer().render(score)
         let svg = try #require(pages.first)
 
         let six  = glyphChar(.timeSig6)
@@ -86,7 +86,7 @@ struct MidLineMeterChangeTests {
     func bobCooperMidLineChanges() throws {
         let loader = try TuneLoader()
         let result = CeolKitParser().parse(loader.tunebook, options: .default)
-        let pages = try SVGRenderer().render(result.score)
+        let pages = try textProbeRenderer().render(result.score)
 
         // Bob Cooper is tune X:1; it appears on page 1.
         let svg = try #require(pages.first { $0.contains("Bob Cooper") },
@@ -131,7 +131,7 @@ struct MidLineMeterChangeTests {
             ABCDEFGA [M:6/8] | BCD |]
             """
         let score = CeolKitParser().parse(abc, options: .default).score
-        let pages = try SVGRenderer().render(score)
+        let pages = try textProbeRenderer().render(score)
         let svg = try #require(pages.first)
 
         let six = glyphChar(.timeSig6)

@@ -69,8 +69,9 @@ struct TieSlurIntegrationTests {
 
     // MARK: - Renderer-level: exactly one arc, ending at A not B
 
-    /// Rendering `c A2- | A2 B` must produce exactly one SVG `<path>` element
-    /// (the tie arc from A to A).
+    /// Rendering `c A2- | A2 B` must produce exactly one drawn `<path d=…>` element
+    /// (the tie arc from A to A).  Glyph outlines in `<defs>` are `<path id=…>`,
+    /// so matching on `d=` counts only what is actually drawn on the page.
     @Test("Tie renders exactly one arc")
     func tieRendersOneArc() throws {
         let tune  = try #require(parseTune("c A2- | A2 B |"))
@@ -79,12 +80,13 @@ struct TieSlurIntegrationTests {
                           tunes: [tune], freeText: [], typesetText: [], diagnostics: [])
         let pages = try SVGRenderer().render(score)
         let svg   = try #require(pages.first)
-        let pathCount = svg.components(separatedBy: "<path").count - 1
+        let pathCount = svg.components(separatedBy: "<path d=").count - 1
         #expect(pathCount == 1, "Expected exactly 1 tie arc, got \(pathCount)")
     }
 
-    /// Rendering `c (A2 | A2) B` must produce exactly one SVG `<path>` element
-    /// (the slur arc from A to A).
+    /// Rendering `c (A2 | A2) B` must produce exactly one drawn `<path d=…>` element
+    /// (the slur arc from A to A).  Glyph outlines in `<defs>` are `<path id=…>`,
+    /// so matching on `d=` counts only what is actually drawn on the page.
     @Test("Slur renders exactly one arc")
     func slurRendersOneArc() throws {
         let tune  = try #require(parseTune("c (A2 | A2) B |"))
@@ -93,7 +95,7 @@ struct TieSlurIntegrationTests {
                           tunes: [tune], freeText: [], typesetText: [], diagnostics: [])
         let pages = try SVGRenderer().render(score)
         let svg   = try #require(pages.first)
-        let pathCount = svg.components(separatedBy: "<path").count - 1
+        let pathCount = svg.components(separatedBy: "<path d=").count - 1
         #expect(pathCount == 1, "Expected exactly 1 slur arc, got \(pathCount)")
     }
 }

@@ -830,7 +830,7 @@ struct SVGEmitter: Sendable {
     // MARK: - Grace groups
 
     /// Scale factor for grace note glyphs and geometry relative to normal notes.
-    private let graceScale = 0.6
+    private var graceScale: Double { GraceMetrics.scale }
 
     @discardableResult
     private func emitGraceGroup(_ grace: GraceGroup, originX: Double,
@@ -841,21 +841,20 @@ struct SVGEmitter: Sendable {
         let s          = config.staffSize
         let fontSize   = 4.0 * s * graceScale
         let stemThick  = metadata.engravingDefaults.stemThickness * s
-        let noteW      = noteheadWidth() * graceScale
-        let colWidth   = noteW * 1.5   // total column per grace note: 0.25W lead + W head + 0.25W trail
+        let metrics    = GraceMetrics(config: config, metadata: metadata)
         let stemLength = 3.5 * s * graceScale
         let multiple   = grace.notes.count > 1
 
         // Pre-pass: compute notehead Y and stem X for each grace note.
-        // Each note's notehead is offset 0.25 × noteW into its column so adjacent noteheads
-        // have 0.5 × noteW of breathing room between them.
-        // Grace note stems always point up, so the stem X is at the right edge of the notehead.
+        // Notehead x positions come from `GraceMetrics`, the same source the sizer used to
+        // reserve this group's width.
         struct GracePos { let x, noteheadY, stemX: Double; let staffPos: Int }
+        let noteheadXs = metrics.noteheadOffsets(grace.notes)
         let positions: [GracePos] = grace.notes.enumerated().map { i, note in
-            let x   = originX + Double(i) * colWidth + noteW * 0.25
+            let x   = originX + noteheadXs[i]
             let sp  = self.staffPos(for: note.pitch)
             let y   = noteY(staffPos: sp, bottomStaffY: bottomStaffY)
-            return GracePos(x: x, noteheadY: y, stemX: x + noteW, staffPos: sp)
+            return GracePos(x: x, noteheadY: y, stemX: x + metrics.noteheadWidth, staffPos: sp)
         }
 
         // The beam (or flag) sits at the top of the highest note's stem.

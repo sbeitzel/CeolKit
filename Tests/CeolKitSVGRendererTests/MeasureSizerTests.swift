@@ -163,4 +163,74 @@ private func measure(events: [Event]) -> Measure {
         // (grace group is smaller than a full note column).
         #expect(pairedSized.naturalWidth < twoNoteSized.naturalWidth)
     }
+
+    // MARK: - Grace group width (issue #39)
+
+    /// The notes of a beamed embellishment share a beam and sit nearly adjacent, so each
+    /// note after the first costs only `graceNoteSpacing` notehead widths — not the
+    /// full 1.5 that the group's outer padding would suggest.
+    @Test func beamedGraceNotesAdvanceByGraceNoteSpacing() throws {
+        let metadata = try BravuraMetadata.load()
+        let config   = SVGRenderConfig()
+        let metrics  = GraceMetrics(config: config, metadata: metadata)
+        let g        = note(duration: Fraction(numerator: 1, denominator: 2))
+
+        let widths = (1...4).map { count in
+            metrics.width(Array(repeating: g, count: count))
+        }
+
+        // Each additional notehead adds exactly one advance.
+        for i in 1..<widths.count {
+            #expect(abs((widths[i] - widths[i - 1]) - metrics.advance) < 0.001)
+        }
+        #expect(abs(metrics.advance - metrics.noteheadWidth * config.graceNoteSpacing) < 0.001)
+        // The advance is well under the 1.5 × notehead width charged before issue #39.
+        #expect(metrics.advance < metrics.noteheadWidth * 1.5)
+    }
+
+    /// Single grace notes were already spaced correctly; issue #39 must not move them.
+    @Test func singleGraceGroupWidthIsUnchanged() throws {
+        let metadata = try BravuraMetadata.load()
+        let config   = SVGRenderConfig()
+        let metrics  = GraceMetrics(config: config, metadata: metadata)
+        let g        = note(duration: Fraction(numerator: 1, denominator: 2))
+
+        #expect(abs(metrics.width([g]) - metrics.noteheadWidth * 1.5) < 0.001)
+    }
+
+    @Test func graceNoteSpacingConfigNarrowsBeamedGroups() throws {
+        let metadata = try BravuraMetadata.load()
+        let g        = note(duration: Fraction(numerator: 1, denominator: 2))
+        let grace    = GraceGroup(kind: .appoggiatura, notes: [g, g, g], source: dummyRange)
+        let quarter  = Fraction(numerator: 2, denominator: 1)
+        let events: [Event] = [.grace(grace), .note(note(duration: quarter))]
+
+        let wide  = MeasureSizer(config: SVGRenderConfig(graceNoteSpacing: 1.5), metadata: metadata)
+        let tight = MeasureSizer(config: SVGRenderConfig(graceNoteSpacing: 1.05), metadata: metadata)
+
+        let wideSized  = wide.size(measure(events: events),  unitNoteLength: unitNoteLength)
+        let tightSized = tight.size(measure(events: events), unitNoteLength: unitNoteLength)
+
+        #expect(tightSized.naturalWidth < wideSized.naturalWidth)
+        // The principal note follows the grace group, so it moves left by the same amount.
+        #expect(tightSized.eventOffsets[1] < wideSized.eventOffsets[1])
+    }
+
+    /// A grace note with an accidental keeps the wider advance: its accidental glyph is
+    /// drawn to the left of the notehead and needs the room.
+    @Test func graceNoteWithAccidentalKeepsWiderAdvance() throws {
+        let metadata = try BravuraMetadata.load()
+        let metrics  = GraceMetrics(config: SVGRenderConfig(), metadata: metadata)
+        let plain    = note(duration: Fraction(numerator: 1, denominator: 2))
+        let sharp    = note(duration: Fraction(numerator: 1, denominator: 2), accidental: .sharp)
+
+        let plainOffsets = metrics.noteheadOffsets([plain, plain])
+        let sharpOffsets = metrics.noteheadOffsets([plain, sharp])
+
+        #expect(abs((plainOffsets[1] - plainOffsets[0]) - metrics.advance) < 0.001)
+        #expect(abs((sharpOffsets[1] - sharpOffsets[0])
+                    - metrics.noteheadWidth * GraceMetrics.accidentalAdvance) < 0.001)
+        // A leading accidental does not widen the group's left edge.
+        #expect(plainOffsets[0] == sharpOffsets[0])
+    }
 }

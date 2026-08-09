@@ -8,6 +8,7 @@
 //  it for six flags.
 //
 
+import CeolKitSVGRenderer
 import Foundation
 
 struct Options {
@@ -21,6 +22,9 @@ struct Options {
     /// Directory to write `page0.svg`, `page1.svg`, … into.
     var outputDirectory: URL?
     var json: Bool = false
+    /// Emit glyph geometry instead of `<text>` + `@font-face`, so the SVG rasterises
+    /// without the faces installed — which is what `rsvg-convert` actually needs.
+    var textRendering: TextRendering = .fontFace
 
     static let usage = """
         usage: ckprobe <file.abc> [options]
@@ -35,10 +39,12 @@ struct Options {
                                 are reported unstretched.
           --out <dir>           Write page0.svg, page1.svg, … into <dir>.
           --json                Emit JSON instead of the text report.
+          --outlines            Emit glyph outlines instead of <text> + @font-face.
+          --both                Emit outlines plus non-painting <text>.
           -h, --help            Show this message.
 
-        To look at a page:
-          ckprobe tune.abc --out /tmp/out
+        To look at a page (rsvg-convert ignores @font-face, hence --outlines):
+          ckprobe tune.abc --out /tmp/out --outlines
           rsvg-convert -w 1500 /tmp/out/page0.svg -o /tmp/page0.png
         """
 
@@ -54,6 +60,7 @@ struct Options {
         var natural = false
         var outputDirectory: URL?
         var json = false
+        var textRendering = TextRendering.fontFace
 
         /// Consumes the value that follows a flag.
         func value(after index: inout Int, of flag: String, in args: [String]) throws -> String {
@@ -95,6 +102,12 @@ struct Options {
             case "--json":
                 json = true
 
+            case "--outlines":
+                textRendering = .outlines
+
+            case "--both":
+                textRendering = .both
+
             default:
                 guard !argument.hasPrefix("-") else {
                     throw ParseError(description: "unknown option '\(argument)'")
@@ -116,7 +129,8 @@ struct Options {
             sweep: sweep,
             natural: natural,
             outputDirectory: outputDirectory,
-            json: json
+            json: json,
+            textRendering: textRendering
         )
     }
 }

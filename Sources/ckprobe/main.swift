@@ -44,8 +44,10 @@ func parse(_ abc: String) -> ParseResult {
         .parse(abc, options: .default)
 }
 
+let renderConfig = SVGRenderConfig(textRendering: options.textRendering)
+
 func render(_ abc: String) throws -> [String] {
-    try SVGRenderer().render(parse(abc).score)
+    try SVGRenderer(config: renderConfig).render(parse(abc).score)
 }
 
 // MARK: - Sweep mode
@@ -74,7 +76,7 @@ let result = parse(abc)
 
 let svgs: [String]
 do {
-    svgs = try SVGRenderer().render(result.score)
+    svgs = try SVGRenderer(config: renderConfig).render(result.score)
 } catch {
     fail("render failed: \(error)")
 }

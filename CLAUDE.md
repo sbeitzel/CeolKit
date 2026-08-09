@@ -62,8 +62,15 @@ swift run ckprobe tune.abc --scale 0.85             # override %%ceolkit:scale
 swift run ckprobe tune.abc --sweep 1.5,1.0,0.85     # systems/pages per scale factor
 swift run ckprobe tune.abc --natural                # unstretched system widths
 swift run ckprobe tune.abc --out /tmp/out --json
+swift run ckprobe tune.abc --out /tmp/out --outlines        # text as geometry
 rsvg-convert -w 1500 /tmp/out/page0.svg -o /tmp/page0.png   # to look at a page
 ```
+
+Use `--outlines` whenever you intend to rasterise. `rsvg-convert` — like every other
+non-browser rasteriser — ignores `@font-face` and resolves `font-family` through
+fontconfig, so the default output only looks right on a machine that happens to have
+Bravura and Libertinus Serif installed, and silently substitutes or drops glyphs where it
+does not. See ``TextRendering``.
 
 `CeolKitSVGGeometry` deliberately imports no other CeolKit module: it reads what the
 renderer *drew*, so it can be used to check that against what the layout engine believed.

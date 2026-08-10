@@ -577,9 +577,11 @@ struct SVGEmitter: Sendable {
                          stroke: "black", strokeWidth: thin)
 
         case .double:
-            builder.line(x1: bar.x,       y1: topY, x2: bar.x,       y2: bottomY,
+            // Right-anchored: trailing thin bar at bar.x, leading thin bar to its left,
+            // so the pair ends where the staff lines end at a system break.
+            builder.line(x1: bar.x - sep, y1: topY, x2: bar.x - sep, y2: bottomY,
                          stroke: "black", strokeWidth: thin)
-            builder.line(x1: bar.x + sep, y1: topY, x2: bar.x + sep, y2: bottomY,
+            builder.line(x1: bar.x,       y1: topY, x2: bar.x,       y2: bottomY,
                          stroke: "black", strokeWidth: thin)
 
         case .final:

@@ -47,7 +47,7 @@ struct SemanticPass {
             dialect = dialectHint ?? .loose
         }
 
-        let fileSource = file.tunes.first?.source ?? emptySourceRange
+        let fileSource = file.tunes.first?.source ?? .emptySourceRange
 
         var tunes: [Tune] = []
         for (idx, abcTune) in file.tunes.enumerated() {
@@ -1002,7 +1002,7 @@ struct SemanticPass {
             let finalBar = BarLine(
                 kind: .final,
                 source: acc.currentEvents.reversed().lazy
-                    .compactMap(eventSourceRange).first ?? emptySourceRange
+                    .compactMap(eventSourceRange).first ?? .emptySourceRange
             )
             let src = measureSourceSpan(
                 events: acc.currentEvents,
@@ -1294,7 +1294,7 @@ private struct BodyContext {
             return
         }
         voiceData[currentVoiceId, default: VoiceAccumulator(
-            source: eventSourceRange(event) ?? emptySourceRange,
+            source: eventSourceRange(event) ?? .emptySourceRange,
             unitNoteLength: unitNoteLength
         )].currentEvents.append(event)
     }
@@ -1347,7 +1347,7 @@ private struct BodyContext {
     }
 
     mutating func flushGrace(source: SourceRange? = nil) {
-        let src = source ?? graceSource ?? emptySourceRange
+        let src = source ?? graceSource ?? .emptySourceRange
         let kind: GraceKind = graceAcciaccatura ? .acciaccatura : .appoggiatura
         let group = GraceGroup(kind: kind, notes: graceNotes, source: src)
         inGrace = false

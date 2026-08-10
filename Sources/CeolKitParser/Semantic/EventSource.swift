@@ -9,9 +9,6 @@
 import Foundation
 import CeolKitModel
 
-/// Last-resort position for something the parser synthesised with no text behind it.
-let emptySourceRange = SourceRange(file: nil, byteOffset: 0, length: 0, line: 1, column: 1)
-
 /// The position an event occupies in the source, when it has one.
 ///
 /// `.directiveAnchor` and `.tempoChange` are positionless: they are effects of a

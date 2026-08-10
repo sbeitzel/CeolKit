@@ -26,3 +26,8 @@ public struct SourceRange: Hashable, Identifiable, Sendable, Codable {
         self.column = column
     }
 }
+
+public extension SourceRange {
+    /// Last-resort position for something the parser synthesised with no text behind it.
+    static let emptySourceRange = SourceRange(file: nil, byteOffset: 0, length: 0, line: 1, column: 1)
+}

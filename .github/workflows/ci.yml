@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main, develop]
+
+# A new push to a PR supersedes the run already in flight for it.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos:
+    name: Build and test (macOS)
+    # Package.swift declares swift-tools-version 6.3, so the toolchain must be
+    # Xcode 26.2 or newer.  macos-26 currently defaults to Xcode 26.6
+    # (Swift 6.3.3); the version is echoed below so a default drift is obvious
+    # in the log rather than surfacing as a mystery parse error.
+    runs-on: macos-26
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Report toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Cache SwiftPM dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Caches/org.swift.swiftpm
+          key: swiftpm-macos-${{ hashFiles('Package.resolved') }}
+          restore-keys: swiftpm-macos-
+
+      - name: Resolve dependencies
+        run: swift package resolve
+
+      - name: Build
+        run: swift build --build-tests
+
+      - name: Test
+        run: swift test --skip-build
+
+  linux:
+    name: Build and test (Linux)
+    runs-on: ubuntu-latest
+    # The official Swift image pins the toolchain, so the Linux leg does not
+    # drift with the runner image the way the macOS leg can.  Keep this tag in
+    # step with the Swift version the macOS Xcode ships.
+    container: swift:6.3
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Report toolchain
+        run: swift --version
+
+      - name: Cache SwiftPM dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/org.swift.swiftpm
+          key: swiftpm-linux-${{ hashFiles('Package.resolved') }}
+          restore-keys: swiftpm-linux-
+
+      - name: Resolve dependencies
+        run: swift package resolve
+
+      - name: Build
+        run: swift build --build-tests
+
+      # Expect a slightly lower test count here than on macOS: the CoreText
+      # font-registration tests are behind `#if canImport(CoreText)` and
+      # compile out on Linux.
+      - name: Test
+        run: swift test --skip-build

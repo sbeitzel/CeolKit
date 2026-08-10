@@ -20,8 +20,9 @@ struct Report: Codable {
 
     struct Stave: Codable {
         let measureCount: Int
-        /// `Measure.source.line` for each measure.  A run of `1`s here is CeolKit #41,
-        /// not a source file that really is all on line 1.
+        /// `Measure.source.line` for each measure.  These should track the source
+        /// lines the music is written on; a run of `1`s means the semantic pass has
+        /// lost the positions again (the defect behind CeolKit #41).
         let measureSourceLines: [Int]
     }
 

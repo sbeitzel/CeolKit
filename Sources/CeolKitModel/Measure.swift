@@ -12,6 +12,13 @@ public struct Measure: Sendable {
     public let events: [Event]                   // notes, rests, chords, grace groups, ties, …
     public let closingBar: BarLine               // bar at end; may carry repeat info
     public let endingNumber: [Int]?              // |1, |2, [1,2 variant endings
+    /// The text this measure occupies: from its first event that has a position
+    /// in the source through the end of `closingBar`.
+    ///
+    /// `line`/`column` are those of the start, so a measure carried over a line
+    /// break reports the line its music begins on. The opening barline is not
+    /// included — it commonly sits at the end of the previous source line, and it
+    /// is already the `closingBar` of the preceding measure.
     public let source: SourceRange
     /// Non-nil when an inline `[M:…]` field changed the meter before this measure.
     /// A renderer should draw the corresponding time-signature glyph before the first note.

@@ -595,7 +595,8 @@ struct SemanticPass {
                     source: source
                 ))
             }
-        case "landscape", "flatbeams", "ceolkit:justifylast", "ceolkit:scale", "writefields",
+        case "landscape", "flatbeams", "ceolkit:justifylast", "ceolkit:scale",
+             "ceolkit:gracenotespacing", "writefields",
              "dateformat", "footer", "straightflags", "graceslurs":
             var tempDiags: [Diagnostic] = []
             if let d = parseCeolKitDirective(name: name, payload: payload, source: source, diagnostics: &tempDiags) {
@@ -879,6 +880,22 @@ struct SemanticPass {
             }
             diagnostics.append(Diagnostic(severity: .warning, code: .invalidScale,
                 message: "%%ceolkit:scale expects a number (got '\(trimmed)')", source: source))
+            return nil
+        case "ceolkit:gracenotespacing":
+            // A factor below 1 steps less than one notehead width, so adjacent grace
+            // noteheads within a group would overlap. Rejected rather than clamped, so the
+            // tune falls back to the renderer default the way an invalid scale does.
+            if let f = Double(trimmed) {
+                if f < 1 || !f.isFinite {
+                    diagnostics.append(Diagnostic(severity: .warning, code: .invalidGraceNoteSpacing,
+                        message: "%%ceolkit:gracenotespacing must be at least 1 grace notehead width (got \(trimmed))",
+                        source: source))
+                    return nil
+                }
+                return .graceNoteSpacing(f)
+            }
+            diagnostics.append(Diagnostic(severity: .warning, code: .invalidGraceNoteSpacing,
+                message: "%%ceolkit:gracenotespacing expects a number (got '\(trimmed)')", source: source))
             return nil
         case "landscape":
             if let value = parseLogical(trimmed) { return .landscape(value) }

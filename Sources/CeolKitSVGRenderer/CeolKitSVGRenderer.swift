@@ -43,8 +43,10 @@ public struct SVGRenderer: CeolKitRenderer {
         var stemDirection: StemDirection = .auto
         var justifyLastSystem = effectiveConfig.justifyLastSystem
         // %%ceolkit:scale is tune-scoped but sticky: a preamble value governs every following
-        // tune until a later tune header overrides it.
+        // tune until a later tune header overrides it. %%ceolkit:gracenotespacing behaves the
+        // same way.
         var scale = 1.0
+        var graceNoteSpacing = effectiveConfig.graceNoteSpacing
 
         for tune in score.tunes {
             for scope in tune.directives {
@@ -52,12 +54,16 @@ public struct SVGRenderer: CeolKitRenderer {
                 case .pipeFormat(true):     stemDirection = .down
                 case .justifyLast(let on):  justifyLastSystem = on
                 case .scale(let factor):    scale = factor
+                case .graceNoteSpacing(let step): graceNoteSpacing = step
                 default: break
                 }
             }
             // The music scales; the page does not. Sizing and header widths are therefore
             // derived from a per-tune staff size, while `usableWidth` stays absolute.
-            let tuneConfig = effectiveConfig.scaled(by: scale)
+            var tuneConfig = effectiveConfig.scaled(by: scale)
+            // A ratio within the grace group, not a size derived from the staff, so it is
+            // set after `scaled(by:)` and never multiplied by the scale factor.
+            tuneConfig.graceNoteSpacing = graceNoteSpacing
             let sizer = MeasureSizer(config: tuneConfig, metadata: metadata)
             var tuneSystems: [JustifiedSystem] = []
             var meterForFirstSystem: Meter? = tune.meter
@@ -111,7 +117,8 @@ public struct SVGRenderer: CeolKitRenderer {
                 tune: tune, writeFields: tuneWriteFields, layoutConfig: effectiveConfig
             ).build()
             tuneBlocks.append(TuneBlock(systems: tuneSystems, titleRows: titleRows,
-                                        titleBlockHeight: titleBlockHeight, scale: scale))
+                                        titleBlockHeight: titleBlockHeight, scale: scale,
+                                        graceNoteSpacing: graceNoteSpacing))
         }
 
         let emitter = SVGEmitter(config: effectiveConfig, metadata: metadata, stemDirection: stemDirection)

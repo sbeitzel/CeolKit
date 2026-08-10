@@ -15,6 +15,8 @@ struct Options {
     var file: URL
     /// Override `%%ceolkit:scale` before rendering.
     var scale: Double?
+    /// Override `%%ceolkit:gracenotespacing` before rendering.
+    var graceSpacing: Double?
     /// Render once per factor and print a systems/pages table instead of a full report.
     var sweep: [Double]?
     /// Force `%%ceolkit:justifylast false` so reported widths are natural, not stretched.
@@ -34,6 +36,8 @@ struct Options {
 
         Options:
           --scale <factor>      Override %%ceolkit:scale before rendering.
+          --grace-spacing <f>   Override %%ceolkit:gracenotespacing (>= 1) before
+                                rendering.
           --sweep <f,f,…>       Render at each factor; print a systems/pages table.
           --natural             Force %%ceolkit:justifylast false, so system widths
                                 are reported unstretched.
@@ -59,6 +63,7 @@ struct Options {
     static func parse(_ arguments: [String]) throws -> Options {
         var positional: [String] = []
         var scale: Double?
+        var graceSpacing: Double?
         var sweep: [Double]?
         var natural = false
         var outputDirectory: URL?
@@ -87,6 +92,13 @@ struct Options {
                     throw ParseError(description: "--scale expects a positive number, got '\(raw)'")
                 }
                 scale = factor
+
+            case "--grace-spacing":
+                let raw = try value(after: &i, of: "--grace-spacing", in: arguments)
+                guard let step = Double(raw), step >= 1 else {
+                    throw ParseError(description: "--grace-spacing expects a number >= 1, got '\(raw)'")
+                }
+                graceSpacing = step
 
             case "--sweep":
                 let raw = try value(after: &i, of: "--sweep", in: arguments)
@@ -132,6 +144,7 @@ struct Options {
         return Options(
             file: URL(fileURLWithPath: positional[0]),
             scale: scale,
+            graceSpacing: graceSpacing,
             sweep: sweep,
             natural: natural,
             outputDirectory: outputDirectory,

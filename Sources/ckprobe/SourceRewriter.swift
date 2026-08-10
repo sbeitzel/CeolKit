@@ -41,6 +41,9 @@ enum SourceRewriter {
         if let scale = scaleOverride ?? options.scale {
             result = overriding("scale", with: String(scale), in: result)
         }
+        if let graceSpacing = options.graceSpacing {
+            result = overriding("gracenotespacing", with: String(graceSpacing), in: result)
+        }
         if options.natural {
             result = overriding("justifylast", with: "false", in: result)
         }

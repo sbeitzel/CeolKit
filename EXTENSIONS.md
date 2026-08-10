@@ -5,6 +5,94 @@ which are not part of the ABC v2.2 [standard](https://abcnotation.com/wiki/abc:s
 
 ---
 
+## `%%ceolkit:gracenotespacing`
+
+**Syntax:** `%%ceolkit:gracenotespacing <number ≥ 1>`
+
+**Type:** floating-point number, at least `1`
+
+**Default:** `1.05`
+
+**Scope:** global (file preamble or tune header); tune-wide, never per-voice
+
+### Description
+
+Sets the step between adjacent grace noteheads inside a single grace group, as a
+multiple of the grace notehead width. `1.0` puts each notehead exactly one
+notehead width after the one before it — noteheads touching, the tightest
+setting that does not overlap. The default `1.05` leaves a hairline between
+them, which is how a beamed embellishment is normally engraved.
+
+This is a page-fit knob. Dense settings — piobaireachd, heavily embellished
+strathspeys — can go tighter to hold a part on one page; sparse or teaching
+settings, and large print, can open the groups up.
+
+The factor governs only the step *between* noteheads within one group. It does
+not change the padding at the outer edges of a group, nor the gap between the
+group and the note it decorates.
+
+Because a note carrying an accidental needs room for the accidental glyph to
+the left of its head, the step into that note is whatever the accidental
+requires when that is more than this factor allows.
+
+A value below `1` would overlap adjacent noteheads. It produces a warning and
+the directive is ignored, leaving the tune at the renderer's default — as do a
+missing and a non-numeric argument.
+
+Per-voice spacing is not supported: a value set in a tune body applies to the
+whole tune regardless of which voice is current. Grace groups in different
+voices of one system are spaced alike.
+
+### Single grace notes are unaffected
+
+A one-note grace group is one notehead wide whatever the factor is, because
+there is no second notehead to step to. The space before the principal note is
+governed instead by the overhang of the 32nd-note flag on the grace stem. If
+the complaint is about the room around a *single* grace note, this directive is
+not the lever.
+
+### Interaction with `%%ceolkit:scale`
+
+The two are independent and do not compound. `%%ceolkit:scale` sets the staff
+size, and the grace notehead is measured from it; `%%ceolkit:gracenotespacing`
+is a ratio applied within the group. Halving the scale halves the drawn width of
+a grace group, because the noteheads themselves are half the size — the number
+of notehead widths between them is unchanged.
+
+### Scoping
+
+Like the other CeolKit directives, the value is set where it is encountered and
+persists until changed. A value in the file preamble governs every tune in the
+file, and a tune header can override it for that tune and the ones that follow.
+
+### Examples
+
+#### Tighten the embellishments to hold a part on one page
+
+```abc
+X:1
+T:A Densely Embellished Strathspey
+M:4/4
+L:1/8
+%%ceolkit:gracenotespacing 1.0
+K:A
+{gcd}A2 {gcdge}A2 {gag}B2 {gcd}c2|
+```
+
+#### Open them up for teaching copy
+
+```abc
+%%ceolkit:gracenotespacing 1.6
+X:1
+T:Learner's Copy
+M:4/4
+L:1/8
+K:A
+{gcd}A2 {gcdge}A2|
+```
+
+---
+
 ## `%%ceolkit:justifylast`
 
 **Syntax:** `%%ceolkit:justifylast <true|false>`

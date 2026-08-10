@@ -35,6 +35,26 @@ import Testing
         #expect(metadata.engravingDefaults.stemThickness > 0)
     }
 
+    /// SMuFL specifies the curved marks as tapered, which takes two thicknesses per mark.
+    /// Bravura gives ties and slurs the same pair; the renderer still reads them separately,
+    /// because a face is free not to.
+    @Test func slurAndTieThicknessesAreDecoded() {
+        let ed = metadata.engravingDefaults
+        #expect(ed.slurEndpointThickness == 0.1)
+        #expect(ed.slurMidpointThickness == 0.22)
+        #expect(ed.tieEndpointThickness  == 0.1)
+        #expect(ed.tieMidpointThickness  == 0.22)
+        #expect(ed.slurMidpointThickness > ed.slurEndpointThickness)
+    }
+
+    /// Repeat dots have their own separation in SMuFL, well under the generic
+    /// `barlineSeparation` the renderer used to stand in for it.
+    @Test func repeatBarlineDotSeparationIsDecoded() {
+        let ed = metadata.engravingDefaults
+        #expect(ed.repeatBarlineDotSeparation == 0.16)
+        #expect(ed.repeatBarlineDotSeparation < ed.barlineSeparation)
+    }
+
     @Test func noteheadBlackBBoxIsNonZero() throws {
         let bbox = try #require(metadata.glyphBBoxes["noteheadBlack"])
         #expect(bbox.width  > 0)

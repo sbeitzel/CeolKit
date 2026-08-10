@@ -205,11 +205,13 @@ struct SVGEmitter: Sendable {
             let rightEdge = lastMeasure.origin.x + lastMeasure.width
             for anchor in pendingTies {
                 emitDanglingArc(fromX: anchor.x, y: anchor.noteY, staffPos: anchor.staffPos,
-                                toEdgeX: rightEdge, isCarriedOver: anchor.isCarriedOver, builder: &builder)
+                                toEdgeX: rightEdge, isCarriedOver: anchor.isCarriedOver,
+                                kind: .tie, builder: &builder)
             }
             for anchor in pendingSlurs {
                 emitDanglingArc(fromX: anchor.x, y: anchor.noteY, staffPos: anchor.staffPos,
-                                toEdgeX: rightEdge, isCarriedOver: anchor.isCarriedOver, builder: &builder)
+                                toEdgeX: rightEdge, isCarriedOver: anchor.isCarriedOver,
+                                kind: .slur, builder: &builder)
             }
         }
     }
@@ -430,10 +432,11 @@ struct SVGEmitter: Sendable {
                         let anchor = pendingTies.remove(at: idx)
                         if anchor.isCarriedOver {
                             emitArrivingTieArc(edgeX: anchor.x, staffPos: anchor.staffPos,
-                                               toX: event.origin.x, toY: ny, builder: &builder)
+                                               toX: event.origin.x, toY: ny,
+                                               kind: .tie, builder: &builder)
                         } else {
                             emitTieArc(fromX: anchor.x, fromY: anchor.noteY, staffPos: anchor.staffPos,
-                                       toX: event.origin.x, toY: ny, builder: &builder)
+                                       toX: event.origin.x, toY: ny, kind: .tie, builder: &builder)
                         }
                     }
                 }
@@ -453,10 +456,11 @@ struct SVGEmitter: Sendable {
                     if let anchor = pendingSlurs.popLast() {
                         if anchor.isCarriedOver {
                             emitArrivingTieArc(edgeX: anchor.x, staffPos: anchor.staffPos,
-                                               toX: event.origin.x, toY: ny, builder: &builder)
+                                               toX: event.origin.x, toY: ny,
+                                               kind: .slur, builder: &builder)
                         } else {
                             emitTieArc(fromX: anchor.x, fromY: anchor.noteY, staffPos: anchor.staffPos,
-                                       toX: event.origin.x, toY: ny, builder: &builder)
+                                       toX: event.origin.x, toY: ny, kind: .slur, builder: &builder)
                         }
                     }
                 }
@@ -638,9 +642,11 @@ struct SVGEmitter: Sendable {
                                  topY: Double, bottomY: Double, builder: inout SVGBuilder) {
         let staffSize = (bottomY - topY) / 4.0
         let fontSize  = 4.0 * staffSize
-        let sep       = metadata.engravingDefaults.barlineSeparation * staffSize
+        // SMuFL sizes this gap specifically — it is not the generic barlineSeparation, and at
+        // Bravura's values the two differ by more than a factor of two (0.16 vs 0.4).
+        let sep       = metadata.engravingDefaults.repeatBarlineDotSeparation * staffSize
         let dotW      = metadata.glyphBBoxes["repeatDot"].map { $0.width * staffSize } ?? staffSize * 0.25
-        let dotX      = isStartSide ? nearX + sep * 1.0 : nearX - sep * 1.0 - dotW
+        let dotX      = isStartSide ? nearX + sep : nearX - sep - dotW
         let dotChar   = String(SMuFLGlyph.repeatDot.character)
         builder.text(dotChar, x: dotX, y: bottomY - 1.5 * staffSize, fontFamily: "Bravura", fontSize: fontSize)
         builder.text(dotChar, x: dotX, y: bottomY - 2.5 * staffSize, fontFamily: "Bravura", fontSize: fontSize)
@@ -985,11 +991,31 @@ struct SVGEmitter: Sendable {
 
     // MARK: - Tie arc
 
+    /// Which of the two curved marks is being drawn. They are geometrically identical and
+    /// differ only in which pair of SMuFL thicknesses governs the taper — a distinction
+    /// Bravura happens to collapse (0.1/0.22 for both) but other faces need not.
+    private enum ArcKind {
+        case tie
+        case slur
+
+        func thicknesses(_ ed: BravuraMetadata.EngravingDefaults) -> (endpoint: Double, midpoint: Double) {
+            switch self {
+            case .tie:  return (ed.tieEndpointThickness,  ed.tieMidpointThickness)
+            case .slur: return (ed.slurEndpointThickness, ed.slurMidpointThickness)
+            }
+        }
+    }
+
     /// Draws the cubic-bezier arc shared by ties and slurs, given final endpoint x's and
     /// each endpoint's un-offset (notehead-centre) y. Stems go up for staffPos ≤ 4; arcs
     /// curve to the opposite side of the stem.
+    ///
+    /// SMuFL specifies the mark as *tapered* — thin at the endpoints, thick at the middle —
+    /// which a single stroked curve cannot express whatever width it picks. So the arc is a
+    /// closed outline: the centre-line curve offset outward, then the same curve offset
+    /// inward and traversed backwards, filled rather than stroked.
     private func emitArc(x1: Double, rawY1: Double, x2: Double, rawY2: Double, staffPos: Int,
-                          builder: inout SVGBuilder) {
+                          kind: ArcKind, builder: inout SVGBuilder) {
         let s = config.staffSize
         let tieBelow  = staffPos <= 4
         let endOffset = tieBelow ? s : -s     // shift endpoints one staff line away from note centre
@@ -999,28 +1025,52 @@ struct SVGEmitter: Sendable {
         let cp2x = x2 - span / 3.0
         let y1   = rawY1 + endOffset
         let y2   = rawY2 + endOffset
-        let d    = "M \(builder.fmt(x1)) \(builder.fmt(y1))" +
-                   " C \(builder.fmt(cp1x)) \(builder.fmt(y1 + dy))" +
-                   " \(builder.fmt(cp2x)) \(builder.fmt(y2 + dy))" +
-                   " \(builder.fmt(x2)) \(builder.fmt(y2))"
-        let strokeWidth = metadata.engravingDefaults.stemThickness * s * 1.5
-        builder.path(d: d, fill: "none", stroke: "black", strokeWidth: strokeWidth)
+
+        // Half-widths of the ribbon, measured either side of the centre line. Subtracting one
+        // boundary curve from the other leaves a third cubic — the thickness along the arc —
+        // which at t = 0.5 measures (halfEnd + 3·halfInner)/2. Setting that equal to the
+        // midpoint thickness gives how far the interior control points have to move.
+        let (endThick, midThick) = kind.thicknesses(metadata.engravingDefaults)
+        let halfEnd   = endThick * s / 2.0
+        let halfInner = (4.0 * midThick - endThick) * s / 6.0
+
+        /// One boundary of the ribbon: the centre line with its control points displaced by
+        /// `sign · halfInner` and its endpoints by `sign · halfEnd`. The shape is symmetric
+        /// about the centre line, so which sign lands on the outside of the bulge does not
+        /// matter — only that the two boundaries take opposite signs.
+        func boundary(_ sign: Double, reversed: Bool) -> String {
+            let c1 = builder.fmt(y1 + dy + sign * halfInner)
+            let c2 = builder.fmt(y2 + dy + sign * halfInner)
+            return reversed
+                ? " C \(builder.fmt(cp2x)) \(c2) \(builder.fmt(cp1x)) \(c1)" +
+                  " \(builder.fmt(x1)) \(builder.fmt(y1 + sign * halfEnd))"
+                : " C \(builder.fmt(cp1x)) \(c1) \(builder.fmt(cp2x)) \(c2)" +
+                  " \(builder.fmt(x2)) \(builder.fmt(y2 + sign * halfEnd))"
+        }
+        let d = "M \(builder.fmt(x1)) \(builder.fmt(y1 + halfEnd))" +
+                boundary(1, reversed: false) +
+                " L \(builder.fmt(x2)) \(builder.fmt(y2 - halfEnd))" +
+                boundary(-1, reversed: true) +
+                " Z"
+        builder.path(d: d, fill: "black", stroke: "none")
     }
 
     /// Note-to-note tie/slur arc: the start point clears the starting notehead's width,
     /// the end point sits at the ending notehead's left edge.
     private func emitTieArc(fromX: Double, fromY: Double, staffPos: Int,
-                             toX: Double, toY: Double, builder: inout SVGBuilder) {
+                             toX: Double, toY: Double, kind: ArcKind, builder: inout SVGBuilder) {
         emitArc(x1: fromX + noteheadWidth(), rawY1: fromY, x2: toX, rawY2: toY,
-               staffPos: staffPos, builder: &builder)
+               staffPos: staffPos, kind: kind, builder: &builder)
     }
 
     /// Arriving arc for a tie/slur carried over from a previous system (#27): starts
     /// exactly at the staff's left edge (no notehead clearance, since there's no note
     /// there) and curves in to the resolving note.
     private func emitArrivingTieArc(edgeX: Double, staffPos: Int,
-                                     toX: Double, toY: Double, builder: inout SVGBuilder) {
-        emitArc(x1: edgeX, rawY1: toY, x2: toX, rawY2: toY, staffPos: staffPos, builder: &builder)
+                                     toX: Double, toY: Double, kind: ArcKind,
+                                     builder: inout SVGBuilder) {
+        emitArc(x1: edgeX, rawY1: toY, x2: toX, rawY2: toY, staffPos: staffPos,
+                kind: kind, builder: &builder)
     }
 
     /// Departing dangling arc for a tie/slur still open at the end of a system (#27):
@@ -1028,11 +1078,13 @@ struct SVGEmitter: Sendable {
     /// itself was already carried in from a previous system (never resolved within this
     /// one), both ends are open edges and neither gets notehead-width clearance.
     private func emitDanglingArc(fromX: Double, y: Double, staffPos: Int, toEdgeX: Double,
-                                  isCarriedOver: Bool, builder: inout SVGBuilder) {
+                                  isCarriedOver: Bool, kind: ArcKind, builder: inout SVGBuilder) {
         if isCarriedOver {
-            emitArc(x1: fromX, rawY1: y, x2: toEdgeX, rawY2: y, staffPos: staffPos, builder: &builder)
+            emitArc(x1: fromX, rawY1: y, x2: toEdgeX, rawY2: y, staffPos: staffPos,
+                    kind: kind, builder: &builder)
         } else {
-            emitTieArc(fromX: fromX, fromY: y, staffPos: staffPos, toX: toEdgeX, toY: y, builder: &builder)
+            emitTieArc(fromX: fromX, fromY: y, staffPos: staffPos, toX: toEdgeX, toY: y,
+                       kind: kind, builder: &builder)
         }
     }
 
@@ -1066,6 +1118,10 @@ struct SVGEmitter: Sendable {
 
     /// Draws straight flags as SVG lines using Bravura metadata proportions.
     /// Geometry (in staff spaces): flag width=0.96, first-flag height=1.42, spacing=0.80.
+    ///
+    /// The stroke width is a multiple of `stemThickness` rather than a published value:
+    /// SMuFL's `engravingDefaults` has no key for flag thickness, since a conforming face
+    /// supplies flags as glyphs and never expects them to be constructed.
     private func emitStraightFlags(stemX: Double, flagTipY: Double, absDur: Double,
                                     stemUp: Bool, scale: Double = 1.0, builder: inout SVGBuilder) {
         let s         = config.staffSize * scale

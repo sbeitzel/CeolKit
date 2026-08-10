@@ -1,4 +1,13 @@
-/// SMuFL glyph names to Unicode PUA codepoints, covering the v0.1 glyph set.
+/// Canonical SMuFL glyph names to their Unicode Private Use Area codepoints.
+///
+/// Names and codepoints are verified against **SMuFL 1.4** (March 2021, the current
+/// revision) by `SMuFLGlyphConformanceTests`, which checks every case here against the
+/// specification's published `glyphnames.json`.
+///
+/// This covers what the renderer actually draws, not the whole 2,940-glyph specification;
+/// it grows as the renderer learns new notation. Cases may therefore be added freely, but
+/// a case must never be removed or renamed without checking `glyphnames.json` first — a
+/// wrong PUA codepoint does not fail, it silently engraves some other piece of notation.
 public enum SMuFLGlyph: String, Sendable, CaseIterable {
     // Noteheads
     case noteheadBlack

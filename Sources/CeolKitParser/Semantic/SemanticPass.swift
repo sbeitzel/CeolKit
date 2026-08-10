@@ -47,7 +47,7 @@ struct SemanticPass {
             dialect = dialectHint ?? .loose
         }
 
-        let fileSource = file.tunes.first?.source ?? emptySource
+        let fileSource = file.tunes.first?.source ?? emptySourceRange
 
         var tunes: [Tune] = []
         for (idx, abcTune) in file.tunes.enumerated() {
@@ -395,8 +395,8 @@ struct SemanticPass {
         case .endingNumber(let nums, _):
             ctx.pendingEndingNumber = nums
 
-        case .space:
-            ctx.emitSpaceBreak()
+        case .space(let src):
+            ctx.emitSpaceBreak(source: src)
             ctx.lastElementWasSpace = true
 
         case .brokenRhythm:
@@ -768,10 +768,6 @@ struct SemanticPass {
         )
     }
 
-    private var emptySource: SourceRange {
-        SourceRange(file: nil, byteOffset: 0, length: 0, line: 1, column: 1)
-    }
-
     // Chord symbol parsing: minimal stub — preserves raw text without structural parsing
     private func parseChordSymbol(_ raw: String, source: SourceRange) -> ChordSymbol? {
         guard !raw.isEmpty else { return nil }
@@ -1005,9 +1001,15 @@ struct SemanticPass {
         if !acc.currentEvents.isEmpty {
             let finalBar = BarLine(
                 kind: .final,
-                source: acc.currentEvents.last.flatMap { eventSource($0) } ?? emptySource
+                source: acc.currentEvents.reversed().lazy
+                    .compactMap(eventSourceRange).first ?? emptySourceRange
             )
-            let src = acc.currentEvents.first.flatMap { eventSource($0) } ?? emptySource
+            let src = measureSourceSpan(
+                events: acc.currentEvents,
+                openingBar: acc.lastBarLine,
+                closingBar: finalBar,
+                fallback: acc.measureSource
+            )
             let finalMeasure = Measure(
                 openingBar: acc.lastBarLine,
                 events: acc.currentEvents,
@@ -1075,19 +1077,6 @@ struct SemanticPass {
             )
         }
         return (beamResolved, diagnostics)
-    }
-
-    private func eventSource(_ event: Event) -> SourceRange? {
-        switch event {
-        case .note(let n): return n.source
-        case .rest(let r): return r.source
-        case .chord(let c): return c.source
-        case .grace(let g): return g.source
-        case .tuplet(let t): return t.source
-        case .spacer(let s): return s.source
-        case .directiveAnchor: return nil
-        case .tempoChange: return nil
-        }
     }
 
     private func defaultVoiceProperties() -> VoiceProperties {
@@ -1187,7 +1176,12 @@ struct VoiceAccumulator {
             lastBarLine = barLine
             return
         }
-        let src = currentEvents.first.flatMap { eventSource($0) } ?? measureSource
+        let src = measureSourceSpan(
+            events: currentEvents,
+            openingBar: lastBarLine,
+            closingBar: barLine,
+            fallback: measureSource
+        )
         let meterTag = pendingMeter
         pendingMeter = nil
         let measure = Measure(
@@ -1201,19 +1195,6 @@ struct VoiceAccumulator {
         closedMeasures.append(measure)
         currentEvents = []
         lastBarLine = barLine
-    }
-
-    private func eventSource(_ event: Event) -> SourceRange? {
-        switch event {
-        case .note(let n): return n.source
-        case .rest(let r): return r.source
-        case .chord(let c): return c.source
-        case .grace(let g): return g.source
-        case .tuplet(let t): return t.source
-        case .spacer(let s): return s.source
-        case .directiveAnchor: return nil
-        case .tempoChange: return nil
-        }
     }
 }
 
@@ -1299,14 +1280,6 @@ private struct BodyContext {
         order.compactMap { id in voiceData[id].map { (id, $0) } }
     }
 
-    mutating func currentAccumulator() -> VoiceAccumulator {
-        if voiceData[currentVoiceId] == nil {
-            let src = SourceRange(file: nil, byteOffset: 0, length: 0, line: 1, column: 1)
-            voiceData[currentVoiceId] = VoiceAccumulator(source: src, unitNoteLength: unitNoteLength)
-        }
-        return voiceData[currentVoiceId]!
-    }
-
     mutating func emit(_ event: Event) {
         if inGrace {
             // Grace notes are accumulated; the note itself was already added to graceNotes
@@ -1321,19 +1294,18 @@ private struct BodyContext {
             return
         }
         voiceData[currentVoiceId, default: VoiceAccumulator(
-            source: SourceRange(file: nil, byteOffset: 0, length: 0, line: 1, column: 1),
+            source: eventSourceRange(event) ?? emptySourceRange,
             unitNoteLength: unitNoteLength
         )].currentEvents.append(event)
     }
 
-    mutating func emitSpaceBreak() {
-        let src = SourceRange(file: nil, byteOffset: 0, length: 0, line: 1, column: 1)
-        emit(.spacer(Spacer(width: 0, source: src)))
+    mutating func emitSpaceBreak(source: SourceRange) {
+        emit(.spacer(Spacer(width: 0, source: source)))
     }
 
     mutating func closeCurrentMeasure(barLine: BarLine) {
         voiceData[currentVoiceId, default: VoiceAccumulator(
-            source: SourceRange(file: nil, byteOffset: 0, length: 0, line: 1, column: 1),
+            source: barLine.source,
             unitNoteLength: unitNoteLength
         )].closeWith(barLine: barLine, endingNumber: pendingEndingNumber)
         pendingEndingNumber = nil
@@ -1375,7 +1347,7 @@ private struct BodyContext {
     }
 
     mutating func flushGrace(source: SourceRange? = nil) {
-        let src = source ?? graceSource ?? SourceRange(file: nil, byteOffset: 0, length: 0, line: 1, column: 1)
+        let src = source ?? graceSource ?? emptySourceRange
         let kind: GraceKind = graceAcciaccatura ? .acciaccatura : .appoggiatura
         let group = GraceGroup(kind: kind, notes: graceNotes, source: src)
         inGrace = false

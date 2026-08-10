@@ -169,10 +169,11 @@ public struct MeasureSizer: Sendable {
 
     /// Right padding after the last event column.
     ///
-    /// Compound closing bars (final, repeat-end) are drawn right-anchored so their
-    /// thick bar's trailing edge aligns with other lines' thin bar edges.  The thin
-    /// bar sits `wideSep` to the left of that anchor, so the padding must be large
-    /// enough to keep the thin bar clear of the last note.
+    /// Compound closing bars (final, repeat-end, double) are drawn right-anchored so
+    /// their trailing edge aligns with other lines' thin bar edges.  The leading bar
+    /// sits to the left of that anchor — `wideSep` for the thick-barred kinds, `sep`
+    /// for the thin-thin double bar — so the padding must be large enough to keep it
+    /// clear of the last note.
     private func rightPadding(for measure: Measure) -> Double {
         let s       = config.staffSize
         let sep     = metadata.engravingDefaults.barlineSeparation * s
@@ -180,6 +181,8 @@ public struct MeasureSizer: Sendable {
         switch measure.closingBar.kind {
         case .final, .repeatEnd, .repeatEndSection, .repeatBoth:
             return wideSep + s * 0.5
+        case .double:
+            return sep + s * 0.5
         default:
             return s * 0.5
         }

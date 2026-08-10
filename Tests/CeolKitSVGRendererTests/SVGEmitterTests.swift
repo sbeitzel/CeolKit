@@ -289,6 +289,31 @@ private let quarterUNL = Fraction(numerator: 1, denominator: 4)
         #expect(lineCount == 7)
     }
 
+    /// A `||` closing a system is right-anchored, so both thin bars land on the staff:
+    /// the trailing one at the staff's right end and the leading one `sep` to its left.
+    /// Regression test for #54, where the second bar was drawn past the end of the staff.
+    @Test func doubleBarLineIsRightAnchoredWithinTheStaff() throws {
+        let barX = 236.0
+        let measure = ResolvedMeasure(
+            origin: Point(x: 36, y: 50),
+            width: 200,
+            events: [],
+            openingBar: nil,
+            closingBar: ResolvedBarLine(x: barX, kind: .double)
+        )
+        let svgs = try emitter.emit(layout(systems: [system(measures: [measure])]))
+        let svg  = try #require(svgs.first)
+        let b = SVGBuilder()
+        let sep = metadata.engravingDefaults.barlineSeparation * config.staffSize
+
+        // Staff lines end at the measure's right edge, which is where the trailing bar sits.
+        #expect(svg.contains("x2=\"\(b.fmt(barX))\""))
+        #expect(svg.contains("x1=\"\(b.fmt(barX))\" y1="))
+        #expect(svg.contains("x1=\"\(b.fmt(barX - sep))\" y1="))
+        // Nothing is drawn to the right of the staff.
+        #expect(!svg.contains("x1=\"\(b.fmt(barX + sep))\""))
+    }
+
     // MARK: Empty layout
 
     @Test func emptyLayoutProducesEmptyArray() throws {

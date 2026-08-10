@@ -13,6 +13,17 @@ private func emptyMeasure(line: Int = 0) -> Measure {
     return Measure(openingBar: nil, events: [], closingBar: dummyBar, endingNumber: nil, source: source)
 }
 
+/// Distinct source range per bar, so two `BarLine`s compare unequal unless they
+/// really are the same symbol.
+private func barSource(byteOffset: Int) -> SourceRange {
+    SourceRange(file: nil, byteOffset: byteOffset, length: 1, line: 0, column: byteOffset)
+}
+
+private func measure(opening: BarLine?, closing: BarLine) -> Measure {
+    Measure(openingBar: opening, events: [], closingBar: closing,
+            endingNumber: nil, source: dummyRange)
+}
+
 private func measureWith(events: [Event]) -> Measure {
     Measure(openingBar: nil, events: events, closingBar: dummyBar, endingNumber: nil, source: dummyRange)
 }
@@ -144,6 +155,38 @@ private let metadata      = try! BravuraMetadata.load()
         for m in layout.pages[0].systems[0].measures {
             #expect(abs(m.closingBar.x - (m.origin.x + m.width)) < 1e-9)
         }
+    }
+
+    // A bar line shared by two adjacent measures is resolved once, as the left
+    // measure's closing bar; the right measure's inherited opening bar is dropped
+    // so it is not emitted a second time on top of itself (issue #54).
+    @Test func sharedBarLineIsNotResolvedTwice() {
+        let shared = BarLine(kind: .double, source: barSource(byteOffset: 10))
+        let system = justifiedSystem(
+            measures: [
+                measure(opening: nil, closing: shared),
+                measure(opening: shared, closing: dummyBar)
+            ],
+            isLast: true
+        )
+        let measures = engine.layout([system]).pages[0].systems[0].measures
+        #expect(measures[0].closingBar.kind == .double)
+        #expect(measures[1].openingBar == nil)
+    }
+
+    // A bar that is *not* the preceding measure's closing bar is still drawn — only
+    // the inherited duplicate is suppressed.
+    @Test func distinctOpeningBarIsStillResolved() {
+        let system = justifiedSystem(
+            measures: [
+                measure(opening: nil, closing: BarLine(kind: .single, source: barSource(byteOffset: 10))),
+                measure(opening: BarLine(kind: .repeatStart, source: barSource(byteOffset: 20)),
+                        closing: dummyBar)
+            ],
+            isLast: true
+        )
+        let measures = engine.layout([system]).pages[0].systems[0].measures
+        #expect(measures[1].openingBar?.kind == .repeatStart)
     }
 
     // ResolvedSystem.abcLine (issue #25) is taken from the first measure's source line.

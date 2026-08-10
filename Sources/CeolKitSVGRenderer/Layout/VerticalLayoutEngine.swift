@@ -352,24 +352,30 @@ public struct VerticalLayoutEngine: Sendable {
                 )
             }
 
-            // At the start of a system (i == 0), suppress any opening bar that was
-            // inherited from the previous system's closing bar (e.g. a lone `|`).
-            // Only explicit section-start markers ([|, [|:, |:, ::) are drawn at a
-            // system start; everything else would appear as a spurious bar line between
-            // the clef/key signature and the first note.
-            let openingBar: ResolvedBarLine?
-            if i == 0, let bar = jm.source.measure.openingBar {
-                switch bar.kind {
-                case .start, .sectionRepeatStart, .repeatStart, .repeatBoth:
-                    openingBar = ResolvedBarLine(x: measureOrigin.x, kind: bar.kind)
-                default:
-                    openingBar = nil
+            // A bar line between two measures belongs to both of them: the semantic
+            // pass stores the same `BarLine` as the left measure's `closingBar` and
+            // the right measure's `openingBar`.  Both resolve to the same x, so only
+            // one of the two is kept — the closing one — and the duplicate opening
+            // bar is dropped rather than emitted a second time on top of itself.
+            //
+            // At the start of a system (i == 0) the inherited bar is the *previous
+            // system's* closing bar, so it is dropped too, except for explicit
+            // section-start markers ([|, [|:, |:, ::), which are conventionally
+            // restated at the start of a line.  Anything else would appear as a
+            // spurious bar line between the clef/key signature and the first note.
+            let openingBar: ResolvedBarLine? = {
+                guard let bar = jm.source.measure.openingBar else { return nil }
+                guard i > 0 else {
+                    switch bar.kind {
+                    case .start, .sectionRepeatStart, .repeatStart, .repeatBoth:
+                        return ResolvedBarLine(x: measureOrigin.x, kind: bar.kind)
+                    default:
+                        return nil
+                    }
                 }
-            } else {
-                openingBar = jm.source.measure.openingBar.map {
-                    ResolvedBarLine(x: measureOrigin.x, kind: $0.kind)
-                }
-            }
+                guard bar != measures[i - 1].source.measure.closingBar else { return nil }
+                return ResolvedBarLine(x: measureOrigin.x, kind: bar.kind)
+            }()
             let closingBar = ResolvedBarLine(
                 x: measureOrigin.x + jm.finalWidth,
                 kind: jm.source.measure.closingBar.kind

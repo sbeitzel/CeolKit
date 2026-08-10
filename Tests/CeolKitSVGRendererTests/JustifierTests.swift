@@ -20,13 +20,11 @@ private func sizedMeasure(width: Double, offsets: [Double] = [],
                         graceEventIndices: graceEventIndices)
 }
 
-private func makeSystem(widths: [Double], isLast: Bool, sourceForced: Bool = false,
-                        staveWasSplit: Bool = false) -> System {
+private func makeSystem(widths: [Double], isLast: Bool, sourceForced: Bool = false) -> System {
     System(
         measures: widths.map { sizedMeasure(width: $0) },
         isLastSystem: isLast,
-        sourceForced: sourceForced,
-        staveWasSplit: staveWasSplit
+        sourceForced: sourceForced
     )
 }
 
@@ -102,51 +100,6 @@ private let usableWidth: Double = 300
     @Test func emptyInputProducesEmptyOutput() {
         let result = justifier.justify([], usableWidth: usableWidth, justifyLastSystem: false)
         #expect(result.isEmpty)
-    }
-
-    // MARK: - Stretch cap (issue #40)
-
-    // A system the line breaker made by splitting a stave is not stretched past `maxStretch`;
-    // it stays short and left-aligned instead of being smeared across the page.
-    @Test func splitStaveSystemIsNotStretchedPastTheCap() {
-        // 60 pt of music on a 300 pt line would need 5×; the cap is 3×.
-        let system = makeSystem(widths: [60], isLast: false, staveWasSplit: true)
-        let result = Justifier(maxStretch: 3.0)
-            .justify([system], usableWidth: usableWidth, justifyLastSystem: false)
-        let total = result[0].measures.reduce(0.0) { $0 + $1.finalWidth }
-        #expect(abs(total - 180.0) < 1e-9)
-    }
-
-    // Under the cap, a split-stave system still fills the line exactly.
-    @Test func splitStaveSystemUnderTheCapStillFillsTheLine() {
-        let system = makeSystem(widths: [120, 60], isLast: false, staveWasSplit: true)
-        let result = Justifier(maxStretch: 3.0)
-            .justify([system], usableWidth: usableWidth, justifyLastSystem: false)
-        let total = result[0].measures.reduce(0.0) { $0 + $1.finalWidth }
-        #expect(abs(total - usableWidth) < 1e-9)
-    }
-
-    // A short line the *source* asked for is still stretched to fill: the writer chose that
-    // break, and filling it is what every engraver does.
-    @Test func sourceBrokenSystemIsNotCapped() {
-        let system = makeSystem(widths: [60], isLast: false, sourceForced: true, staveWasSplit: false)
-        let result = Justifier(maxStretch: 3.0)
-            .justify([system], usableWidth: usableWidth, justifyLastSystem: false)
-        let total = result[0].measures.reduce(0.0) { $0 + $1.finalWidth }
-        #expect(abs(total - usableWidth) < 1e-9)
-    }
-
-    // MARK: - Compression
-
-    // A system the line breaker let overrun its tolerance is squeezed back onto the line,
-    // even when it is the last system and would otherwise keep natural spacing.
-    @Test func overrunningLastSystemIsCompressedToFit() {
-        let system = makeSystem(widths: [153, 150], isLast: true)   // 303 pt on a 300 pt line
-        let result = justifier.justify([system], usableWidth: usableWidth, justifyLastSystem: false)
-        let total = result[0].measures.reduce(0.0) { $0 + $1.finalWidth }
-        #expect(abs(total - usableWidth) < 1e-9)
-        // Compression is shared out in proportion to natural width.
-        #expect(result[0].measures[0].finalWidth > result[0].measures[1].finalWidth)
     }
 
     // MARK: - Grace-note spacing

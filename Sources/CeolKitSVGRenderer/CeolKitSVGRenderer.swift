@@ -22,8 +22,8 @@ public struct SVGRenderer: CeolKitRenderer {
         // File-preamble directives are promoted to the first tune by the parser.
         let effectiveConfig = applyingScoreDirectives(score)
 
-        let breaker   = LineBreaker(overflowTolerance: effectiveConfig.lineOverflowTolerance)
-        let justifier = Justifier(maxStretch: effectiveConfig.maxSystemStretch)
+        let breaker   = LineBreaker()
+        let justifier = Justifier()
         let engine    = VerticalLayoutEngine(config: effectiveConfig, metadata: metadata)
 
         let usableWidth = effectiveConfig.pageSize.width - effectiveConfig.margins.left - effectiveConfig.margins.right

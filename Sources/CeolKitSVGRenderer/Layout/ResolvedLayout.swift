@@ -40,11 +40,6 @@ public struct System: Sendable {
     public let isLastSystem: Bool
     /// `true` when the system break was forced by a `.hard` `ScoreLineBreak` in the source.
     public let sourceForced: Bool
-    /// `true` when the source stave this system came from did not fit on one line and the
-    /// line breaker split it.  The width of such a system is the packer's choice, not the
-    /// engraver's, so the `Justifier` caps how far it will stretch one; a system whose width
-    /// the source asked for is stretched to fill the line however short it is.
-    public let staveWasSplit: Bool
     public let clef: ClefSpec
     public let keySignature: KeySignature?
     /// Non-nil only on the first system of a tune; time signatures do not repeat at line breaks.
@@ -54,7 +49,6 @@ public struct System: Sendable {
         measures: [SizedMeasure],
         isLastSystem: Bool,
         sourceForced: Bool,
-        staveWasSplit: Bool = false,
         clef: ClefSpec = ClefSpec(clef: .treble, octaveShift: 0),
         keySignature: KeySignature? = nil,
         meter: Meter? = nil
@@ -62,7 +56,6 @@ public struct System: Sendable {
         self.measures = measures
         self.isLastSystem = isLastSystem
         self.sourceForced = sourceForced
-        self.staveWasSplit = staveWasSplit
         self.clef = clef
         self.keySignature = keySignature
         self.meter = meter
@@ -122,9 +115,7 @@ public struct JustifiedSystem: Sendable {
 
 public struct JustifiedMeasure: Sendable {
     public let source: SizedMeasure
-    /// Final rendered width in points.  Usually ≥ `source.naturalWidth`, but a system the
-    /// line breaker let overrun the line within its overflow tolerance is compressed to fit,
-    /// so this can be slightly smaller.
+    /// Final rendered width in points; always ≥ `source.naturalWidth`.
     public let finalWidth: Double
     /// Event x-offsets after justification.  Grace-to-note gaps are held at their natural
     /// size; all remaining horizontal slack is distributed among elastic (note-to-note) spacings.

@@ -20,16 +20,6 @@ public struct SVGRenderConfig: Sendable {
     public var graceNoteSpacing: Double
     /// How glyphs reach the page: as `<text>` resolved through a font, or as geometry.
     public var textRendering: TextRendering
-    /// How far a system may overrun the line, as a fraction of the line width, before the
-    /// line breaker splits it.  Within this the system stays whole and the justifier
-    /// compresses it instead, which is what an engraver does with a line that misses by a
-    /// percent or two.
-    public var lineOverflowTolerance: Double
-    /// The most the justifier will stretch a system the line breaker created by splitting an
-    /// over-long stave, as a multiple of its natural width.  Past this the system is left
-    /// short rather than smeared across the page.  Systems the source broke are not capped.
-    /// Generous by design — see ``Justifier/maxStretch``.
-    public var maxSystemStretch: Double
 
     public init(
         pageSize: PageSize = .letter,
@@ -41,9 +31,7 @@ public struct SVGRenderConfig: Sendable {
         straightFlags: Bool = false,
         graceSlurs: Bool = true,
         graceNoteSpacing: Double = 1.05,
-        textRendering: TextRendering = .outlines,
-        lineOverflowTolerance: Double = 0.02,
-        maxSystemStretch: Double = 3.0
+        textRendering: TextRendering = .outlines
     ) {
         self.pageSize = pageSize
         self.margins = margins
@@ -55,8 +43,6 @@ public struct SVGRenderConfig: Sendable {
         self.graceSlurs = graceSlurs
         self.graceNoteSpacing = graceNoteSpacing
         self.textRendering = textRendering
-        self.lineOverflowTolerance = lineOverflowTolerance
-        self.maxSystemStretch = maxSystemStretch
     }
 
     /// Returns a copy with `staffSize` and the vertical gaps derived from it multiplied

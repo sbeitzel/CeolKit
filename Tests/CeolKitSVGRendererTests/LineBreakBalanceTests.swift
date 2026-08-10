@@ -12,13 +12,13 @@ import Foundation
 import Testing
 @testable import CeolKitSVGRenderer
 
-// A pipe reel whose source lines run to eight bars — long enough that every one of them has
-// to be broken across two systems on a landscape page.
+// A pipe reel whose source lines run to four bars — long enough that every one of them has
+// to be broken across two systems on a portrait page.
 private let splitLineTune = """
 %abc-2.2
 %%ceolkit:pipeformat true
 %%ceolkit:justifylast true
-%%landscape 1
+%%landscape 0
 X:1
 T:Kalabakan (Borneo)
 R:Reel
@@ -81,7 +81,7 @@ struct LineBreakBalanceTests {
 
     // The reported symptom: a system stretched to ~3.6× its natural note spacing.
     @Test func noSystemIsStretchedPastTheCap() throws {
-        let config = SVGRenderConfig(pageSize: .letter.landscape)
+        let config = SVGRenderConfig(pageSize: .letter)
         let (_, justified, _) = try layOut(splitLineTune, config: config)
 
         for (i, system) in justified.enumerated() {
@@ -94,9 +94,9 @@ struct LineBreakBalanceTests {
     }
 
     // The cause: a split stave whose last system holds a single orphaned measure.  Every one
-    // of these staves is eight bars over two systems, so neither half may be a lone bar.
+    // of these staves is four or five bars over two systems, so neither half may be a lone bar.
     @Test func splitStavesDoNotOrphanASingleMeasure() throws {
-        let config = SVGRenderConfig(pageSize: .letter.landscape)
+        let config = SVGRenderConfig(pageSize: .letter)
         let (systems, _, _) = try layOut(splitLineTune, config: config)
 
         let split = systems.filter(\.staveWasSplit)
@@ -110,7 +110,7 @@ struct LineBreakBalanceTests {
     // Music never crosses the right margin, whether the justifier stretched it, compressed a
     // tolerated overrun, or left it short at the cap.
     @Test func noSystemOverrunsItsLine() throws {
-        let config = SVGRenderConfig(pageSize: .letter.landscape)
+        let config = SVGRenderConfig(pageSize: .letter)
         let (_, justified, targets) = try layOut(splitLineTune, config: config)
 
         for (i, system) in justified.enumerated() {

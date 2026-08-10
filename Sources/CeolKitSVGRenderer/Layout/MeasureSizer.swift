@@ -199,11 +199,12 @@ public struct MeasureSizer: Sendable {
         guard let opening = measure.openingBar else { return meterGap + timeSigW + nhw }
         switch opening.kind {
         case .repeatStart, .sectionRepeatStart, .repeatBoth:
-            let sep     = metadata.engravingDefaults.barlineSeparation * config.staffSize
-            let wideSep = sep * 2.0
+            let wideSep = metadata.engravingDefaults.barlineSeparation * config.staffSize * 2.0
+            // Must match `emitRepeatDots`, which places the dots by this same measurement.
+            let dotSep  = metadata.engravingDefaults.repeatBarlineDotSeparation * config.staffSize
             let dotW    = metadata.glyphBBoxes["repeatDot"].map { $0.width * config.staffSize }
                           ?? config.staffSize * 0.25
-            return wideSep + sep + dotW + meterGap + timeSigW + nhw
+            return wideSep + dotSep + dotW + meterGap + timeSigW + nhw
         default:
             return meterGap + timeSigW + nhw
         }

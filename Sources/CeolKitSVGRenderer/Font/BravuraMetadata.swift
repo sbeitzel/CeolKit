@@ -12,6 +12,14 @@ public struct BravuraMetadata: Sendable {
         public let thinBarlineThickness: Double
         public let thickBarlineThickness: Double
         public let barlineSeparation: Double
+        public let repeatBarlineDotSeparation: Double
+        /// Thickness of a slur at its two ends; SMuFL models a slur as tapered, so this is
+        /// the thinner of the pair.
+        public let slurEndpointThickness: Double
+        /// Thickness of a slur at its midpoint — the thicker of the pair.
+        public let slurMidpointThickness: Double
+        public let tieEndpointThickness: Double
+        public let tieMidpointThickness: Double
     }
 
     public struct BoundingBox: Sendable {
@@ -65,6 +73,15 @@ private struct RawBBox: Decodable {
 ///
 /// Every value is optional so a face that omits one still decodes; the missing default
 /// falls back to `0`, as it did when these were dictionary lookups.
+///
+/// The keys Bravura supplies that are deliberately *not* read describe notation this
+/// renderer does not yet draw: `bracketThickness`, `subBracketThickness`,
+/// `dashedBarlineDashLength`, `dashedBarlineGapLength`, `dashedBarlineThickness`,
+/// `hairpinThickness`, `octaveLineThickness`, `pedalLineThickness`,
+/// `repeatEndingLineThickness`, `textEnclosureThickness`, `tupletBracketThickness`,
+/// `lyricLineThickness`, `arrowShaftThickness`, `hBarThickness`, `textFontFamily`.
+/// Each becomes worth decoding when the corresponding mark starts being emitted, not
+/// before — an unused property is a value nothing can hold the renderer to.
 private struct RawEngravingDefaults: Decodable {
     let staffLineThickness: Double?
     let stemThickness: Double?
@@ -75,6 +92,11 @@ private struct RawEngravingDefaults: Decodable {
     let thinBarlineThickness: Double?
     let thickBarlineThickness: Double?
     let barlineSeparation: Double?
+    let repeatBarlineDotSeparation: Double?
+    let slurEndpointThickness: Double?
+    let slurMidpointThickness: Double?
+    let tieEndpointThickness: Double?
+    let tieMidpointThickness: Double?
 }
 
 private struct RawMetadata: Decodable {
@@ -97,7 +119,15 @@ private extension BravuraMetadata {
             legerLineExtension: ed.legerLineExtension ?? 0,
             thinBarlineThickness:  ed.thinBarlineThickness  ?? 0,
             thickBarlineThickness: ed.thickBarlineThickness ?? 0,
-            barlineSeparation:     ed.barlineSeparation     ?? 0
+            barlineSeparation:     ed.barlineSeparation     ?? 0,
+            // Unlike the thicknesses above, zero here does not merely draw something thin —
+            // it draws nothing at all, or stacks the repeat dots against the bar line. A face
+            // omitting these gets Bravura's values, the reference face SMuFL publishes.
+            repeatBarlineDotSeparation: ed.repeatBarlineDotSeparation ?? 0.16,
+            slurEndpointThickness: ed.slurEndpointThickness ?? 0.1,
+            slurMidpointThickness: ed.slurMidpointThickness ?? 0.22,
+            tieEndpointThickness:  ed.tieEndpointThickness  ?? 0.1,
+            tieMidpointThickness:  ed.tieMidpointThickness  ?? 0.22
         )
         glyphBBoxes = raw.glyphBBoxes.compactMapValues { box in
             guard box.bBoxNE.count == 2, box.bBoxSW.count == 2 else { return nil }

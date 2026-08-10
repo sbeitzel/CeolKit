@@ -68,7 +68,10 @@ let package = Package(
       ],
       resources: [
         .process("tunebook.abc"),
-        .process("__Snapshots__")
+        .process("__Snapshots__"),
+        // SMuFL's published glyph-name table, the oracle for `SMuFLGlyphConformanceTests`.
+        // See Resources/glyphnames-PROVENANCE.txt.
+        .process("Resources")
       ]
     ),
   ],

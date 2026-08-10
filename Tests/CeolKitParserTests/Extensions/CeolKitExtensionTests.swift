@@ -464,4 +464,104 @@ struct CeolKitExtensionTests {
             #expect(scaleFactor(in: result) == nil)
         }
     }
+
+    // MARK: %%ceolkit:gracenotespacing
+
+    /// Returns the step from the first `.graceNoteSpacing` directive on any tune, if present.
+    private func graceNoteSpacing(in result: ParseResult) -> Double? {
+        result.score.tunes.flatMap(\.directives).compactMap {
+            if case .graceNoteSpacing(let f) = $0.directive { return f }
+            return nil
+        }.first
+    }
+
+    @Test("%%ceolkit:gracenotespacing 1.4 attaches the directive at tune scope")
+    func graceNoteSpacingValidStep() {
+        let abc = """
+        X:1
+        T:Test
+        M:4/4
+        L:1/4
+        %%ceolkit:gracenotespacing 1.4
+        K:G
+        GABC|
+        """
+        let result = parse(abc)
+        let directive = result.score.firstTune?.directives.first(where: {
+            if case .graceNoteSpacing = $0.directive { return true }
+            return false
+        })
+        #expect(directive != nil)
+        #expect(graceNoteSpacing(in: result) == 1.4)
+        if let d = directive, case .tuneGlobal = d.scope {} else {
+            Issue.record("Expected .tuneGlobal scope, got \(String(describing: directive?.scope))")
+        }
+    }
+
+    @Test("%%ceolkit:gracenotespacing accepts an integer payload")
+    func graceNoteSpacingIntegerPayload() {
+        let abc = "X:1\nT:T\nM:4/4\nL:1/4\n%%ceolkit:gracenotespacing 2\nK:C\nC|"
+        #expect(graceNoteSpacing(in: parse(abc)) == 2.0)
+    }
+
+    @Test("%%ceolkit:gracenotespacing 1 is the tightest accepted value")
+    func graceNoteSpacingAcceptsOne() {
+        let abc = "X:1\nT:T\nM:4/4\nL:1/4\n%%ceolkit:gracenotespacing 1.0\nK:C\nC|"
+        let result = parse(abc)
+        #expect(graceNoteSpacing(in: result) == 1.0)
+        #expect(!result.score.diagnostics.contains { $0.code == .invalidGraceNoteSpacing })
+    }
+
+    @Test("%%ceolkit:gracenotespacing in the file preamble is promoted to the first tune")
+    func graceNoteSpacingInPreamble() {
+        let abc = "%%ceolkit:gracenotespacing 1.3\nX:1\nT:T\nM:4/4\nL:1/4\nK:C\nC|"
+        #expect(graceNoteSpacing(in: parse(abc)) == 1.3)
+    }
+
+    @Test("%%ceolkit:gracenotespacing in the tune body is accepted, not reported as unknown")
+    func graceNoteSpacingInBody() {
+        let abc = """
+        X:1
+        T:Test
+        M:4/4
+        L:1/4
+        K:C
+        CDEC|
+        %%ceolkit:gracenotespacing 1.25
+        CDEC|
+        """
+        let result = parse(abc)
+        #expect(graceNoteSpacing(in: result) == 1.25)
+        let unknowns = result.score.diagnostics.filter { $0.code == .unknownDirective }
+        #expect(unknowns.isEmpty)
+    }
+
+    @Test("A %%ceolkit:gracenotespacing below 1 would overlap noteheads — warning, directive dropped")
+    func graceNoteSpacingBelowOneEmitsWarning() {
+        for payload in ["0.9", "0", "-1.5"] {
+            let result = parse("%%ceolkit:gracenotespacing \(payload)\nX:1\nT:T\nM:4/4\nL:1/4\nK:C\nC|")
+            #expect(result.score.diagnostics.contains {
+                $0.severity == .warning && $0.code == .invalidGraceNoteSpacing
+            }, "expected invalidGraceNoteSpacing for payload '\(payload)'")
+            #expect(graceNoteSpacing(in: result) == nil)
+        }
+    }
+
+    @Test("%%ceolkit:gracenotespacing wide (non-numeric) emits warning and drops directive")
+    func graceNoteSpacingNonNumericEmitsWarning() {
+        let abc = "%%ceolkit:gracenotespacing wide\nX:1\nT:T\nM:4/4\nL:1/4\nK:C\nC|"
+        let result = parse(abc)
+        #expect(result.score.diagnostics.contains { $0.code == .invalidGraceNoteSpacing })
+        #expect(graceNoteSpacing(in: result) == nil)
+    }
+
+    @Test("%%ceolkit:gracenotespacing with a non-finite payload emits warning and drops directive")
+    func graceNoteSpacingNonFiniteEmitsWarning() {
+        for payload in ["inf", "nan"] {
+            let result = parse("%%ceolkit:gracenotespacing \(payload)\nX:1\nT:T\nM:4/4\nL:1/4\nK:C\nC|")
+            #expect(result.score.diagnostics.contains { $0.code == .invalidGraceNoteSpacing },
+                    "expected invalidGraceNoteSpacing for payload '\(payload)'")
+            #expect(graceNoteSpacing(in: result) == nil)
+        }
+    }
 }

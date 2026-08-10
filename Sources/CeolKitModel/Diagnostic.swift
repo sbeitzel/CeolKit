@@ -46,6 +46,7 @@ public enum DiagnosticCode: String, Codable, Sendable {
     case invalidPageNumber
     case misplacedStemAlignment
     case invalidScale
+    case invalidGraceNoteSpacing
     // Directives
     case unknownDirective
     case redundantDirective

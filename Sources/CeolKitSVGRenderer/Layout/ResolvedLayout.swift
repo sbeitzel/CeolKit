@@ -82,13 +82,20 @@ public struct TuneBlock: Sendable {
     /// derived from it) for this tune's music, from `%%ceolkit:scale`.  `1.0` = renderer default.
     /// The title block is laid out in absolute points and is unaffected.
     public let scale: Double
+    /// Step between adjacent grace noteheads in this tune's grace groups, in grace notehead
+    /// widths, from `%%ceolkit:gracenotespacing`.  A ratio, not a size: unlike `scale` it is
+    /// carried through unmultiplied.  The sizer reserved the group's width with this value,
+    /// so the emitter has to draw with the same one.
+    public let graceNoteSpacing: Double
 
     public init(systems: [JustifiedSystem], titleRows: [ResolvedTitleRow] = [],
-                titleBlockHeight: Double = 0, scale: Double = 1.0) {
+                titleBlockHeight: Double = 0, scale: Double = 1.0,
+                graceNoteSpacing: Double = SVGRenderConfig().graceNoteSpacing) {
         self.systems = systems
         self.titleRows = titleRows
         self.titleBlockHeight = titleBlockHeight
         self.scale = scale
+        self.graceNoteSpacing = graceNoteSpacing
     }
 }
 
@@ -208,6 +215,10 @@ public struct ResolvedSystem: Sendable {
     public let staffSize: Double
     /// Height of the staff body: 4 × staffSize (five lines, four spaces).
     public let staffHeight: Double
+    /// Step between adjacent grace noteheads, in grace notehead widths, from
+    /// `%%ceolkit:gracenotespacing`.  Travels with the system for the same reason
+    /// `staffSize` does: it is set per tune, and one page can hold systems from several.
+    public let graceNoteSpacing: Double
     /// Space above the top staff line (ledger lines, chord symbols, annotations).
     public let extraAbove: Double
     /// Space below the bottom staff line (ledger lines, lyrics).
@@ -228,6 +239,7 @@ public struct ResolvedSystem: Sendable {
         staffOrigin: Double,
         staffSize: Double,
         staffHeight: Double,
+        graceNoteSpacing: Double = SVGRenderConfig().graceNoteSpacing,
         extraAbove: Double,
         extraBelow: Double,
         totalHeight: Double,
@@ -241,6 +253,7 @@ public struct ResolvedSystem: Sendable {
         self.staffOrigin = staffOrigin
         self.staffSize = staffSize
         self.staffHeight = staffHeight
+        self.graceNoteSpacing = graceNoteSpacing
         self.extraAbove = extraAbove
         self.extraBelow = extraBelow
         self.totalHeight = totalHeight

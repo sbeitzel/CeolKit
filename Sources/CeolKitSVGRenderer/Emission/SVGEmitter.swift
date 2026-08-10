@@ -92,9 +92,10 @@ struct SVGEmitter: Sendable {
         emitScrollSyncMetadata(for: page, pageNumber: pageNumber, builder: &builder)
         emitTitleBlock(page.titleRows, builder: &builder)
         for system in page.systems {
-            // Systems on one page can come from tunes with different %%ceolkit:scale factors,
-            // so each is emitted through a copy of self whose staffSize matches that system.
-            sized(to: system.staffSize)
+            // Systems on one page can come from tunes with different %%ceolkit:scale factors
+            // and grace spacings, so each is emitted through a copy of self configured for
+            // that system.
+            configured(for: system)
                 .emitSystem(system, pendingTies: &pendingTies, pendingSlurs: &pendingSlurs,
                             builder: &builder)
         }
@@ -106,16 +107,20 @@ struct SVGEmitter: Sendable {
         )
     }
 
-    /// Returns a copy of this emitter whose `config.staffSize` is `staffSize`.
+    /// Returns a copy of this emitter carrying `system`'s own per-tune config values.
     ///
     /// Every staff, glyph, stem, and beam dimension below `emitSystem` is expressed as a
     /// multiple of `config.staffSize`, so swapping it here scales an entire system without
-    /// threading a size argument through the whole emission tree.
-    private func sized(to staffSize: Double) -> SVGEmitter {
-        guard staffSize != config.staffSize else { return self }
-        var scaledConfig = config
-        scaledConfig.staffSize = staffSize
-        return SVGEmitter(config: scaledConfig, metadata: metadata, stemDirection: stemDirection)
+    /// threading a size argument through the whole emission tree.  `graceNoteSpacing` rides
+    /// along for a different reason: the sizer reserved this system's grace groups with it,
+    /// and a group drawn at any other step would not fill the space it was given.
+    private func configured(for system: ResolvedSystem) -> SVGEmitter {
+        guard system.staffSize != config.staffSize
+                || system.graceNoteSpacing != config.graceNoteSpacing else { return self }
+        var systemConfig = config
+        systemConfig.staffSize = system.staffSize
+        systemConfig.graceNoteSpacing = system.graceNoteSpacing
+        return SVGEmitter(config: systemConfig, metadata: metadata, stemDirection: stemDirection)
     }
 
     // MARK: - Scroll-sync metadata

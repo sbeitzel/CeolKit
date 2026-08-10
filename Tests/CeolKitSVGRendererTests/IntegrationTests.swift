@@ -211,8 +211,27 @@ private func simpleJigScore() -> Score {
 
     // MARK: Snapshot
 
+    /// The default: glyph geometry in the document, no font environment required.
     @Test func simpleJigScoreMatchesSnapshot() throws {
         let svg = try SVGRenderer().render(simpleJigScore())[0]
+
+        // Replace the outline data of each `<defs>` glyph, for the same reason the base64
+        // blob is stripped below: this snapshot is about structure and placement — which
+        // glyphs are defined, and where each `<use>` puts them — and a few thousand curve
+        // coordinates would bury that. The outlines themselves are checked against
+        // Bravura's own metadata bounding boxes in `OpenTypeFontTests`.
+        let sanitized = svg.replacing(
+            /(<path id="[^"]+" d=")[^"]+"/,
+            with: { "\($0.output.1)<OUTLINE>\"" }
+        )
+
+        assertSnapshot(of: sanitized, as: .lines)
+    }
+
+    /// The opt-in mode, kept under snapshot so that the documents hosts with their own font
+    /// environment depend on cannot drift unnoticed.
+    @Test func simpleJigScoreWithEmbeddedFontsMatchesSnapshot() throws {
+        let svg = try textProbeRenderer().render(simpleJigScore())[0]
 
         // Strip the embedded Bravura base64 blob so the snapshot stays small
         // and diffs focus on SVG structure rather than font data.

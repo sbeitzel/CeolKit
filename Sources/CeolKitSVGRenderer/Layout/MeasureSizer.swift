@@ -8,10 +8,14 @@ import CeolKitModel
 public struct MeasureSizer: Sendable {
     private let config: SVGRenderConfig
     private let metadata: BravuraMetadata
+    private let graceMetrics: GraceMetrics
+    private let accidentalMetrics: AccidentalMetrics
 
     public init(config: SVGRenderConfig, metadata: BravuraMetadata) {
         self.config = config
         self.metadata = metadata
+        self.graceMetrics = GraceMetrics(config: config, metadata: metadata)
+        self.accidentalMetrics = AccidentalMetrics(config: config, metadata: metadata)
     }
 
     /// Sizes a single measure.
@@ -73,7 +77,7 @@ public struct MeasureSizer: Sendable {
         case .note(let n):
             let rawCol = base * durationFactor(n.duration, quarterInUnits: quarterInUnits)
             var col = max(minCol, rawCol)
-            let accWidth = n.displayedAccidental != nil ? s * 0.75 : 0
+            let accWidth = accidentalMetrics.reservation(for: n.displayedAccidental)
             // Very short notes (at the minimum floor) get a dot-gap equivalent of extra space
             // so consecutive beamed notes aren't visually pressed against each other.
             let breathingRoom = rawCol < minCol ? noteheadWidth() * 0.2 : 0
@@ -89,8 +93,11 @@ public struct MeasureSizer: Sendable {
 
         case .chord(let c):
             let col = max(minCol, base * durationFactor(c.duration, quarterInUnits: quarterInUnits))
-            let hasAcc = c.notes.contains { $0.displayedAccidental != nil }
-            return col + (hasAcc ? s * 0.75 : 0)
+            // Chord accidentals are not yet stacked, so reserve for the widest of them.
+            let accWidth = c.notes
+                .map { accidentalMetrics.reservation(for: $0.displayedAccidental) }
+                .max() ?? 0
+            return col + accWidth
 
         case .tuplet(let t):
             var totalUnits = 0.0
@@ -125,30 +132,31 @@ public struct MeasureSizer: Sendable {
         }
     }
 
-    /// Width consumed by a grace group: 1.5 × grace notehead width per note,
-    /// giving 0.25× leading and 0.25× trailing padding (0.5× between adjacent noteheads).
+    /// Width consumed by a grace group: outer padding at each edge plus one `advance`
+    /// per additional notehead.  See `GraceMetrics`.
     private func graceGroupWidth(_ grace: GraceGroup) -> Double {
-        noteheadWidth() * 0.6 * 1.5 * Double(max(grace.notes.count, 1))
+        graceMetrics.width(grace.notes)
     }
 
-    /// Gap between the grace group's last column boundary and the principal notehead.
+    /// Gap between the grace group's right edge and the principal notehead.
     ///
     /// For a single grace note the 32nd-note flag extends right of the stem and overhangs the
     /// column boundary.  We measure the overhang from the bounding-box data and add a small
     /// comfortable clearance so the flag tip is visibly separated from the principal note.
     /// Multi-note groups use beams that don't overhang, so a simpler fixed gap is used there.
     private func graceNoteGap(for grace: GraceGroup) -> Double {
-        let graceNHW = noteheadWidth() * 0.6   // grace notehead width (graceScale = 0.6)
-        guard grace.notes.count == 1 else {
-            // Beamed group: no flag overhang; keep original gap.
-            return noteheadWidth() * (0.25 * 0.6 + 0.25)
+        guard let single = grace.notes.first, grace.notes.count == 1 else {
+            // Beamed group: no flag overhang; the group's own trailing pad plus a
+            // notehead-quarter of clearance before the principal note.
+            return noteheadWidth() * (GraceMetrics.edgePad * GraceMetrics.scale + 0.25)
         }
-        // Single grace note: compute how far the flag extends past the column boundary.
-        // stemX within the column = 1.25 × graceNHW; columnWidth = 1.5 × graceNHW.
-        // flagWidth (rendered) = bboxWidth × staffSize × 0.6.
-        let flagW = metadata.glyphBBoxes["flag32ndUp"].map { $0.width * config.staffSize * 0.6 }
+        // Single grace note: compute how far the flag extends past the group's right edge.
+        // flagWidth (rendered) = bboxWidth × staffSize × graceScale.
+        let flagW = metadata.glyphBBoxes["flag32ndUp"]
+                        .map { $0.width * config.staffSize * GraceMetrics.scale }
                     ?? config.staffSize * 0.625
-        let flagOverhang = max(0, 1.25 * graceNHW + flagW - 1.5 * graceNHW)
+        let stemX        = graceMetrics.stemOffsets([single])[0]
+        let flagOverhang = max(0, stemX + flagW - graceMetrics.width([single]))
         return flagOverhang + config.staffSize * 0.25
     }
 
@@ -191,11 +199,12 @@ public struct MeasureSizer: Sendable {
         guard let opening = measure.openingBar else { return meterGap + timeSigW + nhw }
         switch opening.kind {
         case .repeatStart, .sectionRepeatStart, .repeatBoth:
-            let sep     = metadata.engravingDefaults.barlineSeparation * config.staffSize
-            let wideSep = sep * 2.0
+            let wideSep = metadata.engravingDefaults.barlineSeparation * config.staffSize * 2.0
+            // Must match `emitRepeatDots`, which places the dots by this same measurement.
+            let dotSep  = metadata.engravingDefaults.repeatBarlineDotSeparation * config.staffSize
             let dotW    = metadata.glyphBBoxes["repeatDot"].map { $0.width * config.staffSize }
                           ?? config.staffSize * 0.25
-            return wideSep + sep + dotW + meterGap + timeSigW + nhw
+            return wideSep + dotSep + dotW + meterGap + timeSigW + nhw
         default:
             return meterGap + timeSigW + nhw
         }

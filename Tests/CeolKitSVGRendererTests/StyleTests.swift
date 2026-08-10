@@ -107,7 +107,7 @@ struct StyleTests {
     var score: Score { result.score }
 
     @Test func pageIsLandscapeLetter() throws {
-        let pages = try SVGRenderer().render(score)
+        let pages = try textProbeRenderer().render(score)
         let svg = try #require(pages.first)
         // US Letter landscape: 792 × 612 points
         #expect(svg.contains("width=\"792\""))
@@ -115,7 +115,7 @@ struct StyleTests {
     }
 
     @Test func sevenLinesOfMusicAreRendered() throws {
-        let pages = try SVGRenderer().render(score)
+        let pages = try textProbeRenderer().render(score)
         let combined = pages.joined()
         // One treble clef glyph is emitted per system.
         let clefChar = String(SMuFLGlyph.gClef.character)
@@ -124,7 +124,7 @@ struct StyleTests {
     }
 
     @Test func tuneRendersOnOnePage() throws {
-        let pages = try SVGRenderer().render(score)
+        let pages = try textProbeRenderer().render(score)
         // we should be able to fit a tune title, rhythm & composer line, 7 systems, and a footer
         // onto a single landscape 8.5 x 11 page. If we can't, then something is taking up too much
         // space.
@@ -132,7 +132,7 @@ struct StyleTests {
     }
 
     @Test func keySignatureAppearsAtStartOfEveryLine() throws {
-        let pages = try SVGRenderer().render(score)
+        let pages = try textProbeRenderer().render(score)
         let combined = pages.joined()
         // D major has 2 sharps (F# and C#); one key signature per system × 7 systems = 14 sharps.
         let sharpChar = String(SMuFLGlyph.accidentalSharp.character)
@@ -141,7 +141,7 @@ struct StyleTests {
     }
 
     @Test func cutTimeAppearsOnFirstLineOnly() throws {
-        let pages = try SVGRenderer().render(score)
+        let pages = try textProbeRenderer().render(score)
         let combined = pages.joined()
         let cutTimeChar = String(SMuFLGlyph.timeSigCutCommon.character)
         let cutTimeCount = combined.components(separatedBy: cutTimeChar).count - 1
@@ -149,7 +149,7 @@ struct StyleTests {
     }
 
     @Test func repeatDotsAreRendered() throws {
-        let pages = try SVGRenderer().render(score)
+        let pages = try textProbeRenderer().render(score)
         let combined = pages.joined()
         let dotChar = String(SMuFLGlyph.repeatDot.character)
         let dotCount = combined.components(separatedBy: dotChar).count - 1
@@ -315,7 +315,7 @@ struct StyleTests {
 
     @Test func titleIsDrawnForEachTune() throws {
         let result = parse(multitune)
-        let pages = try SVGRenderer().render(result.score)
+        let pages = try textProbeRenderer().render(result.score)
         let combined = pages.joined()
 
         #expect(pages.count == 1, "The two tunes should fit on a single landscape page")
@@ -328,7 +328,7 @@ struct StyleTests {
     // must be strictly above the topmost rendered music element (minimum Y among all <line>
     // elements, which includes staff lines, stems, bar lines, and ledger lines).
     @Test func titleTextIsAboveHighestNoteStem() throws {
-        let pages = try SVGRenderer().render(score)
+        let pages = try textProbeRenderer().render(score)
         let svg   = try #require(pages.first)
 
         // Collect the Y baseline of every title text element.
@@ -394,7 +394,7 @@ struct StyleTests {
         G|
         """
         let s = parse(abc).score
-        let pages = try SVGRenderer().render(s)
+        let pages = try textProbeRenderer().render(s)
         let svg = try #require(pages.first)
         #expect(svg.contains(String(SMuFLGlyph.flag8thUp.character)),
                 "curved flag glyph should appear with %%straightflags false")
@@ -422,8 +422,8 @@ struct StyleTests {
         K:C
         G|
         """
-        let svgStraight = try #require(try SVGRenderer().render(parse(abcStraight).score).first)
-        let svgCurved   = try #require(try SVGRenderer().render(parse(abcCurved).score).first)
+        let svgStraight = try #require(try textProbeRenderer().render(parse(abcStraight).score).first)
+        let svgCurved   = try #require(try textProbeRenderer().render(parse(abcCurved).score).first)
 
         // Curved flag should be absent when straight flags are active.
         #expect(!svgStraight.contains(String(SMuFLGlyph.flag16thUp.character)),
@@ -455,8 +455,8 @@ struct StyleTests {
         K:C
         {G}C|
         """
-        let svgStraight = try #require(try SVGRenderer().render(parse(abcStraight).score).first)
-        let svgCurved   = try #require(try SVGRenderer().render(parse(abcCurved).score).first)
+        let svgStraight = try #require(try textProbeRenderer().render(parse(abcStraight).score).first)
+        let svgCurved   = try #require(try textProbeRenderer().render(parse(abcCurved).score).first)
 
         // Curved 32nd-flag glyph must be absent in straight mode.
         #expect(!svgStraight.contains(String(SMuFLGlyph.flag32ndUp.character)),
@@ -484,12 +484,12 @@ struct StyleTests {
         {G}C|
         """
         let s = parse(abc).score
-        let pages = try SVGRenderer().render(s)
+        let pages = try textProbeRenderer().render(s)
         #expect(!pages.isEmpty)
     }
 
     @Test func graceSlursDirectiveSetsConfigValue() throws {
-        let renderer = SVGRenderer()
+        let renderer = textProbeRenderer()
         let abcFalse = "%%graceslurs false\nX:1\nT:T\nM:4/4\nL:1/4\nK:C\nC|"
         let abcTrue  = "%%graceslurs true\nX:1\nT:T\nM:4/4\nL:1/4\nK:C\nC|"
         let scoreFalse = parse(abcFalse).score
@@ -523,7 +523,7 @@ struct StyleTests {
         CDEF|
         """
         let score = parse(abc).score
-        let pages = try SVGRenderer().render(score)
+        let pages = try textProbeRenderer().render(score)
         let combined = pages.joined()
         let currentYear = String(Calendar.current.component(.year, from: Date()))
         #expect(combined.contains(currentYear),
@@ -535,7 +535,7 @@ struct StyleTests {
         // The parser stores the raw payload; the renderer must unescape \% → % before strftime.
         let abc = "%%dateformat \\%Y\n%%footer \"$D\"\nX:1\nT:T\nM:4/4\nL:1/4\nK:C\nC|"
         let score = parse(abc).score
-        let pages = try SVGRenderer().render(score)
+        let pages = try textProbeRenderer().render(score)
         let combined = pages.joined()
         let currentYear = String(Calendar.current.component(.year, from: Date()))
         #expect(combined.contains(currentYear),
@@ -555,7 +555,7 @@ struct StyleTests {
         C|
         """
         let score = parse(abc).score
-        let pages = try SVGRenderer().render(score)
+        let pages = try textProbeRenderer().render(score)
         let combined = pages.joined()
         let currentYear = String(Calendar.current.component(.year, from: Date()))
         #expect(combined.contains(currentYear),

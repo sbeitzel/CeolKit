@@ -42,46 +42,81 @@ public struct Justifier: Sendable {
         justifyLastSystem: Bool,
         systemHeaderWidths: [Double] = []
     ) -> [JustifiedSystem] {
-        systems.enumerated().map { i, system in
+        justifyGroups(systems.map { SystemGroup(staves: [$0]) },
+                      usableWidth: usableWidth,
+                      justifyLastSystem: justifyLastSystem,
+                      systemHeaderWidths: systemHeaderWidths)
+            .map { $0.staves[0] }
+    }
+
+    /// Justifies `groups`, giving every staff of a group the same measure x-positions.
+    ///
+    /// A column's final width is derived once, from the widest staff's natural width for
+    /// that column, and handed to every staff in the group.  That is what makes the bar
+    /// lines line up vertically: a staff whose measure is narrower than the column simply
+    /// gets more slack distributed inside it.
+    ///
+    /// - Parameters:
+    ///   - groups: Pass 2 output.
+    ///   - usableWidth: Full available horizontal space (page width minus margins).
+    ///   - justifyLastSystem: When `true`, the last system is also stretched to fill the line.
+    ///   - systemHeaderWidths: Per-system width consumed by clef/key/time-sig headers —
+    ///     already the `max` across the group's voices, since its staves start at a common x.
+    /// Named rather than overloaded on the element type: `justify([])` would otherwise be
+    /// ambiguous, which is a trap for a call site that has nothing to justify.
+    public func justifyGroups(
+        _ groups: [SystemGroup],
+        usableWidth: Double,
+        justifyLastSystem: Bool,
+        systemHeaderWidths: [Double] = []
+    ) -> [JustifiedSystemGroup] {
+        groups.enumerated().map { i, group in
             let headerWidth = i < systemHeaderWidths.count ? systemHeaderWidths[i] : 0
             let targetWidth = usableWidth - headerWidth
-            let shouldStretch = !system.isLastSystem || justifyLastSystem
-            return justify(system, targetWidth: targetWidth, stretch: shouldStretch,
-                           capStretch: system.staveWasSplit)
+            let shouldStretch = !group.isLastSystem || justifyLastSystem
+            return justify(group, targetWidth: targetWidth, stretch: shouldStretch,
+                           capStretch: group.staveWasSplit)
         }
     }
 
     // MARK: - Private
 
-    private func justify(_ system: System, targetWidth: Double, stretch: Bool,
-                         capStretch: Bool) -> JustifiedSystem {
-        let naturalTotal = system.measures.reduce(0.0) { $0 + $1.naturalWidth }
+    private func justify(_ group: SystemGroup, targetWidth: Double, stretch: Bool,
+                         capStretch: Bool) -> JustifiedSystemGroup {
+        // A column is as wide as its widest staff needs; every staff is then drawn to that.
+        let columnWidths = (0..<group.columnCount).map { column in
+            group.staves.reduce(0.0) { max($0, $1.measures[column].naturalWidth) }
+        }
+        let naturalTotal = columnWidths.reduce(0, +)
         let finalTotal = resolvedWidth(naturalTotal: naturalTotal, targetWidth: targetWidth,
                                        stretch: stretch, capStretch: capStretch)
 
-        guard naturalTotal > 0, finalTotal != naturalTotal else {
+        let finalWidths: [Double]
+        if naturalTotal > 0 && finalTotal != naturalTotal {
+            let slack = finalTotal - naturalTotal
+            finalWidths = columnWidths.map { $0 + slack * ($0 / naturalTotal) }
+        } else {
             // Nothing to redistribute: keep natural widths (left-aligned).
-            let measures = system.measures.map { sized in
-                JustifiedMeasure(source: sized, finalWidth: sized.naturalWidth, eventOffsets: sized.eventOffsets)
-            }
-            return JustifiedSystem(measures: measures, isLastSystem: system.isLastSystem,
-                                   sourceForced: system.sourceForced, clef: system.clef,
-                                   keySignature: system.keySignature, meter: system.meter)
+            finalWidths = columnWidths
         }
 
-        let slack = finalTotal - naturalTotal
-        let measures = system.measures.map { sized -> JustifiedMeasure in
-            let share = slack * (sized.naturalWidth / naturalTotal)
-            let finalWidth = sized.naturalWidth + share
-            let offsets = stretchOffsets(sized.eventOffsets,
-                                         naturalWidth: sized.naturalWidth,
-                                         finalWidth: finalWidth,
-                                         graceIndices: sized.graceEventIndices)
-            return JustifiedMeasure(source: sized, finalWidth: finalWidth, eventOffsets: offsets)
-        }
-        return JustifiedSystem(measures: measures, isLastSystem: system.isLastSystem,
-                               sourceForced: system.sourceForced, clef: system.clef,
-                               keySignature: system.keySignature, meter: system.meter)
+        return JustifiedSystemGroup(staves: group.staves.map { staff in
+            let measures = staff.measures.enumerated().map { column, sized -> JustifiedMeasure in
+                let finalWidth = finalWidths[column]
+                guard finalWidth != sized.naturalWidth else {
+                    return JustifiedMeasure(source: sized, finalWidth: finalWidth,
+                                            eventOffsets: sized.eventOffsets)
+                }
+                let offsets = stretchOffsets(sized.eventOffsets,
+                                             naturalWidth: sized.naturalWidth,
+                                             finalWidth: finalWidth,
+                                             graceIndices: sized.graceEventIndices)
+                return JustifiedMeasure(source: sized, finalWidth: finalWidth, eventOffsets: offsets)
+            }
+            return JustifiedSystem(measures: measures, isLastSystem: staff.isLastSystem,
+                                   sourceForced: staff.sourceForced, clef: staff.clef,
+                                   keySignature: staff.keySignature, meter: staff.meter)
+        })
     }
 
     /// The width the system's music is laid out to.

@@ -33,6 +33,12 @@ private func makeMeasure(events: [Event], closing: BarLine = singleBar) -> Measu
 }
 
 private func makeVoice(id: String, measures: [Measure]) -> Voice {
+    makeVoice(id: id, staves: [Staff(measures: measures, overlays: [])])
+}
+
+/// A voice with an explicit stave list — one stave per source line, which is what the
+/// semantic pass produces and what the line breaker turns into forced system breaks.
+private func makeVoice(id: String, staves: [Staff]) -> Voice {
     Voice(
         id: .named(id),
         properties: VoiceProperties(
@@ -44,7 +50,7 @@ private func makeVoice(id: String, measures: [Measure]) -> Voice {
             stemDirection:   .auto,
             middleNote:      nil
         ),
-        staves:     [Staff(measures: measures, overlays: [])],
+        staves:     staves,
         directives: [],
         source:     dummyRange
     )
@@ -169,17 +175,22 @@ private func simpleJigScore() -> Score {
 
     // MARK: Page overflow
 
-    /// Three voices on a 100 pt-tall page forces a second page.
+    /// One voice of three source lines on a 100 pt-tall page forces a second page.
     ///
-    /// Geometry: usable height = 80 pt; staffHeight = 18; systemGap = 22.5.
-    ///   System 1 bottom: 10 + 18 = 28 pt.
-    ///   System 2 bottom: 28 + 22.5 + 18 = 68.5 pt.
-    ///   System 3 top:   68.5 + 22.5 = 91 pt + 18 = 109 pt > 90 → next page.
+    /// Three *staves* of one voice rather than three voices: since #58 a tune's voices are
+    /// engraved as the staves of one system, so three voices would be one system tall, not
+    /// three systems deep, and would test the opposite of what this is about.
+    ///
+    /// Geometry: usable height = 80 pt; staffHeight = 24; systemGap = 24.
+    ///   System 1 bottom: 10 + 24 = 34 pt.
+    ///   System 2 bottom: 34 + 24 + 24 = 82 pt.
+    ///   System 3 top:   82 + 24 = 106 pt + 24 = 130 pt > 90 → next page.
     @Test func systemsOverflowingPageProduceMultipleElements() throws {
         let quarter = Fraction(numerator: 1, denominator: 1)
         let measure = makeMeasure(events: [.note(makeNote(step: .c, octave: 4, duration: quarter))])
-        let voices  = (1...3).map { i in makeVoice(id: "\(i)", measures: [measure]) }
-        let tune    = makeTune(voices: voices, unitNoteLength: Fraction(numerator: 1, denominator: 4))
+        let staves  = (1...3).map { _ in Staff(measures: [measure], overlays: []) }
+        let tune    = makeTune(voices: [makeVoice(id: "1", staves: staves)],
+                               unitNoteLength: Fraction(numerator: 1, denominator: 4))
         let score   = makeScore(tunes: [tune])
         let config  = SVGRenderConfig(
             pageSize: PageSize(width: 400, height: 100),

@@ -103,6 +103,7 @@ public struct VerticalLayoutEngine: Sendable {
         var previousAbcLine: Int?
 
         for block in tuneBlocks {
+            let groups = block.systemGroups
             // %%ceolkit:scale sizes this tune's music (and the gaps derived from staffSize)
             // relative to the renderer default. Page size and margins stay absolute.
             let tuneConfig  = config.scaled(by: block.scale)
@@ -135,44 +136,29 @@ public struct VerticalLayoutEngine: Sendable {
             }
             y += block.titleBlockHeight
 
-            for (si, jsystem) in block.systems.enumerated() {
-                let (extraAbove, extraBelow) = verticalExtent(of: jsystem, staffSize: staffSize)
-                let totalHeight = extraAbove + staffHeight + extraBelow
+            for (gi, group) in groups.enumerated() {
+                let metrics = groupMetrics(of: group, staffSize: staffSize, staffGap: tuneConfig.staffGap)
 
-                if !pageSystems.isEmpty && y + totalHeight > config.pageSize.height - config.margins.bottom {
+                // A group breaks to the next page whole: splitting it would separate staves
+                // that only mean anything read together.
+                if !pageSystems.isEmpty && y + metrics.totalHeight > config.pageSize.height - config.margins.bottom {
                     pages.append(ResolvedPage(systems: pageSystems, titleRows: pageTitleRows))
                     pageSystems = []
                     pageTitleRows = []
                     y = config.margins.top
                 }
 
-                let systemOrigin = Point(x: config.margins.left, y: y)
-                let startWidth = systemStartWidth(for: jsystem, staffSize: staffSize)
-                let measures = resolveMeasures(
-                    jsystem.measures,
-                    systemOrigin: systemOrigin,
-                    extraAbove: extraAbove,
-                    systemStartWidth: startWidth
-                )
-                let abcLine = resolvedAbcLine(of: jsystem, previous: previousAbcLine)
+                // Every staff in the group reports the group's line, so the anchor sequence
+                // down the page stays monotonic (issue #41).
+                let abcLine = resolvedAbcLine(of: group.staves[0], previous: previousAbcLine)
                 previousAbcLine = abcLine
-                pageSystems.append(ResolvedSystem(
-                    origin: systemOrigin,
-                    measures: measures,
-                    staffOrigin: extraAbove,
-                    staffSize: staffSize,
-                    staffHeight: staffHeight,
-                    graceNoteSpacing: block.graceNoteSpacing,
-                    extraAbove: extraAbove,
-                    extraBelow: extraBelow,
-                    totalHeight: totalHeight,
-                    clef: jsystem.clef,
-                    keySignature: jsystem.keySignature,
-                    meter: jsystem.meter,
-                    abcLine: abcLine
-                ))
-                let isLastInBlock = si == block.systems.count - 1
-                y += totalHeight + (isLastInBlock ? tuneGap : systemGap)
+                pageSystems.append(contentsOf: resolveGroup(
+                    group, metrics: metrics, topY: y, staffSize: staffSize,
+                    staffHeight: staffHeight, staffGap: tuneConfig.staffGap,
+                    graceNoteSpacing: block.graceNoteSpacing, abcLine: abcLine))
+
+                let isLastInBlock = gi == groups.count - 1
+                y += metrics.totalHeight + (isLastInBlock ? tuneGap : systemGap)
             }
         }
 
@@ -187,19 +173,101 @@ public struct VerticalLayoutEngine: Sendable {
         )
     }
 
+    // MARK: - Staff groups
+
+    /// The vertical shape of one system: where each of its staves sits relative to the
+    /// system's top, and how tall the whole thing is.
+    private struct GroupMetrics {
+        /// Per staff, the space its ledger lines and annotations need above and below it,
+        /// and the y of its top staff line relative to the system's top edge.
+        let staves: [(extraAbove: Double, extraBelow: Double, staffTopOffset: Double)]
+        /// Full height of the group: every staff's extent plus the gaps between them.
+        let totalHeight: Double
+        /// Width of the widest clef + key + time signature run in the group.  Every staff
+        /// starts its first measure there, so their bar lines can align.
+        let startWidth: Double
+    }
+
+    private func groupMetrics(of group: JustifiedSystemGroup, staffSize: Double,
+                              staffGap: Double) -> GroupMetrics {
+        let staffHeight = 4.0 * staffSize
+        var staves: [(extraAbove: Double, extraBelow: Double, staffTopOffset: Double)] = []
+        staves.reserveCapacity(group.staves.count)
+        var offset = 0.0
+        var startWidth = 0.0
+        for (i, staff) in group.staves.enumerated() {
+            let (extraAbove, extraBelow) = verticalExtent(of: staff, staffSize: staffSize)
+            staves.append((extraAbove, extraBelow, offset + extraAbove))
+            offset += extraAbove + staffHeight + extraBelow
+            if i < group.staves.count - 1 { offset += staffGap }
+            startWidth = max(startWidth, systemStartWidth(for: staff, staffSize: staffSize))
+        }
+        return GroupMetrics(staves: staves, totalHeight: offset, startWidth: startWidth)
+    }
+
+    /// Places every staff of one system, top to bottom, starting at `topY`.
+    private func resolveGroup(_ group: JustifiedSystemGroup, metrics: GroupMetrics,
+                              topY: Double, staffSize: Double, staffHeight: Double,
+                              staffGap: Double, graceNoteSpacing: Double,
+                              abcLine: Int) -> [ResolvedSystem] {
+        // A group of one is an ordinary system: no membership, no group furniture, and the
+        // same output the renderer produced before staff groups existed.
+        let isGrouped = group.staves.count > 1
+        // The foot of the line that joins the staves at the left edge: the bottom staff line
+        // of the last staff.
+        let last = metrics.staves[metrics.staves.count - 1]
+        let groupBottomY = topY + last.staffTopOffset + staffHeight
+
+        return group.staves.enumerated().map { i, staff in
+            let (extraAbove, extraBelow, staffTopOffset) = metrics.staves[i]
+            // `origin.y` is the top of the staff's own band; `staffOrigin` walks down from
+            // there to the top staff line, exactly as in the single-staff case.
+            let systemOrigin = Point(x: config.margins.left, y: topY + staffTopOffset - extraAbove)
+            let measures = resolveMeasures(
+                staff.measures,
+                systemOrigin: systemOrigin,
+                extraAbove: extraAbove,
+                systemStartWidth: metrics.startWidth
+            )
+            let membership: StaffGroup? = isGrouped ? StaffGroup(
+                index: i,
+                count: group.staves.count,
+                nextStaffTopY: i + 1 < metrics.staves.count
+                    ? topY + metrics.staves[i + 1].staffTopOffset
+                    : nil,
+                bottomY: groupBottomY
+            ) : nil
+            return ResolvedSystem(
+                origin: systemOrigin,
+                measures: measures,
+                staffOrigin: extraAbove,
+                staffSize: staffSize,
+                staffHeight: staffHeight,
+                graceNoteSpacing: graceNoteSpacing,
+                extraAbove: extraAbove,
+                extraBelow: extraBelow,
+                totalHeight: extraAbove + staffHeight + extraBelow,
+                clef: staff.clef,
+                keySignature: staff.keySignature,
+                meter: staff.meter,
+                abcLine: abcLine,
+                staffGroup: membership
+            )
+        }
+    }
+
     // MARK: - Clef width
 
     /// Returns the total vertical space required to render `block` on a single page,
     /// including its title block, all systems, and inter-system gaps (but not the
     /// trailing gap that follows the last system).
     private func totalHeight(of block: TuneBlock) -> Double {
-        let tuneConfig  = config.scaled(by: block.scale)
-        let staffHeight = 4.0 * tuneConfig.staffSize
+        let tuneConfig = config.scaled(by: block.scale)
         var h = block.titleBlockHeight
-        for (i, jsystem) in block.systems.enumerated() {
-            let (ea, eb) = verticalExtent(of: jsystem, staffSize: tuneConfig.staffSize)
-            h += ea + staffHeight + eb
-            if i < block.systems.count - 1 { h += tuneConfig.systemGap }
+        for (i, group) in block.systemGroups.enumerated() {
+            h += groupMetrics(of: group, staffSize: tuneConfig.staffSize,
+                              staffGap: tuneConfig.staffGap).totalHeight
+            if i < block.systemGroups.count - 1 { h += tuneConfig.systemGap }
         }
         return h
     }

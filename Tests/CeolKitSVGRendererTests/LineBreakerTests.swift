@@ -173,4 +173,65 @@ private let usableWidth: Double = 300
         let systems = breaker.breakIntoSystems([], usableWidth: usableWidth)
         #expect(systems.isEmpty)
     }
+
+    // MARK: - Joint breaking (issue #58)
+
+    private func voiceLine(widths: [Double]) -> LineBreaker.VoiceLine {
+        LineBreaker.VoiceLine(measures: widths.map(sizedMeasure(width:)))
+    }
+
+    // Every voice breaks at the same measure index, or the staves desynchronise.
+    @Test func voicesBreakAtTheSameMeasureIndex() {
+        let voices = [voiceLine(widths: [90, 90, 90, 90]), voiceLine(widths: [90, 90, 90, 90])]
+        let groups = breaker.breakIntoGroups(voices, breaks: [nil, nil, nil, nil],
+                                             usableWidth: usableWidth)
+        #expect(groups.count == 2)
+        for group in groups {
+            #expect(group.staves.count == 2)
+            #expect(group.staves.map(\.measures.count) == [2, 2])
+        }
+    }
+
+    // A column is as wide as its widest voice, so the break has to be driven by the max —
+    // not by either voice on its own, which would let a system overrun the line.
+    @Test func columnWidthIsTheMaxAcrossVoices() {
+        // Voice 1 alone would fit 3 columns of 60 on a 300 pt line alongside a 90; voice 2
+        // makes two of those columns 150 wide, so only two columns fit.
+        let voices = [voiceLine(widths: [90, 60, 60]), voiceLine(widths: [90, 150, 150])]
+        let groups = breaker.breakIntoGroups(voices, breaks: [nil, nil, nil],
+                                             usableWidth: usableWidth)
+        #expect(groups.map(\.columnCount) == [2, 1])
+    }
+
+    // A .hard break closes the system in every voice at once.
+    @Test func sourceBreakClosesTheWholeGroup() {
+        let voices = [voiceLine(widths: [50, 50, 50]), voiceLine(widths: [50, 50, 50])]
+        let groups = breaker.breakIntoGroups(voices, breaks: [nil, .hard, nil],
+                                             usableWidth: usableWidth)
+        #expect(groups.map(\.columnCount) == [2, 1])
+        #expect(groups[0].sourceForced)
+        #expect(groups[0].staves.allSatisfy { $0.sourceForced })
+        #expect(groups[1].isLastSystem)
+    }
+
+    // A one-voice tune goes through the joint path and comes out as it always did.
+    @Test func oneVoiceGivesGroupsOfOneStaff() {
+        let groups = breaker.breakIntoGroups([voiceLine(widths: [90, 90, 90, 90])],
+                                             breaks: [nil, nil, nil, nil],
+                                             usableWidth: usableWidth)
+        #expect(groups.map(\.staves.count) == [1, 1])
+        #expect(groups.map(\.columnCount) == [2, 2])
+    }
+
+    // The time signature is stamped on every staff of the first system, and no other.
+    @Test func meterGoesOnEveryStaffOfTheFirstSystemOnly() {
+        let voices = (0..<2).map { _ in
+            LineBreaker.VoiceLine(measures: [90, 90, 90, 90].map(sizedMeasure(width:)),
+                                  meter: .fraction(num: 4, den: 4))
+        }
+        let groups = breaker.breakIntoGroups(voices, breaks: [nil, nil, nil, nil],
+                                             usableWidth: usableWidth)
+        #expect(groups[0].staves.allSatisfy { $0.meter != nil })
+        #expect(groups[1].staves.allSatisfy { $0.meter == nil })
+    }
 }

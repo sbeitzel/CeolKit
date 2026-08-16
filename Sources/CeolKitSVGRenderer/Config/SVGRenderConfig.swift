@@ -6,6 +6,13 @@ public struct SVGRenderConfig: Sendable {
     public var staffSize: Double
     /// Vertical gap added between systems within a single tune.
     public var systemGap: Double
+    /// Vertical gap added between the staves *within* one system — the staff group a
+    /// multi-voice tune draws for each source line.
+    ///
+    /// Deliberately smaller than ``systemGap``: the staves of a system are read together,
+    /// so they have to sit closer to each other than the system does to its neighbours,
+    /// or the group stops reading as a unit.  Only tunes with more than one voice use it.
+    public var staffGap: Double
     /// Vertical gap added after the last system of a tune, before the next tune's title block.
     public var tuneGap: Double
     public var justifyLastSystem: Bool
@@ -36,6 +43,7 @@ public struct SVGRenderConfig: Sendable {
         margins: EdgeInsets = EdgeInsets(top: 36, bottom: 36, left: 36, right: 36),
         staffSize: Double = 6.0,
         systemGap: Double? = nil,
+        staffGap: Double? = nil,
         tuneGap: Double? = nil,
         justifyLastSystem: Bool = false,
         straightFlags: Bool = false,
@@ -49,6 +57,7 @@ public struct SVGRenderConfig: Sendable {
         self.margins = margins
         self.staffSize = staffSize
         self.systemGap = systemGap ?? staffSize * 4
+        self.staffGap = staffGap ?? staffSize * 3
         self.tuneGap = tuneGap ?? staffSize * 16
         self.justifyLastSystem = justifyLastSystem
         self.straightFlags = straightFlags
@@ -67,6 +76,7 @@ public struct SVGRenderConfig: Sendable {
         var copy = self
         copy.staffSize = staffSize * factor
         copy.systemGap = systemGap * factor
+        copy.staffGap = staffGap * factor
         copy.tuneGap = tuneGap * factor
         return copy
     }

@@ -47,105 +47,162 @@ public struct LineBreaker: Sendable {
         keySignature: KeySignature? = nil,
         meter: Meter? = nil
     ) -> [System] {
-        var systems: [System] = []
+        let voice = VoiceLine(measures: measures.map(\.measure), clef: clef,
+                              keySignature: keySignature, meter: meter)
+        return breakIntoGroups([voice], breaks: measures.map(\.breakAfter),
+                               usableWidth: usableWidth,
+                               firstSystemHeaderWidth: firstSystemHeaderWidth,
+                               laterSystemHeaderWidth: laterSystemHeaderWidth)
+            .map { $0.staves[0] }
+    }
 
-        for stave in staves(of: measures) {
+    /// One voice's contribution to a joint break: its measures and the header material that
+    /// travels with them.
+    public struct VoiceLine: Sendable {
+        public let measures: [SizedMeasure]
+        public let clef: ClefSpec
+        public let keySignature: KeySignature?
+        /// Stamped on the voice's first system only.
+        public let meter: Meter?
+
+        public init(measures: [SizedMeasure], clef: ClefSpec = ClefSpec(clef: .treble, octaveShift: 0),
+                    keySignature: KeySignature? = nil, meter: Meter? = nil) {
+            self.measures = measures
+            self.clef = clef
+            self.keySignature = keySignature
+            self.meter = meter
+        }
+    }
+
+    /// Breaks every voice of a tune at the same measure indices, producing one `SystemGroup`
+    /// per system.
+    ///
+    /// The voices must already agree on measure count and break positions — `VoiceAligner`
+    /// pads them into agreement, and warns when it had to.  That is why there is a single
+    /// `breaks` array rather than one per voice: a break has to fall at the same measure
+    /// index in every voice or the staves desynchronise, so there is only one decision to make.
+    ///
+    /// Column widths are the `max` across the voices, not each voice's own: a column is only
+    /// as narrow as its widest staff can be drawn.
+    ///
+    /// - Parameters:
+    ///   - voices: One entry per voice, in `V:` declaration order. Every `measures` array
+    ///     has the same count, equal to `breaks.count`.
+    ///   - breaks: The source line-break hint following each measure column.
+    ///   - firstSystemHeaderWidth: Header width on the tune's first system — already the
+    ///     `max` across voices, since the group's staves must start at a common x.
+    ///   - laterSystemHeaderWidth: Same for every later system (no time signature).
+    public func breakIntoGroups(
+        _ voices: [VoiceLine],
+        breaks: [ScoreLineBreak?],
+        usableWidth: Double,
+        firstSystemHeaderWidth: Double = 0,
+        laterSystemHeaderWidth: Double = 0
+    ) -> [SystemGroup] {
+        guard let first = voices.first, !first.measures.isEmpty else { return [] }
+
+        // A column is as wide as its widest voice needs it to be.
+        let columnWidths = (0..<first.measures.count).map { column in
+            voices.reduce(0.0) { max($0, $1.measures[column].naturalWidth) }
+        }
+
+        var groups: [SystemGroup] = []
+        for stave in staves(columnCount: columnWidths.count, breaks: breaks) {
             // Header width — and therefore the space left for music — differs between the
-            // very first system of the voice and every later one.
-            let firstSystemIndex = systems.count
+            // very first system of the tune and every later one.
+            let firstSystemIndex = groups.count
             let available: (Int) -> Double = { indexWithinStave in
                 usableWidth - (firstSystemIndex + indexWithinStave == 0
                                ? firstSystemHeaderWidth
                                : laterSystemHeaderWidth)
             }
 
-            let groups = pack(stave.measures, available: available)
-            for (i, group) in groups.enumerated() {
-                let isLastOfStave = i == groups.count - 1
-                systems.append(System(
-                    measures: group,
-                    isLastSystem: false,
-                    // Only the group that ends on the source break inherited it.
-                    sourceForced: stave.endsAtSourceBreak && isLastOfStave,
-                    staveWasSplit: groups.count > 1,
-                    clef: clef,
-                    keySignature: keySignature,
-                    meter: systems.isEmpty ? meter : nil
-                ))
+            let ranges = pack(Array(columnWidths[stave.columns]), available: available)
+                .map { $0.offset(by: stave.columns.lowerBound) }
+            for (i, range) in ranges.enumerated() {
+                let isLastOfStave = i == ranges.count - 1
+                let isFirstOfTune = groups.isEmpty
+                groups.append(SystemGroup(staves: voices.map { voice in
+                    System(
+                        measures: Array(voice.measures[range]),
+                        isLastSystem: false,
+                        // Only the system that ends on the source break inherited it.
+                        sourceForced: stave.endsAtSourceBreak && isLastOfStave,
+                        staveWasSplit: ranges.count > 1,
+                        clef: voice.clef,
+                        keySignature: voice.keySignature,
+                        meter: isFirstOfTune ? voice.meter : nil
+                    )
+                }))
             }
         }
 
         // Mark the trailing system.
-        if !systems.isEmpty {
-            let last = systems.removeLast()
-            systems.append(System(measures: last.measures, isLastSystem: true,
-                                  sourceForced: last.sourceForced,
-                                  staveWasSplit: last.staveWasSplit, clef: clef,
-                                  keySignature: keySignature, meter: last.meter))
+        if let last = groups.popLast() {
+            groups.append(SystemGroup(staves: last.staves.map { staff in
+                System(measures: staff.measures, isLastSystem: true,
+                       sourceForced: staff.sourceForced, staveWasSplit: staff.staveWasSplit,
+                       clef: staff.clef, keySignature: staff.keySignature, meter: staff.meter)
+            }))
         }
 
-        return systems
+        return groups
     }
 
     // MARK: - Staves
 
     private struct Stave {
-        let measures: [SizedMeasure]
+        /// The measure columns this stave covers.
+        let columns: Range<Int>
         /// `true` when the stave closes on a `.hard` source break rather than on the end of input.
         let endsAtSourceBreak: Bool
     }
 
-    /// Splits the input at every `.hard` break.  A trailing run with no break after it is a
-    /// stave too — it just ends at the end of the voice.
-    private func staves(
-        of measures: [(measure: SizedMeasure, breakAfter: ScoreLineBreak?)]
-    ) -> [Stave] {
+    /// Splits `0..<columnCount` at every `.hard` break.  A trailing run with no break after
+    /// it is a stave too — it just ends at the end of the tune.
+    private func staves(columnCount: Int, breaks: [ScoreLineBreak?]) -> [Stave] {
         var result: [Stave] = []
-        var current: [SizedMeasure] = []
-        for (sized, breakAfter) in measures {
-            current.append(sized)
-            if breakAfter == .hard {
-                result.append(Stave(measures: current, endsAtSourceBreak: true))
-                current = []
-            }
+        var start = 0
+        for column in 0..<columnCount where column < breaks.count && breaks[column] == .hard {
+            result.append(Stave(columns: start..<(column + 1), endsAtSourceBreak: true))
+            start = column + 1
         }
-        if !current.isEmpty {
-            result.append(Stave(measures: current, endsAtSourceBreak: false))
+        if start < columnCount {
+            result.append(Stave(columns: start..<columnCount, endsAtSourceBreak: false))
         }
         return result
     }
 
     // MARK: - Packing
 
-    /// Splits one stave into system-sized groups.
+    /// Splits one stave into system-sized runs of columns, as ranges into `widths`.
     ///
     /// `available(i)` gives the width left for music on the `i`-th system of this stave.
-    private func pack(_ measures: [SizedMeasure], available: (Int) -> Double) -> [[SizedMeasure]] {
-        guard !measures.isEmpty else { return [] }
-        let greedy = greedyPack(measures, available: available)
+    private func pack(_ widths: [Double], available: (Int) -> Double) -> [Range<Int>] {
+        guard !widths.isEmpty else { return [] }
+        let greedy = greedyPack(widths, available: available)
         // A stave that fits on one system has nothing to rebalance.
         guard greedy.count > 1 else { return greedy }
-        return balance(measures, systemCount: greedy.count, available: available) ?? greedy
+        return balance(widths, systemCount: greedy.count, available: available) ?? greedy
     }
 
     /// First-fit packing.  Establishes the minimum number of systems the stave needs; the
-    /// balancing pass keeps that number and only moves measures between the groups.
-    private func greedyPack(_ measures: [SizedMeasure], available: (Int) -> Double) -> [[SizedMeasure]] {
-        var groups: [[SizedMeasure]] = []
-        var bucket: [SizedMeasure] = []
+    /// balancing pass keeps that number and only moves columns between the systems.
+    private func greedyPack(_ widths: [Double], available: (Int) -> Double) -> [Range<Int>] {
+        var groups: [Range<Int>] = []
+        var start = 0
         var bucketWidth: Double = 0
 
-        for sized in measures {
+        for (i, width) in widths.enumerated() {
             let limit = capacity(available(groups.count))
-            if !bucket.isEmpty && bucketWidth + sized.naturalWidth > limit {
-                groups.append(bucket)
-                bucket = []
+            if i > start && bucketWidth + width > limit {
+                groups.append(start..<i)
+                start = i
                 bucketWidth = 0
             }
-            bucket.append(sized)
-            bucketWidth += sized.naturalWidth
+            bucketWidth += width
         }
-        if !bucket.isEmpty { groups.append(bucket) }
+        if start < widths.count { groups.append(start..<widths.count) }
         return groups
     }
 
@@ -154,21 +211,21 @@ public struct LineBreaker: Sendable {
         available * (1 + overflowTolerance)
     }
 
-    /// Redistributes `measures` over exactly `systemCount` systems, minimising the total
+    /// Redistributes the columns over exactly `systemCount` systems, minimising the total
     /// squared relative slack.
     ///
     /// Measure counts per stave are small (a source line is rarely more than a dozen bars),
     /// so an exact O(systemCount · n²) dynamic program is cheaper than reasoning about when a
     /// heuristic would misfire.  Returns `nil` if no assignment respects the width limits,
     /// which cannot happen for a `systemCount` that greedy first-fit already achieved.
-    private func balance(_ measures: [SizedMeasure], systemCount: Int,
-                         available: (Int) -> Double) -> [[SizedMeasure]]? {
-        let n = measures.count
+    private func balance(_ widths: [Double], systemCount: Int,
+                         available: (Int) -> Double) -> [Range<Int>]? {
+        let n = widths.count
         guard systemCount > 1, systemCount <= n else { return nil }
 
-        // prefix[i] = summed natural width of measures[0..<i]
+        // prefix[i] = summed natural width of widths[0..<i]
         var prefix = [Double](repeating: 0, count: n + 1)
-        for i in 0..<n { prefix[i + 1] = prefix[i] + measures[i].naturalWidth }
+        for i in 0..<n { prefix[i + 1] = prefix[i] + widths[i] }
 
         // cost[s][i]: best badness for packing measures[i...] into exactly `s` systems.
         // choice[s][i]: where the system starting at `i` ends in that solution.
@@ -207,11 +264,11 @@ public struct LineBreaker: Sendable {
 
         guard cost[systemCount][0] < .infinity else { return nil }
 
-        var groups: [[SizedMeasure]] = []
+        var groups: [Range<Int>] = []
         var start = 0
         for s in stride(from: systemCount, through: 1, by: -1) {
             let end = choice[s][start]
-            groups.append(Array(measures[start..<end]))
+            groups.append(start..<end)
             start = end
         }
         return groups
@@ -226,4 +283,8 @@ public struct LineBreaker: Sendable {
         let slack = (available - groupWidth) / available
         return slack * slack
     }
+}
+
+private extension Range where Bound == Int {
+    func offset(by delta: Int) -> Range<Int> { (lowerBound + delta)..<(upperBound + delta) }
 }

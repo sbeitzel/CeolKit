@@ -149,6 +149,50 @@ private let usableWidth: Double = 300
         #expect(result[0].measures[0].finalWidth > result[0].measures[1].finalWidth)
     }
 
+    // MARK: - Staff groups (issue #58)
+
+    // Every staff of a system gets the same measure widths, so its bar lines line up
+    // vertically down the group.
+    @Test func staffGroupSharesOneSetOfMeasureWidths() {
+        let group = SystemGroup(staves: [
+            makeSystem(widths: [80, 100, 60], isLast: false),
+            makeSystem(widths: [50, 120, 90], isLast: false),
+        ])
+        let result = justifier.justifyGroups([group], usableWidth: usableWidth,
+                                             justifyLastSystem: false)
+        #expect(result[0].staves.count == 2)
+        #expect(result[0].staves[0].measures.map(\.finalWidth)
+                == result[0].staves[1].measures.map(\.finalWidth))
+        // And the group still fills the line.
+        let total = result[0].staves[0].measures.reduce(0.0) { $0 + $1.finalWidth }
+        #expect(abs(total - usableWidth) < 1e-9)
+    }
+
+    // Column widths come from the widest staff, so a staff whose measure is narrower than
+    // the column simply gets more slack inside it rather than dragging the column in.
+    @Test func columnWidthIsDrivenByTheWidestStaff() {
+        // Naturals: columns are max(10, 140) = 140 and max(140, 10) = 140 — an even split,
+        // which neither staff would produce on its own.
+        let group = SystemGroup(staves: [
+            makeSystem(widths: [10, 140], isLast: false),
+            makeSystem(widths: [140, 10], isLast: false),
+        ])
+        let result = justifier.justifyGroups([group], usableWidth: usableWidth,
+                                             justifyLastSystem: false)
+        let widths = result[0].staves[0].measures.map(\.finalWidth)
+        #expect(abs(widths[0] - widths[1]) < 1e-9)
+    }
+
+    // A group of one staff is the pre-grouping path: same numbers, same everything.
+    @Test func groupOfOneMatchesTheSingleSystemPath() {
+        let system = makeSystem(widths: [80, 100, 60], isLast: false)
+        let viaGroups = justifier.justifyGroups([SystemGroup(staves: [system])],
+                                                usableWidth: usableWidth, justifyLastSystem: false)
+        let direct = justifier.justify([system], usableWidth: usableWidth, justifyLastSystem: false)
+        #expect(viaGroups[0].staves[0].measures.map(\.finalWidth)
+                == direct[0].measures.map(\.finalWidth))
+    }
+
     // MARK: - Grace-note spacing
 
     // When a measure contains a grace+note pair, the internal grace-to-note gap must not

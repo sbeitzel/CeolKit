@@ -38,6 +38,10 @@ public enum DiagnosticCode: String, Codable, Sendable {
     case constructOutOfOrder
     case reservedCharacter
     case danglingTie
+    /// Two voices of the same tune disagree about how much music a source line holds,
+    /// so the staves of a system cannot be aligned from the source alone.  The renderer
+    /// pads the short voice with invisible full-measure rests and carries on.
+    case voiceLengthMismatch
     // Fields
     case unknownField
     case malformedFieldPayload

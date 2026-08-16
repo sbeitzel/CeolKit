@@ -69,13 +69,40 @@ public struct System: Sendable {
     }
 }
 
+/// One system's worth of unjustified music: the staves of every voice that is active on
+/// the source line the system came from, in `V:` declaration order.
+///
+/// A single-voice tune produces groups of exactly one staff, which is the pre-grouping
+/// path unchanged — every stage below treats a one-staff group as an ordinary system.
+public struct SystemGroup: Sendable {
+    /// One entry per voice, top to bottom.  Never empty.
+    ///
+    /// Every staff holds the same number of measures and was broken at the same measure
+    /// index, because `VoiceAligner` padded the voices into agreement before the line
+    /// breaker ever saw them.
+    public let staves: [System]
+
+    public init(staves: [System]) {
+        self.staves = staves
+    }
+
+    /// The properties the line breaker assigned to the group as a whole.  They are recorded
+    /// on every staff identically, so the first one speaks for all of them.
+    public var isLastSystem: Bool { staves[0].isLastSystem }
+    public var sourceForced: Bool { staves[0].sourceForced }
+    public var staveWasSplit: Bool { staves[0].staveWasSplit }
+    /// Number of measures in each staff — the group's column count.
+    public var columnCount: Int { staves[0].measures.count }
+}
+
 /// Groups the justified systems and optional title block for a single tune.
 ///
 /// `titleRows` use `baselineY` values relative to the top of the tune's title area
 /// (i.e. `y = 0` origin). The layout engine adds the actual page y-origin when placing them,
 /// so the same `TuneBlock` can be positioned anywhere on a page.
 public struct TuneBlock: Sendable {
-    public let systems: [JustifiedSystem]
+    /// One entry per system, each holding one staff per voice.
+    public let systemGroups: [JustifiedSystemGroup]
     public let titleRows: [ResolvedTitleRow]
     public let titleBlockHeight: Double
     /// Multiplier applied to `SVGRenderConfig.staffSize` (and the inter-system/inter-tune gaps
@@ -88,18 +115,43 @@ public struct TuneBlock: Sendable {
     /// so the emitter has to draw with the same one.
     public let graceNoteSpacing: Double
 
-    public init(systems: [JustifiedSystem], titleRows: [ResolvedTitleRow] = [],
+    public init(systemGroups: [JustifiedSystemGroup], titleRows: [ResolvedTitleRow] = [],
                 titleBlockHeight: Double = 0, scale: Double = 1.0,
                 graceNoteSpacing: Double = SVGRenderConfig().graceNoteSpacing) {
-        self.systems = systems
+        self.systemGroups = systemGroups
         self.titleRows = titleRows
         self.titleBlockHeight = titleBlockHeight
         self.scale = scale
         self.graceNoteSpacing = graceNoteSpacing
     }
+
+    /// Convenience for single-voice music: each system becomes a group of one staff.
+    public init(systems: [JustifiedSystem], titleRows: [ResolvedTitleRow] = [],
+                titleBlockHeight: Double = 0, scale: Double = 1.0,
+                graceNoteSpacing: Double = SVGRenderConfig().graceNoteSpacing) {
+        self.init(systemGroups: systems.map { JustifiedSystemGroup(staves: [$0]) },
+                  titleRows: titleRows, titleBlockHeight: titleBlockHeight,
+                  scale: scale, graceNoteSpacing: graceNoteSpacing)
+    }
 }
 
 // MARK: - Pass 3 output
+
+/// A `SystemGroup` after justification.
+///
+/// Every staff carries the same per-column final widths, so a bar line at column *j* lands
+/// on the same x on all of them — which is the whole point of engraving voices in parallel.
+public struct JustifiedSystemGroup: Sendable {
+    /// One entry per voice, top to bottom.  Never empty.
+    public let staves: [JustifiedSystem]
+
+    public init(staves: [JustifiedSystem]) {
+        self.staves = staves
+    }
+
+    public var isLastSystem: Bool { staves[0].isLastSystem }
+    public var sourceForced: Bool { staves[0].sourceForced }
+}
 
 public struct JustifiedSystem: Sendable {
     public let measures: [JustifiedMeasure]
@@ -205,6 +257,37 @@ public enum TextAnchor: String, Sendable {
     case start, middle, end
 }
 
+/// Where one staff sits inside a multi-staff system, and how far the furniture that belongs
+/// to the *group* rather than to this staff has to reach.
+///
+/// Present only when the system holds more than one voice.  A single-voice tune leaves
+/// ``ResolvedSystem/staffGroup`` nil and the emitter takes exactly the path it always did.
+public struct StaffGroup: Sendable {
+    /// 0-based position of this staff within its group, top to bottom.
+    public let index: Int
+    /// Number of staves in the group.  Always > 1 — a group of one is represented by `nil`.
+    public let count: Int
+    /// Absolute y of the *next* staff's top staff line, or `nil` on the group's last staff.
+    ///
+    /// Bar lines are drawn down to this instead of stopping at their own staff, so the
+    /// group's bar lines read as one continuous stroke through the whole system.  Repeat
+    /// dots still sit within the staff that owns them.
+    public let nextStaffTopY: Double?
+    /// Absolute y of the bottom staff line of the group's last staff — the foot of the
+    /// vertical line that joins the staves at the left edge.
+    public let bottomY: Double
+
+    public init(index: Int, count: Int, nextStaffTopY: Double?, bottomY: Double) {
+        self.index = index
+        self.count = count
+        self.nextStaffTopY = nextStaffTopY
+        self.bottomY = bottomY
+    }
+
+    /// `true` on the staff that draws the furniture spanning the whole group.
+    public var isGroupLeader: Bool { index == 0 }
+}
+
 public struct ResolvedSystem: Sendable {
     public let origin: Point
     public let measures: [ResolvedMeasure]
@@ -231,7 +314,12 @@ public struct ResolvedSystem: Sendable {
     public let meter: Meter?
     /// 1-based ABC source line that first contributed content to this staff system.
     /// Used to emit scroll-sync anchor metadata (see `%%ceolkit` extension, issue #25).
+    ///
+    /// In a multi-voice system every staff reports the *group's* line — the first voice's —
+    /// rather than its own, so the anchor sequence down a page stays monotonic (issue #41).
     public let abcLine: Int
+    /// Non-nil when this staff is one of several in a system; see ``StaffGroup``.
+    public let staffGroup: StaffGroup?
 
     public init(
         origin: Point,
@@ -246,7 +334,8 @@ public struct ResolvedSystem: Sendable {
         clef: ClefSpec = ClefSpec(clef: .treble, octaveShift: 0),
         keySignature: KeySignature? = nil,
         meter: Meter? = nil,
-        abcLine: Int = 1
+        abcLine: Int = 1,
+        staffGroup: StaffGroup? = nil
     ) {
         self.origin = origin
         self.measures = measures
@@ -261,6 +350,7 @@ public struct ResolvedSystem: Sendable {
         self.keySignature = keySignature
         self.meter = meter
         self.abcLine = abcLine
+        self.staffGroup = staffGroup
     }
 }
 

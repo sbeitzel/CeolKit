@@ -16,6 +16,19 @@ public struct SVGRenderer: CeolKitRenderer {
 
     /// Returns one SVG string per page.
     public func render(_ score: Score) throws -> [String] {
+        var diagnostics: [Diagnostic] = []
+        return try render(score, diagnostics: &diagnostics)
+    }
+
+    /// Returns one SVG string per page, appending anything the *renderer* had to complain
+    /// about to `diagnostics`.
+    ///
+    /// Separate from `render(_:)` because rendering can discover problems parsing cannot:
+    /// laying two voices out as one system means the voices have to agree about where the
+    /// bar lines fall, and only the renderer is in a position to notice that they do not
+    /// (see `VoiceAligner`).  `Score.diagnostics` is already sealed by then, so the caller
+    /// that wants to report both concatenates them.
+    public func render(_ score: Score, diagnostics: inout [Diagnostic]) throws -> [String] {
         let metadata = try BravuraMetadata.load()
 
         // Apply score-level directives that affect the whole document.
@@ -65,44 +78,58 @@ public struct SVGRenderer: CeolKitRenderer {
             // set after `scaled(by:)` and never multiplied by the scale factor.
             tuneConfig.graceNoteSpacing = graceNoteSpacing
             let sizer = MeasureSizer(config: tuneConfig, metadata: metadata)
-            var tuneSystems: [JustifiedSystem] = []
-            var meterForFirstSystem: Meter? = tune.meter
-            for voice in tune.voices {
-                // Build (measure, breakAfter) pairs honouring stave boundaries.
-                // The semantic pass creates one Staff per source line-break, so the
-                // last measure of every non-final stave gets a .hard score line-break.
-                var pairs: [(measure: SizedMeasure, breakAfter: ScoreLineBreak?)] = []
-                let staves = voice.staves
-                for (si, stave) in staves.enumerated() {
-                    let isLastStave = si == staves.count - 1
-                    for (mi, m) in stave.measures.enumerated() {
-                        let forceBreak = !isLastStave && mi == stave.measures.count - 1
-                        pairs.append((
-                            measure: sizer.size(m, unitNoteLength: tune.unitNoteLength),
-                            breakAfter: forceBreak ? .hard : nil
-                        ))
+
+            // Bring the voices into agreement about how much music each source line holds,
+            // so the break points chosen below are legal for every one of them. Voices that
+            // disagree are padded and warned about rather than laid out sequentially.
+            let alignedStaves = VoiceAligner.align(tune.voices, into: &diagnostics)
+
+            // Flatten the aligned staves into one measure column per bar, carrying the
+            // stave boundaries as .hard breaks: the semantic pass makes one Staff per source
+            // line-break, so the last column of every non-final stave forces a system break.
+            var breaks: [ScoreLineBreak?] = []
+            var columnsPerVoice = [[SizedMeasure]](repeating: [], count: tune.voices.count)
+            for (si, stave) in alignedStaves.enumerated() {
+                let isLastStave = si == alignedStaves.count - 1
+                for column in 0..<stave.measureCount {
+                    breaks.append(!isLastStave && column == stave.measureCount - 1 ? .hard : nil)
+                    for voiceIndex in tune.voices.indices {
+                        columnsPerVoice[voiceIndex].append(
+                            sizer.size(stave.measures[voiceIndex][column],
+                                       unitNoteLength: tune.unitNoteLength))
                     }
                 }
-                guard !pairs.isEmpty else { continue }
-                // Header widths differ between the first system (has time sig) and later ones.
-                let firstHeaderW = systemHeaderWidth(
-                    clef: voice.properties.clef, keySignature: tune.key, meter: meterForFirstSystem,
-                    metadata: metadata, staffSize: tuneConfig.staffSize)
-                let laterHeaderW = systemHeaderWidth(
-                    clef: voice.properties.clef, keySignature: tune.key, meter: nil,
-                    metadata: metadata, staffSize: tuneConfig.staffSize)
-                let systems = breaker.breakIntoSystems(pairs, usableWidth: usableWidth,
-                                                       firstSystemHeaderWidth: firstHeaderW,
-                                                       laterSystemHeaderWidth: laterHeaderW,
-                                                       clef: voice.properties.clef,
-                                                       keySignature: tune.key,
-                                                       meter: meterForFirstSystem)
-                meterForFirstSystem = nil
-                let headerWidths = systems.enumerated().map { i, _ in i == 0 ? firstHeaderW : laterHeaderW }
-                let justified = justifier.justify(systems, usableWidth: usableWidth,
-                                                  justifyLastSystem: justifyLastSystem,
-                                                  systemHeaderWidths: headerWidths)
-                tuneSystems.append(contentsOf: justified)
+            }
+
+            var tuneGroups: [JustifiedSystemGroup] = []
+            if !breaks.isEmpty {
+                let voiceLines = tune.voices.enumerated().map { index, voice in
+                    LineBreaker.VoiceLine(measures: columnsPerVoice[index],
+                                          clef: voice.properties.clef,
+                                          keySignature: tune.key,
+                                          meter: tune.meter)
+                }
+                // Header widths differ between the first system (has time sig) and later
+                // ones, and are the max across the group: the staves of a system have to
+                // start at the same x even when one voice's clef or key signature is wider.
+                let firstHeaderW = tune.voices.reduce(0.0) { widest, voice in
+                    max(widest, systemHeaderWidth(clef: voice.properties.clef, keySignature: tune.key,
+                                                  meter: tune.meter, metadata: metadata,
+                                                  staffSize: tuneConfig.staffSize))
+                }
+                let laterHeaderW = tune.voices.reduce(0.0) { widest, voice in
+                    max(widest, systemHeaderWidth(clef: voice.properties.clef, keySignature: tune.key,
+                                                  meter: nil, metadata: metadata,
+                                                  staffSize: tuneConfig.staffSize))
+                }
+                let groups = breaker.breakIntoGroups(voiceLines, breaks: breaks,
+                                                     usableWidth: usableWidth,
+                                                     firstSystemHeaderWidth: firstHeaderW,
+                                                     laterSystemHeaderWidth: laterHeaderW)
+                let headerWidths = groups.indices.map { $0 == 0 ? firstHeaderW : laterHeaderW }
+                tuneGroups = justifier.justifyGroups(groups, usableWidth: usableWidth,
+                                                     justifyLastSystem: justifyLastSystem,
+                                                     systemHeaderWidths: headerWidths)
             }
 
             // Build the title block for this tune per §6.1.3.
@@ -116,7 +143,7 @@ public struct SVGRenderer: CeolKitRenderer {
             let (titleRows, titleBlockHeight) = SpecTitleBlockBuilder(
                 tune: tune, writeFields: tuneWriteFields, layoutConfig: effectiveConfig
             ).build()
-            tuneBlocks.append(TuneBlock(systems: tuneSystems, titleRows: titleRows,
+            tuneBlocks.append(TuneBlock(systemGroups: tuneGroups, titleRows: titleRows,
                                         titleBlockHeight: titleBlockHeight, scale: scale,
                                         graceNoteSpacing: graceNoteSpacing))
         }

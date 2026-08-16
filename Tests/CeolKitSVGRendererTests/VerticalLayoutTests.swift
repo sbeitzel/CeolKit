@@ -239,4 +239,98 @@ private let metadata      = try! BravuraMetadata.load()
         let secondToLast = allSystems[allSystems.count - 2]
         #expect(last.abcLine == secondToLast.abcLine + 1)
     }
+
+    // MARK: - Staff groups (issue #58)
+
+    private func group(_ staves: [JustifiedSystem]) -> JustifiedSystemGroup {
+        JustifiedSystemGroup(staves: staves)
+    }
+
+    // The staves of a system stack downward, separated by staffGap, and are all placed
+    // before the next system starts.
+    @Test func groupStavesStackWithStaffGap() {
+        let block = TuneBlock(systemGroups: [group([
+            justifiedSystem(measures: [emptyMeasure(line: 3)]),
+            justifiedSystem(measures: [emptyMeasure(line: 4)], isLast: true),
+        ])])
+        let systems = engine.layout([block]).pages[0].systems
+        #expect(systems.count == 2)
+        let staffHeight = 4.0 * defaultConfig.staffSize
+        #expect(abs(systems[1].origin.y - (systems[0].origin.y + staffHeight + defaultConfig.staffGap)) < 1e-9)
+        // Closer together than two systems would be: that is what makes the group read as one.
+        #expect(defaultConfig.staffGap < defaultConfig.systemGap)
+    }
+
+    // The next system clears the whole group, not just its last staff.
+    @Test func nextSystemClearsTheWholeGroup() {
+        let block = TuneBlock(systemGroups: [
+            group([justifiedSystem(measures: [emptyMeasure(line: 3)]),
+                   justifiedSystem(measures: [emptyMeasure(line: 4)])]),
+            group([justifiedSystem(measures: [emptyMeasure(line: 5)]),
+                   justifiedSystem(measures: [emptyMeasure(line: 6)], isLast: true)]),
+        ])
+        let systems = engine.layout([block]).pages[0].systems
+        #expect(systems.count == 4)
+        let staffHeight = 4.0 * defaultConfig.staffSize
+        let groupHeight = 2 * staffHeight + defaultConfig.staffGap
+        #expect(abs(systems[2].origin.y - (systems[0].origin.y + groupHeight + defaultConfig.systemGap)) < 1e-9)
+    }
+
+    // Membership records where each staff sits and how far the group's furniture reaches.
+    @Test func groupMembershipDescribesTheGroup() {
+        let block = TuneBlock(systemGroups: [group([
+            justifiedSystem(measures: [emptyMeasure(line: 3)]),
+            justifiedSystem(measures: [emptyMeasure(line: 4)], isLast: true),
+        ])])
+        let systems = engine.layout([block]).pages[0].systems
+        let staffHeight = 4.0 * defaultConfig.staffSize
+        let top = try! #require(systems[0].staffGroup)
+        let bottom = try! #require(systems[1].staffGroup)
+        #expect(top.index == 0 && top.count == 2 && top.isGroupLeader)
+        #expect(bottom.index == 1 && !bottom.isGroupLeader)
+        // The top staff's bar lines reach the bottom staff's top line; the bottom staff's stop.
+        #expect(top.nextStaffTopY == systems[1].origin.y + systems[1].staffOrigin)
+        #expect(bottom.nextStaffTopY == nil)
+        // Both agree on where the joining rule ends.
+        #expect(top.bottomY == bottom.bottomY)
+        #expect(abs(top.bottomY - (systems[1].origin.y + systems[1].staffOrigin + staffHeight)) < 1e-9)
+    }
+
+    // A one-voice tune carries no membership, so the emitter takes its original path.
+    @Test func singleStaffSystemHasNoGroupMembership() {
+        let block = TuneBlock(systems: [justifiedSystem(measures: [emptyMeasure(line: 3)], isLast: true)])
+        let systems = engine.layout([block]).pages[0].systems
+        #expect(systems[0].staffGroup == nil)
+    }
+
+    // Every staff reports the group's line, so the anchor sequence stays monotonic (#41).
+    @Test func everyStaffOfAGroupReportsTheGroupsLine() {
+        let block = TuneBlock(systemGroups: [
+            group([justifiedSystem(measures: [emptyMeasure(line: 8)]),
+                   justifiedSystem(measures: [emptyMeasure(line: 9)])]),
+            group([justifiedSystem(measures: [emptyMeasure(line: 10)]),
+                   justifiedSystem(measures: [emptyMeasure(line: 11)], isLast: true)]),
+        ])
+        let systems = engine.layout([block]).pages[0].systems
+        #expect(systems.map(\.abcLine) == [8, 8, 10, 10])
+    }
+
+    // A group breaks to the next page whole rather than being split across the fold.
+    @Test func groupIsNotSplitAcrossAPageBreak() {
+        // A page just tall enough for one two-staff group plus a little.
+        let staffHeight = 4.0 * defaultConfig.staffSize
+        let groupHeight = 2 * staffHeight + defaultConfig.staffGap
+        let config = SVGRenderConfig(
+            pageSize: PageSize(width: 400, height: 20 + groupHeight + defaultConfig.systemGap + staffHeight),
+            margins: EdgeInsets(top: 10, bottom: 10, left: 10, right: 10))
+        let tightEngine = VerticalLayoutEngine(config: config, metadata: metadata)
+        let block = TuneBlock(systemGroups: (0..<2).map { i in
+            group([justifiedSystem(measures: [emptyMeasure(line: 8 + 2 * i)]),
+                   justifiedSystem(measures: [emptyMeasure(line: 9 + 2 * i)], isLast: i == 1)])
+        })
+        let pages = tightEngine.layout([block]).pages
+        #expect(pages.count == 2)
+        // Two staves per page — never one staff orphaned from its partner.
+        #expect(pages.map(\.systems.count) == [2, 2])
+    }
 }

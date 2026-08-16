@@ -128,6 +128,12 @@ struct SVGEmitter: Sendable {
     /// Emits the `ceolkit-meta` comment (issue #25) listing each staff system's
     /// originating ABC source line and page Y coordinate, so editor consumers
     /// (e.g. ScoreEdit) can synchronise scroll position with the source.
+    ///
+    /// One anchor per staff drawn, including each staff of a multi-voice system — the
+    /// geometry reader pairs anchors with staves positionally, so the two counts have to
+    /// match.  The staves of a system all carry the system's line, which leaves the
+    /// sequence monotonic: a consumer keeping only strictly increasing anchors (#41) ends
+    /// up with exactly the top staff of each system, which is the one it wants.
     private func emitScrollSyncMetadata(for page: ResolvedPage, pageNumber: Int, builder: inout SVGBuilder) {
         let anchors = page.systems.map { system in
             "{\"abcLine\": \(system.abcLine), \"y\": \(builder.fmt(system.origin.y))}"
@@ -177,6 +183,7 @@ struct SVGEmitter: Sendable {
                              pendingTies: inout [TieAnchor], pendingSlurs: inout [SlurAnchor],
                              builder: inout SVGBuilder) {
         emitStaffLines(system, builder: &builder)
+        emitStaffGroupConnector(system, builder: &builder)
         emitClef(system, builder: &builder)
         if let keySig = system.keySignature {
             emitKeySignature(keySig, system: system, builder: &builder)
@@ -232,6 +239,27 @@ struct SVGEmitter: Sendable {
             builder.line(x1: leftX, y1: y, x2: rightX, y2: y,
                          stroke: "black", strokeWidth: thickness)
         }
+    }
+
+    /// The vertical rule at the left edge that joins the staves of a multi-voice system.
+    ///
+    /// Without it the staves of a system are just neighbouring staves; with it they read as
+    /// one system, which is what tells a player that the parts are to be followed together.
+    /// Drawn once per group, by its top staff.
+    ///
+    /// Deliberately just the joining rule, and no brace or bracket: which staves a brace or
+    /// bracket spans is a property of `%%score`/`%%staves`, which CeolKit does not parse yet.
+    ///
+    /// Drawn at the staff lines' own weight rather than a barline's.  It is a continuation
+    /// of the staff furniture, so that is what it should look like — and it is what lets
+    /// `CeolKitSVGGeometry` tell it apart from the barlines it now sits alongside, which
+    /// are thicker.
+    private func emitStaffGroupConnector(_ system: ResolvedSystem, builder: inout SVGBuilder) {
+        guard let group = system.staffGroup, group.isGroupLeader else { return }
+        let topY = system.origin.y + system.staffOrigin
+        let thickness = metadata.engravingDefaults.staffLineThickness * config.staffSize
+        builder.line(x1: system.origin.x, y1: topY, x2: system.origin.x, y2: group.bottomY,
+                     stroke: "black", strokeWidth: thickness)
     }
 
     // MARK: - Clef
@@ -371,11 +399,16 @@ struct SVGEmitter: Sendable {
                               builder: inout SVGBuilder) {
         let topY    = system.origin.y + system.staffOrigin
         let bottomY = topY + system.staffHeight
+        // In a multi-staff system the bar lines run on down to the next staff's top line, so
+        // the group's bar lines read as one stroke through the whole system.  Repeat dots
+        // still belong to the staff that owns them, so they keep `bottomY`.
+        let lineBottomY = system.staffGroup?.nextStaffTopY ?? bottomY
 
         if let opening = measure.openingBar {
-            emitBarLine(opening, topY: topY, bottomY: bottomY, builder: &builder)
+            emitBarLine(opening, topY: topY, bottomY: bottomY, lineBottomY: lineBottomY, builder: &builder)
         }
-        emitBarLine(measure.closingBar, topY: topY, bottomY: bottomY, builder: &builder)
+        emitBarLine(measure.closingBar, topY: topY, bottomY: bottomY,
+                    lineBottomY: lineBottomY, builder: &builder)
 
         if let meter = measure.meter {
             let thin = metadata.engravingDefaults.thinBarlineThickness * config.staffSize
@@ -564,37 +597,48 @@ struct SVGEmitter: Sendable {
 
     // MARK: - Bar lines
 
+    /// Draws one bar line.
+    ///
+    /// - Parameters:
+    ///   - topY: Y of this staff's top line.
+    ///   - bottomY: Y of this staff's bottom line.  Sizes the staff-relative furniture —
+    ///     the repeat dots, which always sit inside the staff that owns them.
+    ///   - lineBottomY: How far down the vertical strokes actually run.  Equal to `bottomY`
+    ///     on a single staff and on the last staff of a system; on any other staff of a
+    ///     multi-voice system it is the *next* staff's top line, so the bar line carries
+    ///     through the gap and the system's bar lines read as one stroke.
     private func emitBarLine(_ bar: ResolvedBarLine, topY: Double, bottomY: Double,
-                              builder: inout SVGBuilder) {
+                              lineBottomY: Double? = nil, builder: inout SVGBuilder) {
         let thin    = metadata.engravingDefaults.thinBarlineThickness  * config.staffSize
         let thick   = metadata.engravingDefaults.thickBarlineThickness * config.staffSize
         let sep     = metadata.engravingDefaults.barlineSeparation     * config.staffSize
         let wideSep = sep * 2.0
+        let footY   = lineBottomY ?? bottomY
 
         switch bar.kind {
         case .single, .dotted:
-            builder.line(x1: bar.x, y1: topY, x2: bar.x, y2: bottomY,
+            builder.line(x1: bar.x, y1: topY, x2: bar.x, y2: footY,
                          stroke: "black", strokeWidth: thin)
 
         case .double:
             // Right-anchored: trailing thin bar at bar.x, leading thin bar to its left,
             // so the pair ends where the staff lines end at a system break.
-            builder.line(x1: bar.x - sep, y1: topY, x2: bar.x - sep, y2: bottomY,
+            builder.line(x1: bar.x - sep, y1: topY, x2: bar.x - sep, y2: footY,
                          stroke: "black", strokeWidth: thin)
-            builder.line(x1: bar.x,       y1: topY, x2: bar.x,       y2: bottomY,
+            builder.line(x1: bar.x,       y1: topY, x2: bar.x,       y2: footY,
                          stroke: "black", strokeWidth: thin)
 
         case .final:
             // Right-anchored: thick bar trailing edge at bar.x, thin bar to its left.
-            builder.line(x1: bar.x - wideSep, y1: topY, x2: bar.x - wideSep, y2: bottomY,
+            builder.line(x1: bar.x - wideSep, y1: topY, x2: bar.x - wideSep, y2: footY,
                          stroke: "black", strokeWidth: thin)
-            builder.line(x1: bar.x,           y1: topY, x2: bar.x,           y2: bottomY,
+            builder.line(x1: bar.x,           y1: topY, x2: bar.x,           y2: footY,
                          stroke: "black", strokeWidth: thick)
 
         case .start:
-            builder.line(x1: bar.x,            y1: topY, x2: bar.x,            y2: bottomY,
+            builder.line(x1: bar.x,            y1: topY, x2: bar.x,            y2: footY,
                          stroke: "black", strokeWidth: thick)
-            builder.line(x1: bar.x + wideSep,  y1: topY, x2: bar.x + wideSep,  y2: bottomY,
+            builder.line(x1: bar.x + wideSep,  y1: topY, x2: bar.x + wideSep,  y2: footY,
                          stroke: "black", strokeWidth: thin)
 
         case .repeatEnd:
@@ -602,14 +646,14 @@ struct SVGEmitter: Sendable {
             let thickX = bar.x
             let thinX  = thickX - wideSep
             emitRepeatDots(isStartSide: false, nearX: thinX, topY: topY, bottomY: bottomY, builder: &builder)
-            builder.line(x1: thinX,  y1: topY, x2: thinX,  y2: bottomY, stroke: "black", strokeWidth: thin)
-            builder.line(x1: thickX, y1: topY, x2: thickX, y2: bottomY, stroke: "black", strokeWidth: thick)
+            builder.line(x1: thinX,  y1: topY, x2: thinX,  y2: footY, stroke: "black", strokeWidth: thin)
+            builder.line(x1: thickX, y1: topY, x2: thickX, y2: footY, stroke: "black", strokeWidth: thick)
 
         case .repeatStart:
             let thinX  = bar.x
             let thickX = thinX + wideSep
-            builder.line(x1: thinX,  y1: topY, x2: thinX,  y2: bottomY, stroke: "black", strokeWidth: thin)
-            builder.line(x1: thickX, y1: topY, x2: thickX, y2: bottomY, stroke: "black", strokeWidth: thick)
+            builder.line(x1: thinX,  y1: topY, x2: thinX,  y2: footY, stroke: "black", strokeWidth: thin)
+            builder.line(x1: thickX, y1: topY, x2: thickX, y2: footY, stroke: "black", strokeWidth: thick)
             emitRepeatDots(isStartSide: true, nearX: thickX, topY: topY, bottomY: bottomY, builder: &builder)
 
         case .repeatBoth:
@@ -618,15 +662,15 @@ struct SVGEmitter: Sendable {
             let thickX = bar.x
             let thinX  = thickX - wideSep
             emitRepeatDots(isStartSide: false, nearX: thinX, topY: topY, bottomY: bottomY, builder: &builder)
-            builder.line(x1: thinX,  y1: topY, x2: thinX,  y2: bottomY, stroke: "black", strokeWidth: thin)
-            builder.line(x1: thickX, y1: topY, x2: thickX, y2: bottomY, stroke: "black", strokeWidth: thick)
+            builder.line(x1: thinX,  y1: topY, x2: thinX,  y2: footY, stroke: "black", strokeWidth: thin)
+            builder.line(x1: thickX, y1: topY, x2: thickX, y2: footY, stroke: "black", strokeWidth: thick)
             emitRepeatDots(isStartSide: true, nearX: thickX, topY: topY, bottomY: bottomY, builder: &builder)
 
         case .sectionRepeatStart:
             let thickX = bar.x
             let thinX  = thickX + wideSep
-            builder.line(x1: thickX, y1: topY, x2: thickX, y2: bottomY, stroke: "black", strokeWidth: thick)
-            builder.line(x1: thinX,  y1: topY, x2: thinX,  y2: bottomY, stroke: "black", strokeWidth: thin)
+            builder.line(x1: thickX, y1: topY, x2: thickX, y2: footY, stroke: "black", strokeWidth: thick)
+            builder.line(x1: thinX,  y1: topY, x2: thinX,  y2: footY, stroke: "black", strokeWidth: thin)
             emitRepeatDots(isStartSide: true, nearX: thinX, topY: topY, bottomY: bottomY, builder: &builder)
 
         case .repeatEndSection:
@@ -634,8 +678,8 @@ struct SVGEmitter: Sendable {
             let thickX = bar.x
             let thinX  = thickX - wideSep
             emitRepeatDots(isStartSide: false, nearX: thinX, topY: topY, bottomY: bottomY, builder: &builder)
-            builder.line(x1: thinX,  y1: topY, x2: thinX,  y2: bottomY, stroke: "black", strokeWidth: thin)
-            builder.line(x1: thickX, y1: topY, x2: thickX, y2: bottomY, stroke: "black", strokeWidth: thick)
+            builder.line(x1: thinX,  y1: topY, x2: thinX,  y2: footY, stroke: "black", strokeWidth: thin)
+            builder.line(x1: thickX, y1: topY, x2: thickX, y2: footY, stroke: "black", strokeWidth: thick)
         }
     }
 

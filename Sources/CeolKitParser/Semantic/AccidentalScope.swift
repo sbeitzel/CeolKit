@@ -7,7 +7,7 @@ import CeolKitModel
 ///
 /// The key signature provides the baseline alteration for each step (octave-independent).
 /// Within a bar, explicit written accidentals override the key signature for subsequent
-/// notes at the same pitch level (step + octave), per ABC spec §4.3.
+/// notes at the same pitch level (step + octave), because that's how music works..
 struct AccidentalScope {
     let keyAlterations: [DiatonicStep: Alteration]
     private var barMemory: [(step: DiatonicStep, octave: Int, alteration: Alteration)] = []

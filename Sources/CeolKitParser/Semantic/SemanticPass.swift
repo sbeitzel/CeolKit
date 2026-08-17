@@ -189,7 +189,6 @@ struct SemanticPass {
             meter: meter,
             key: key,
             userSymbols: ctx.userSymbols,
-            macros: ctx.macros,
             headerVoices: ctx.headerVoices,
             linebreakChars: ctx.linebreakChars,
             linebreakOnEOL: ctx.linebreakOnEOL
@@ -285,27 +284,27 @@ struct SemanticPass {
         ctx: inout BodyContext,
         diagnostics: inout [Diagnostic]
     ) {
+        // The one cursor in the pass, threaded from here down.  It is a parameter rather than
+        // a field on BodyContext so nothing can read "the current voice" implicitly.
+        var voice = "1"
         for line in body {
             // Check if this is a single-field lyric line
             if line.count == 1, case .inlineField(let f, _) = line[0], case .lyric(let tokens, _) = f {
-                ctx.applyLyrics(tokens)
+                ctx.applyLyrics(tokens, in: voice)
                 continue
             }
-            // Record lyric anchor before processing this music line
-            for id in ctx.voiceOrder {
-                ctx.lyricMeasureAnchor[id] = ctx.voiceData[id]?.closedMeasures.count ?? 0
-            }
-            ctx.lyricMeasureAnchor[ctx.currentVoiceId] =
-                ctx.voiceData[ctx.currentVoiceId]?.closedMeasures.count ?? 0
-            walkLine(line, ctx: &ctx, diagnostics: &diagnostics)
+            // Record lyric anchors before processing this music line
+            ctx.recordLyricAnchors()
+            walkLine(line, voice: &voice, ctx: &ctx, diagnostics: &diagnostics)
             if ctx.linebreakOnEOL {
-                ctx.splitCurrentStave()
+                ctx.splitStave(in: voice)
             }
         }
     }
 
     private func walkLine(
         _ elements: [MusicElement],
+        voice: inout String,
         ctx: inout BodyContext,
         diagnostics: inout [Diagnostic]
     ) {
@@ -313,98 +312,100 @@ struct SemanticPass {
         let resolved = resolveBrokenRhythms(elements)
 
         for elem in resolved {
-            walkElement(elem, ctx: &ctx, diagnostics: &diagnostics)
+            walkElement(elem, voice: &voice, ctx: &ctx, diagnostics: &diagnostics)
         }
         // Finish any open grace group (malformed; just close it)
-        if ctx.inGrace {
-            ctx.flushGrace()
+        if ctx.isInGrace(voice) {
+            ctx.flushGrace(in: voice)
         }
     }
 
     private func walkElement(
         _ elem: MusicElement,
+        voice: inout String,
         ctx: inout BodyContext,
         diagnostics: inout [Diagnostic]
     ) {
-        let prevWasSpace = ctx.lastElementWasSpace
-        ctx.lastElementWasSpace = false
+        let prevWasSpace = ctx.lastElementWasSpace(in: voice)
+        ctx.setLastElementWasSpace(false, in: voice)
 
         switch elem {
         case .note(let tok):
-            let event = buildNoteEvent(tok, ctx: &ctx)
-            ctx.emit(event)
+            let event = buildNoteEvent(tok, voice: voice, ctx: &ctx)
+            ctx.emit(event, in: voice)
 
         case .chord(let notes, let src):
-            let event = buildChordEvent(notes, source: src, ctx: &ctx)
-            ctx.emit(event)
+            let event = buildChordEvent(notes, source: src, voice: voice, ctx: &ctx)
+            ctx.emit(event, in: voice)
 
         case .rest(let kind, let dur, let src):
             let duration = resolveDuration(dur)
-            let rest = Rest(kind: kind, duration: duration, decorations: ctx.flushDecorations(), source: src)
-            ctx.emit(.rest(rest))
+            let decorations = ctx.flushDecorations(in: voice, source: src)
+            let rest = Rest(kind: kind, duration: duration, decorations: decorations, source: src)
+            ctx.emit(.rest(rest), in: voice)
 
         case .barLine(let kind, let src):
-            ctx.closeCurrentMeasure(barLine: BarLine(kind: kind, source: src))
-            ctx.resetBarAccidentals()
+            ctx.closeMeasure(barLine: BarLine(kind: kind, source: src), in: voice)
+            ctx.resetBarAccidentals(in: voice)
 
         case .inlineField(let field, let src):
-            applyInlineField(field, source: src, ctx: &ctx, diagnostics: &diagnostics)
+            applyInlineField(field, source: src, voice: &voice, ctx: &ctx, diagnostics: &diagnostics)
 
-        case .graceStart(let acciaccatura, _):
-            ctx.startGrace(acciaccatura: acciaccatura)
+        case .graceStart(let acciaccatura, let src):
+            ctx.startGrace(acciaccatura: acciaccatura, source: src, in: voice)
 
         case .graceEnd(let src):
-            ctx.flushGrace(source: src)
+            ctx.flushGrace(source: src, in: voice)
 
-        case .decoration(let tok, _):
+        case .decoration(let tok, let src):
             let decoration = expandDecoration(tok, userSymbols: ctx.userSymbols)
             // Post-note decoration: if preceded by a space and there's a note in currentEvents,
             // apply retroactively to the preceding note.
-            if prevWasSpace && ctx.applyDecorationToLastNote(decoration) {
+            if prevWasSpace && ctx.applyDecorationToLastNote(decoration, in: voice) {
                 // Applied retroactively
             } else {
-                ctx.pendingDecorations.append(decoration)
+                ctx.addPendingDecoration(decoration, in: voice, source: src)
             }
 
         case .annotation(let pos, let text, let src):
-            ctx.pendingAnnotations.append(Annotation(
+            ctx.addPendingAnnotation(Annotation(
                 position: pos,
                 text: TextString(value: text, source: src),
                 source: src
-            ))
+            ), in: voice)
 
         case .chordSymbol(let s, let src):
-            ctx.pendingChordSymbol = parseChordSymbol(s, source: src)
+            ctx.setPendingChordSymbol(parseChordSymbol(s, source: src), in: voice, source: src)
 
         case .tupletStart(let p, let q, let r, let src):
             let resolvedQ = q ?? defaultQ(p: p, meter: ctx.meter)
             let resolvedR = r ?? p
-            ctx.startTuplet(p: p, q: resolvedQ, r: resolvedR, source: src)
+            ctx.startTuplet(p: p, q: resolvedQ, r: resolvedR, source: src, in: voice)
 
-        case .slurOpen:
-            ctx.openSlurs += 1
+        case .slurOpen(let src):
+            ctx.openSlur(in: voice, source: src)
 
-        case .slurClose:
+        case .slurClose(let src):
             // `)` is a post-fix on the preceding note, not a prefix for the next.
             // Retroactively add the close to the last emitted note so that
             // `(A2 | A2) B` gives A2 `closes:1`, not B.
-            if !ctx.addSlurCloseToLastNote() {
-                ctx.closeSlurs += 1   // fallback: no note yet, carry forward
+            if !ctx.addSlurCloseToLastNote(in: voice) {
+                ctx.carrySlurClose(in: voice, source: src)   // fallback: no note yet, carry forward
             }
 
-        case .endingNumber(let nums, _):
-            ctx.pendingEndingNumber = nums
+        case .endingNumber(let nums, let src):
+            ctx.setPendingEndingNumber(nums, in: voice, source: src)
 
         case .space(let src):
-            ctx.emitSpaceBreak(source: src)
-            ctx.lastElementWasSpace = true
+            ctx.emitSpaceBreak(source: src, in: voice)
+            ctx.setLastElementWasSpace(true, in: voice)
 
         case .brokenRhythm:
             break  // already handled in resolveBrokenRhythms pre-pass
 
         case .unknown(let ch, let src):
             if ctx.linebreakChars.contains(ch) {
-                ctx.splitCurrentStave()
+                ctx.splitStave(in: voice)
             } else {
                 let severity: Diagnostic.Severity = options.strictRecovery ? .error : .warning
                 diagnostics.append(Diagnostic(
@@ -418,13 +419,13 @@ struct SemanticPass {
 
     // MARK: - Note / chord building
 
-    private func buildNoteEvent(_ tok: NoteToken, ctx: inout BodyContext) -> Event {
+    private func buildNoteEvent(_ tok: NoteToken, voice: String, ctx: inout BodyContext) -> Event {
         let step = diatonicStep(from: tok.pitchLetter)
         // ABC octave convention: uppercase C..B = octave 4 (middle C = C4), lowercase c..b = octave 5
         let baseOctave = tok.pitchLetter.isUppercase ? 4 : 5
         let octave = baseOctave + tok.octaveMarks
 
-        let currentResolved = ctx.resolveAccidental(step: step, octave: octave)
+        let currentResolved = ctx.resolveAccidental(step: step, octave: octave, in: voice)
         let writtenAlt = tok.accidental.map { alterationFromToken($0) }
         let playedAlt: Alteration
         let displayedAlt: Alteration?
@@ -432,7 +433,7 @@ struct SemanticPass {
             playedAlt = written
             // displayedAccidental is nil when the accidental is redundant (bar memory already implies it)
             displayedAlt = (written == currentResolved) ? nil : written
-            ctx.recordAccidental(step: step, octave: octave, alteration: written)
+            ctx.recordAccidental(step: step, octave: octave, alteration: written, in: voice, source: tok.source)
         } else {
             playedAlt = currentResolved
             displayedAlt = nil
@@ -441,7 +442,7 @@ struct SemanticPass {
         let pitch = Pitch(step: step, alteration: playedAlt, octave: octave)
         let duration = resolveDuration(tok.duration)
         let tieState: TieState = tok.tie ? .startsTie : .none
-        let (opens, closes) = ctx.consumeSlurs()
+        let (opens, closes) = ctx.consumeSlurs(in: voice, source: tok.source)
 
         let note = Note(
             pitch: pitch,
@@ -450,38 +451,43 @@ struct SemanticPass {
             duration: duration,
             ties: tieState,
             slurs: SlurState(opens: opens, closes: closes),
-            decorations: ctx.flushDecorations(),
-            chordSymbol: ctx.flushChordSymbol(),
-            annotations: ctx.flushAnnotations(),
+            decorations: ctx.flushDecorations(in: voice, source: tok.source),
+            chordSymbol: ctx.flushChordSymbol(in: voice, source: tok.source),
+            annotations: ctx.flushAnnotations(in: voice, source: tok.source),
             beam: .single,
             lyric: nil,
             source: tok.source
         )
 
-        if ctx.inGrace {
-            ctx.graceNotes.append(note)
+        if ctx.isInGrace(voice) {
+            ctx.appendGraceNote(note, in: voice)
             return .note(note)  // returned but not emitted directly; grace buffer holds it
         }
-        if ctx.tupletState != nil {
+        if ctx.isInTuplet(voice) {
             return .note(note)  // will be handed to tuplet collector
         }
         return .note(note)
     }
 
-    private func buildChordEvent(_ notes: [NoteToken], source: SourceRange, ctx: inout BodyContext) -> Event {
+    private func buildChordEvent(
+        _ notes: [NoteToken],
+        source: SourceRange,
+        voice: String,
+        ctx: inout BodyContext
+    ) -> Event {
         let resolvedNotes: [Note] = notes.map { tok in
             let step = diatonicStep(from: tok.pitchLetter)
             let baseOctave = tok.pitchLetter.isUppercase ? 4 : 5
             let octave = baseOctave + tok.octaveMarks
 
-            let currentResolved = ctx.resolveAccidental(step: step, octave: octave)
+            let currentResolved = ctx.resolveAccidental(step: step, octave: octave, in: voice)
             let writtenAlt = tok.accidental.map { alterationFromToken($0) }
             let playedAlt: Alteration
             let displayedAlt: Alteration?
             if let written = writtenAlt {
                 playedAlt = written
                 displayedAlt = (written == currentResolved) ? nil : written
-                ctx.recordAccidental(step: step, octave: octave, alteration: written)
+                ctx.recordAccidental(step: step, octave: octave, alteration: written, in: voice, source: tok.source)
             } else {
                 playedAlt = currentResolved
                 displayedAlt = nil
@@ -508,14 +514,14 @@ struct SemanticPass {
 
         let duration = resolvedNotes.first?.duration ?? Fraction(numerator: 1, denominator: 8)
         let tieState: TieState = resolvedNotes.contains { $0.ties == .startsTie } ? .startsTie : .none
-        let (opens, closes) = ctx.consumeSlurs()
+        let (opens, closes) = ctx.consumeSlurs(in: voice, source: source)
 
         let chord = Chord(
             notes: resolvedNotes,
             duration: duration,
-            decorations: ctx.flushDecorations(),
-            chordSymbol: ctx.flushChordSymbol(),
-            annotations: ctx.flushAnnotations(),
+            decorations: ctx.flushDecorations(in: voice, source: source),
+            chordSymbol: ctx.flushChordSymbol(in: voice, source: source),
+            annotations: ctx.flushAnnotations(in: voice, source: source),
             beam: .single,
             ties: tieState,
             slurs: SlurState(opens: opens, closes: closes),
@@ -530,24 +536,24 @@ struct SemanticPass {
     private func applyInlineField(
         _ field: InformationField,
         source: SourceRange,
+        voice: inout String,
         ctx: inout BodyContext,
         diagnostics: inout [Diagnostic]
     ) {
         switch field {
         case .key(let k):
-            ctx.key = k
-            ctx.rekeyAccidentalScopes(k)
+            ctx.setKey(k)
         case .meter(let m, _):
-            ctx.meter = m
-            ctx.meterChangedSinceLastBar = true
+            ctx.setMeter(m)
         case .unitNoteLength(let f, _):
             ctx.unitNoteLength = f
         case .tempo(let t, _):
-            ctx.emit(.tempoChange(t))
+            ctx.emit(.tempoChange(t), in: voice)
         case .voice(let id, let props, _):
-            ctx.switchVoice(id: id, properties: props)
+            ctx.registerVoice(id: id, properties: props)
+            voice = id          // the one place the cursor moves
         case .lyric(let tokens, _):
-            ctx.applyLyrics(tokens)
+            ctx.applyLyrics(tokens, in: voice)
         case .userSymbol(let ch, let dec, _):
             ctx.userSymbols[ch] = dec
         case .instruction(let t)
@@ -563,7 +569,10 @@ struct SemanticPass {
             let parts = payload.split(separator: " ", maxSplits: 1)
             let dirName = parts.first.map(String.init) ?? payload
             let dirPayload = parts.count > 1 ? String(parts[1]) : ""
-            applyBodyDirective(name: dirName, payload: dirPayload, source: src, ctx: &ctx, diagnostics: &diagnostics)
+            applyBodyDirective(
+                name: dirName, payload: dirPayload, source: src,
+                voice: voice, ctx: &ctx, diagnostics: &diagnostics
+            )
         default:
             break
         }
@@ -573,6 +582,7 @@ struct SemanticPass {
         name: String,
         payload: String,
         source: SourceRange,
+        voice: String,
         ctx: inout BodyContext,
         diagnostics: inout [Diagnostic]
     ) {
@@ -581,9 +591,9 @@ struct SemanticPass {
             if ctx.hasExplicitVoice {
                 var tempDiags: [Diagnostic] = []
                 if let d = parseCeolKitDirective(name: name, payload: payload, source: source, diagnostics: &tempDiags) {
-                    let vid = VoiceId.named(ctx.currentVoiceId)
+                    let vid = VoiceId.named(voice)
                     let scope = Scope.voiceLocal(vid)
-                    ctx.voiceDirectives[ctx.currentVoiceId, default: []].append(
+                    ctx.voiceDirectives[voice, default: []].append(
                         CeolKitDirectiveScope(directive: d, scope: scope, source: source)
                     )
                 }
@@ -967,7 +977,8 @@ struct SemanticPass {
         var voices: [Voice] = []
         var diagnostics: [Diagnostic] = []
 
-        for (voiceId, accumulator) in bodyCtx.voices(orderedBy: bodyCtx.voiceOrder) {
+        for (voiceId, state) in bodyCtx.orderedVoices() {
+            let accumulator = state.accumulator
             let (measures, voiceDiags) = finaliseAccumulator(accumulator, meter: bodyCtx.meter)
             diagnostics += voiceDiags
 

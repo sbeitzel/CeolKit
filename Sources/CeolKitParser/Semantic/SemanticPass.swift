@@ -345,7 +345,7 @@ struct SemanticPass {
 
         case .barLine(let kind, let src):
             ctx.closeCurrentMeasure(barLine: BarLine(kind: kind, source: src))
-            ctx.accidentalScope.resetBar()
+            ctx.resetBarAccidentals()
 
         case .inlineField(let field, let src):
             applyInlineField(field, source: src, ctx: &ctx, diagnostics: &diagnostics)
@@ -424,7 +424,7 @@ struct SemanticPass {
         let baseOctave = tok.pitchLetter.isUppercase ? 4 : 5
         let octave = baseOctave + tok.octaveMarks
 
-        let currentResolved = ctx.accidentalScope.resolve(step: step, octave: octave)
+        let currentResolved = ctx.resolveAccidental(step: step, octave: octave)
         let writtenAlt = tok.accidental.map { alterationFromToken($0) }
         let playedAlt: Alteration
         let displayedAlt: Alteration?
@@ -432,7 +432,7 @@ struct SemanticPass {
             playedAlt = written
             // displayedAccidental is nil when the accidental is redundant (bar memory already implies it)
             displayedAlt = (written == currentResolved) ? nil : written
-            ctx.accidentalScope.record(step: step, octave: octave, alteration: written)
+            ctx.recordAccidental(step: step, octave: octave, alteration: written)
         } else {
             playedAlt = currentResolved
             displayedAlt = nil
@@ -474,14 +474,14 @@ struct SemanticPass {
             let baseOctave = tok.pitchLetter.isUppercase ? 4 : 5
             let octave = baseOctave + tok.octaveMarks
 
-            let currentResolved = ctx.accidentalScope.resolve(step: step, octave: octave)
+            let currentResolved = ctx.resolveAccidental(step: step, octave: octave)
             let writtenAlt = tok.accidental.map { alterationFromToken($0) }
             let playedAlt: Alteration
             let displayedAlt: Alteration?
             if let written = writtenAlt {
                 playedAlt = written
                 displayedAlt = (written == currentResolved) ? nil : written
-                ctx.accidentalScope.record(step: step, octave: octave, alteration: written)
+                ctx.recordAccidental(step: step, octave: octave, alteration: written)
             } else {
                 playedAlt = currentResolved
                 displayedAlt = nil
@@ -536,7 +536,7 @@ struct SemanticPass {
         switch field {
         case .key(let k):
             ctx.key = k
-            ctx.accidentalScope = AccidentalScope(keyAlterations: keyAlterations(for: k))
+            ctx.rekeyAccidentalScopes(k)
         case .meter(let m, _):
             ctx.meter = m
             ctx.meterChangedSinceLastBar = true
@@ -1224,7 +1224,17 @@ private struct BodyContext {
     var key: KeySignature
     var userSymbols: [Character: Decoration]
     var macros: [MacroDefinition]
-    var accidentalScope: AccidentalScope
+
+    /// Bar-scoped accidental memory, one table per voice.
+    ///
+    /// ABC §4.2 scopes a written accidental to the rest of the bar *in the voice that wrote
+    /// it*: a `^F` in the melody must not make the harmony's `F` sound or print as F♯.  A
+    /// voice's table is created on first use, so a voice that never writes an accidental
+    /// costs nothing.
+    private var accidentalScopes: [String: AccidentalScope] = [:]
+    /// Baseline alterations a newly created scope starts from.  Tune-wide today; issue #66
+    /// makes the key per voice, at which point this is looked up from the voice instead.
+    private var scopeKeyAlterations: [DiatonicStep: Alteration]
 
     // Voice tracking
     var currentVoiceId: String = "1"
@@ -1282,7 +1292,7 @@ private struct BodyContext {
         self.key = key
         self.userSymbols = userSymbols
         self.macros = macros
-        self.accidentalScope = AccidentalScope(keyAlterations: keyAlterations(for: key))
+        self.scopeKeyAlterations = keyAlterations(for: key)
         self.voiceProperties = headerVoices
         self.linebreakChars = linebreakChars
         self.linebreakOnEOL = linebreakOnEOL
@@ -1290,6 +1300,40 @@ private struct BodyContext {
 
     mutating func splitCurrentStave() {
         voiceData[currentVoiceId]?.markStaveBoundary()
+    }
+
+    // MARK: Accidental scope (per voice)
+
+    /// The effective alteration for a pitch in the *current* voice: that voice's bar memory
+    /// first, then the key signature.  A voice with no table yet has empty bar memory, so an
+    /// unrecorded voice resolves straight to the key — no need to materialise the table here.
+    func resolveAccidental(step: DiatonicStep, octave: Int) -> Alteration {
+        accidentalScopes[currentVoiceId]?.resolve(step: step, octave: octave)
+            ?? scopeKeyAlterations[step]
+            ?? .natural
+    }
+
+    /// Records a written accidental into the current voice's bar memory.
+    mutating func recordAccidental(step: DiatonicStep, octave: Int, alteration: Alteration) {
+        accidentalScopes[
+            currentVoiceId,
+            default: AccidentalScope(keyAlterations: scopeKeyAlterations)
+        ].record(step: step, octave: octave, alteration: alteration)
+    }
+
+    /// Clears the current voice's bar memory at a bar line.  Other voices keep theirs: they
+    /// reach their own bar lines on their own lines, and in a shared bar the two voices do
+    /// not necessarily cross the bar at the same point in the source.
+    mutating func resetBarAccidentals() {
+        accidentalScopes[currentVoiceId]?.resetBar()
+    }
+
+    /// Re-seeds every voice's scope after a key change, dropping all bar memory — what the
+    /// single shared scope did before, generalised to N voices.  `[K:]` is tune-wide today;
+    /// issue #66 makes it voice-local.
+    mutating func rekeyAccidentalScopes(_ key: KeySignature) {
+        scopeKeyAlterations = keyAlterations(for: key)
+        accidentalScopes.removeAll()
     }
 
     // Returns voices in the order they were first encountered.

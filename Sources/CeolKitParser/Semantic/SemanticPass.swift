@@ -732,14 +732,6 @@ struct SemanticPass {
         reducedFraction(numerator: dur.numerator, denominator: dur.denominator)
     }
 
-    private func reducedFraction(numerator: Int, denominator: Int) -> Fraction {
-        guard numerator != 0 else { return Fraction(numerator: 0, denominator: 1) }
-        let g = gcd(abs(numerator), abs(denominator))
-        return Fraction(numerator: numerator / g, denominator: denominator / g)
-    }
-
-    private func gcd(_ a: Int, _ b: Int) -> Int { b == 0 ? a : gcd(b, a % b) }
-
     // Default q for tuplet (number of normal-note beats in the time of p tuplet notes)
     private func defaultQ(p: Int, meter: Meter?) -> Int {
         switch meter {

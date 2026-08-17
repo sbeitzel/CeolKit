@@ -601,7 +601,7 @@ struct BodyContext {
 private func applyTupletFactor(q: Int, p: Int, to event: Event) -> Event {
     switch event {
     case .note(let n):
-        let dur = reduceFraction(
+        let dur = reducedFraction(
             numerator: n.duration.numerator * q,
             denominator: n.duration.denominator * p
         )
@@ -620,7 +620,7 @@ private func applyTupletFactor(q: Int, p: Int, to event: Event) -> Event {
             source: n.source
         ))
     case .chord(let c):
-        let dur = reduceFraction(
+        let dur = reducedFraction(
             numerator: c.duration.numerator * q,
             denominator: c.duration.denominator * p
         )
@@ -640,11 +640,3 @@ private func applyTupletFactor(q: Int, p: Int, to event: Event) -> Event {
         return event
     }
 }
-
-private func reduceFraction(numerator: Int, denominator: Int) -> Fraction {
-    guard numerator != 0 else { return Fraction(numerator: 0, denominator: 1) }
-    let g = gcdPrivate(abs(numerator), abs(denominator))
-    return Fraction(numerator: numerator / g, denominator: denominator / g)
-}
-
-private func gcdPrivate(_ a: Int, _ b: Int) -> Int { b == 0 ? a : gcdPrivate(b, a % b) }

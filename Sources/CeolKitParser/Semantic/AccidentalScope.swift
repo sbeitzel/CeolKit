@@ -1,6 +1,9 @@
 import CeolKitModel
 
-/// Tracks accidental state within a single bar.
+/// Tracks accidental state within a single bar of a single voice.
+///
+/// One instance per voice — §4.2 scopes an accidental to the bar *and* to the voice that
+/// wrote it, so `BodyContext` keys these by voice id rather than holding one for the tune.
 ///
 /// The key signature provides the baseline alteration for each step (octave-independent).
 /// Within a bar, explicit written accidentals override the key signature for subsequent

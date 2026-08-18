@@ -54,6 +54,9 @@ public enum DiagnosticCode: String, Codable, Sendable {
     // Directives
     case unknownDirective
     case redundantDirective
+    /// A `%%score` / `%%staves` payload did not parse (ABC v2.2 §11.1).  The whole
+    /// directive is dropped rather than stored as a partial tree.
+    case invalidStaffPlan
     // Field keys
     case unknownKey
     // Include directive

@@ -20,6 +20,7 @@ public enum CeolKitDirective: Hashable, Sendable {
     case dateFormat(String)            // %%dateformat <strftime-string>  (abcm2ps/abc2svg)
     case straightFlags(Bool)           // %%straightflags bool  (abcm2ps/abc2svg)
     case graceSlurs(Bool)              // %%graceslurs bool      (abcm2ps/abc2svg)
+    case staffPlan(StaffPlan)          // %%score / %%staves     (ABC v2.2 §11.1)
 }
 
 public struct CeolKitDirectiveScope: Sendable {

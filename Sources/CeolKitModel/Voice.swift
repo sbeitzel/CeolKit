@@ -27,4 +27,12 @@ public struct Voice: Sendable {
         self.directives = directives
         self.source = source
     }
+
+    /// True when no stave of this voice holds a measure — a voice a `V:` field declared and
+    /// the tune body never wrote to.
+    ///
+    /// Such a voice is part of the model so that a `%%score` plan can name it, but it is not
+    /// printed: ABC §11.1 prints "all voices that appear in the tune body", and this one does
+    /// not appear there.  Renderers filter on this before laying staves out.
+    public var isEmpty: Bool { staves.allSatisfy(\.measures.isEmpty) }
 }

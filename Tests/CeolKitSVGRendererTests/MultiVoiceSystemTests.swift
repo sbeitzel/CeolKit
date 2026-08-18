@@ -123,6 +123,37 @@ import CeolKitSVGGeometry
         #expect(render(twoVoices).diagnostics.isEmpty)
     }
 
+    // MARK: - Declared but unused voices — issue #61
+
+    // A voice a `V:` declared and the body never wrote to is in the model so a `%%score`
+    // plan can name it, but it has no music, so it is not engraved.  If it reached the
+    // aligner it would be padded with invisible rests on every line and draw a whole staff
+    // of silence — plus a mismatch warning for music the author never wrote.
+    @Test func declaredButUnusedVoiceIsNotDrawn() {
+        let abc = """
+            X:1
+            T:Two Voices
+            M:4/4
+            L:1/8
+            K:D
+            V:M1
+            V:M2
+            V:M3
+            [V:M1] abcd efga | bage dcBA | abcd efga | bage dcBA |
+            [V:M2] ABcd efga | bage dcBA | ABcd efga | bage dcBA |
+            [V:M1] abcd efga | bage dcBA | abcd efga | bage dcBA |
+            [V:M2] ABcd efga | bage dcBA | ABcd efga | bage dcBA |
+            """
+        let (pages, diagnostics) = render(abc)
+        let staves = pages.flatMap(\.systems)
+        // The same page `twoVoices` produces: two systems of two staves, not three, and
+        // laid out identically — the unused voice costs no vertical space either.
+        let expected = render(twoVoices).pages.flatMap(\.systems)
+        #expect(staves.count == 4)
+        #expect(staves.map(\.topY) == expected.map(\.topY))
+        #expect(diagnostics.isEmpty)
+    }
+
     // MARK: - Single voice
 
     // One voice is one staff per system, with no group furniture and nothing to warn about.

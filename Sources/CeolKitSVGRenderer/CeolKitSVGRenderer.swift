@@ -79,21 +79,28 @@ public struct SVGRenderer: CeolKitRenderer {
             tuneConfig.graceNoteSpacing = graceNoteSpacing
             let sizer = MeasureSizer(config: tuneConfig, metadata: metadata)
 
+            // A voice a `V:` declared and the body never wrote to is in the model so a
+            // `%%score` plan can name it, but it has no music to engrave. Dropping it here
+            // rather than downstream matters: the aligner would pad it with invisible rests
+            // on every line and warn that the voices disagree, drawing a staff of silence
+            // the source never asked for.
+            let printedVoices = tune.voices.filter { !$0.isEmpty }
+
             // Bring the voices into agreement about how much music each source line holds,
             // so the break points chosen below are legal for every one of them. Voices that
             // disagree are padded and warned about rather than laid out sequentially.
-            let alignedStaves = VoiceAligner.align(tune.voices, into: &diagnostics)
+            let alignedStaves = VoiceAligner.align(printedVoices, into: &diagnostics)
 
             // Flatten the aligned staves into one measure column per bar, carrying the
             // stave boundaries as .hard breaks: the semantic pass makes one Staff per source
             // line-break, so the last column of every non-final stave forces a system break.
             var breaks: [ScoreLineBreak?] = []
-            var columnsPerVoice = [[SizedMeasure]](repeating: [], count: tune.voices.count)
+            var columnsPerVoice = [[SizedMeasure]](repeating: [], count: printedVoices.count)
             for (si, stave) in alignedStaves.enumerated() {
                 let isLastStave = si == alignedStaves.count - 1
                 for column in 0..<stave.measureCount {
                     breaks.append(!isLastStave && column == stave.measureCount - 1 ? .hard : nil)
-                    for voiceIndex in tune.voices.indices {
+                    for voiceIndex in printedVoices.indices {
                         columnsPerVoice[voiceIndex].append(
                             sizer.size(stave.measures[voiceIndex][column],
                                        unitNoteLength: tune.unitNoteLength))
@@ -103,7 +110,7 @@ public struct SVGRenderer: CeolKitRenderer {
 
             var tuneGroups: [JustifiedSystemGroup] = []
             if !breaks.isEmpty {
-                let voiceLines = tune.voices.enumerated().map { index, voice in
+                let voiceLines = printedVoices.enumerated().map { index, voice in
                     LineBreaker.VoiceLine(measures: columnsPerVoice[index],
                                           clef: voice.properties.clef,
                                           keySignature: tune.key,
@@ -112,12 +119,12 @@ public struct SVGRenderer: CeolKitRenderer {
                 // Header widths differ between the first system (has time sig) and later
                 // ones, and are the max across the group: the staves of a system have to
                 // start at the same x even when one voice's clef or key signature is wider.
-                let firstHeaderW = tune.voices.reduce(0.0) { widest, voice in
+                let firstHeaderW = printedVoices.reduce(0.0) { widest, voice in
                     max(widest, systemHeaderWidth(clef: voice.properties.clef, keySignature: tune.key,
                                                   meter: tune.meter, metadata: metadata,
                                                   staffSize: tuneConfig.staffSize))
                 }
-                let laterHeaderW = tune.voices.reduce(0.0) { widest, voice in
+                let laterHeaderW = printedVoices.reduce(0.0) { widest, voice in
                     max(widest, systemHeaderWidth(clef: voice.properties.clef, keySignature: tune.key,
                                                   meter: nil, metadata: metadata,
                                                   staffSize: tuneConfig.staffSize))

@@ -343,10 +343,22 @@ struct BodyContext {
     private(set) var keySignatureAlterations: [DiatonicStep: Alteration]
     var userSymbols: [Character: Decoration]
 
-    // Voice table — created on first musical content, never eagerly, so `buildVoices` still
-    // drops a voice that was declared and never written to (see issue #61).
+    // Voice table — created on first musical content, never eagerly, so a voice that was
+    // declared and never written to has no entry here.  `declaredVoices` is what keeps it
+    // from being lost: a `V:` field is a declaration whether or not any note follows it.
     private(set) var voices: [String: VoiceState] = [:]
-    private(set) var voiceOrder: [String] = ["1"]
+
+    /// Every voice this tune knows about, in print order: the header's `V:` declarations
+    /// first, then any the body introduced, in the order each was first seen.
+    ///
+    /// Seeded `["1"]` only when the header declared nothing — that entry is the implicit
+    /// default voice, a placeholder rather than a declaration, which is why it is absent
+    /// from `declaredVoices` and never printed unless music actually lands in it.
+    private(set) var voiceOrder: [String]
+
+    /// The ids an actual `V:` field named, header or inline.  These exist as voices even
+    /// with no music: `%%score` may place a voice the body never switches into (issue #61).
+    private(set) var declaredVoices: Set<String>
     var voiceProperties: [String: VoiceProperties] = [:]
     var voiceDirectives: [String: [CeolKitDirectiveScope]] = [:]
     var bodyTuneDirectives: [CeolKitDirectiveScope] = []
@@ -362,9 +374,12 @@ struct BodyContext {
         key: KeySignature,
         userSymbols: [Character: Decoration],
         headerVoices: [String: VoiceProperties] = [:],
+        headerVoiceOrder: [String] = [],
         linebreakChars: Set<Character> = ["$"],
         linebreakOnEOL: Bool = true
     ) {
+        self.voiceOrder = headerVoiceOrder.isEmpty ? ["1"] : headerVoiceOrder
+        self.declaredVoices = Set(headerVoiceOrder)
         self.unitNoteLength = unitNoteLength
         self.meter = meter
         self.key = key
@@ -385,25 +400,45 @@ struct BodyContext {
     ) -> R {
         let unitLen = unitNoteLength
         let alterations = keySignatureAlterations
+        // Creating state for an id nothing has named yet also gives it a place in the print
+        // order.  Belt and braces — the walker's cursor only ever holds an id that is already
+        // in `voiceOrder` — but it makes "has music" imply "is printed" true by construction
+        // rather than by inspection of every path that can move the cursor.
+        if voices[id] == nil, !voiceOrder.contains(id) { voiceOrder.append(id) }
         return body(&voices[id, default: VoiceState(
             accumulator: VoiceAccumulator(source: source(), unitNoteLength: unitLen),
             accidentals: AccidentalScope(keyAlterations: alterations)
         )])
     }
 
+    /// The voice the walker starts in: the first the header declared, or the implicit `"1"`
+    /// when it declared none.  Music written before the tune's first inline `[V:]` belongs to
+    /// the first voice on the page, not to a voice the header never mentioned.
+    var initialVoice: String { voiceOrder.first ?? "1" }
+
     /// Read-only access.  Never allocates, so a voice that writes nothing costs nothing.
     func voice(_ id: String) -> VoiceState? { voices[id] }
 
-    /// Voices in the order they were first encountered, skipping any that were declared but
-    /// never written to.
-    func orderedVoices() -> [(String, VoiceState)] {
-        voiceOrder.compactMap { id in voices[id].map { (id, $0) } }
+    /// Every voice of the tune in print order, paired with its state.
+    ///
+    /// A `nil` state is a voice a `V:` field declared and no music ever reached — it is still
+    /// a voice, and the caller emits it with empty staves.  The one id that can be dropped
+    /// here is the implicit `"1"` of a tune whose header named its voices: a placeholder no
+    /// one declared and nothing wrote to.
+    func orderedVoices() -> [(String, VoiceState?)] {
+        voiceOrder.compactMap { id in
+            guard let state = voices[id] else {
+                return declaredVoices.contains(id) ? (id, nil) : nil
+            }
+            return (id, state)
+        }
     }
 
     /// Records a `V:` switch.  Does *not* move any cursor — the walker owns that, and assigns
     /// the returned id to the voice it is threading.
     mutating func registerVoice(id: String, properties: VoiceProperties) {
         if !voiceOrder.contains(id) { voiceOrder.append(id) }
+        declaredVoices.insert(id)
         hasExplicitVoice = true
 
         let defaultClef = ClefSpec(clef: .treble, octaveShift: 0)

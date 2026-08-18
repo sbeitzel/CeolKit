@@ -190,6 +190,7 @@ struct SemanticPass {
             key: key,
             userSymbols: ctx.userSymbols,
             headerVoices: ctx.headerVoices,
+            headerVoiceOrder: ctx.headerVoiceOrder,
             linebreakChars: ctx.linebreakChars,
             linebreakOnEOL: ctx.linebreakOnEOL
         )
@@ -234,7 +235,10 @@ struct SemanticPass {
         case .unitNoteLength(let f, _): ctx.unitNoteLength = f
         case .tempo(let t, _):          ctx.tempo = t
         case .parts(let p):             ctx.parts = p
-        case .voice(let id, let props, _): ctx.headerVoices[id] = props
+        case .voice(let id, let props, _):
+            if ctx.headerVoices.updateValue(props, forKey: id) == nil {
+                ctx.headerVoiceOrder.append(id)
+            }
         case .userSymbol(let ch, let d, _): ctx.userSymbols[ch] = d
         case .macro(let pat, let exp, let src):
             ctx.macros.append(MacroDefinition(pattern: pat, expansion: exp, source: src))
@@ -286,7 +290,7 @@ struct SemanticPass {
     ) {
         // The one cursor in the pass, threaded from here down.  It is a parameter rather than
         // a field on BodyContext so nothing can read "the current voice" implicitly.
-        var voice = "1"
+        var voice = ctx.initialVoice
         for line in body {
             // Check if this is a single-field lyric line
             if line.count == 1, case .inlineField(let f, _) = line[0], case .lyric(let tokens, _) = f {
@@ -970,22 +974,28 @@ struct SemanticPass {
         var diagnostics: [Diagnostic] = []
 
         for (voiceId, state) in bodyCtx.orderedVoices() {
-            let accumulator = state.accumulator
-            let (measures, voiceDiags) = finaliseAccumulator(accumulator, meter: bodyCtx.meter)
-            diagnostics += voiceDiags
-
+            // A voice a `V:` declared and no music reached: it exists, with one empty stave,
+            // so a later `%%score` can place it.  Renderers skip it — see `Voice.isEmpty`.
             var staves: [Staff] = []
-            var start = 0
-            for breakIdx in accumulator.staveBreakIndices where breakIdx <= measures.count {
-                let slice = Array(measures[start..<breakIdx])
-                if !slice.isEmpty {
-                    staves.append(Staff(measures: slice, overlays: []))
+            if let state {
+                let accumulator = state.accumulator
+                let (measures, voiceDiags) = finaliseAccumulator(accumulator, meter: bodyCtx.meter)
+                diagnostics += voiceDiags
+
+                var start = 0
+                for breakIdx in accumulator.staveBreakIndices where breakIdx <= measures.count {
+                    let slice = Array(measures[start..<breakIdx])
+                    if !slice.isEmpty {
+                        staves.append(Staff(measures: slice, overlays: []))
+                    }
+                    start = breakIdx
                 }
-                start = breakIdx
-            }
-            let tail = Array(measures[start...])
-            if !tail.isEmpty || staves.isEmpty {
-                staves.append(Staff(measures: tail, overlays: []))
+                let tail = Array(measures[start...])
+                if !tail.isEmpty || staves.isEmpty {
+                    staves.append(Staff(measures: tail, overlays: []))
+                }
+            } else {
+                staves = [Staff(measures: [], overlays: [])]
             }
 
             let props = bodyCtx.voiceProperties[voiceId] ?? defaultVoiceProperties()
@@ -1141,6 +1151,10 @@ private struct TuneContext {
     var tempo: Tempo? = nil
     var parts: PartPlan? = nil
     var headerVoices: [String: VoiceProperties] = [:]
+    /// The ids of `headerVoices` in the order the header declared them.  The dictionary
+    /// answers "what are this voice's properties?"; this answers "in what order do the
+    /// voices print?", which a dictionary cannot (issue #61).
+    var headerVoiceOrder: [String] = []
     var userSymbols: [Character: Decoration] = [:]
     var macros: [MacroDefinition] = []
     // metadata fields

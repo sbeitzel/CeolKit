@@ -92,12 +92,16 @@ public struct LineBreaker: Sendable {
     ///   - firstSystemHeaderWidth: Header width on the tune's first system — already the
     ///     `max` across voices, since the group's staves must start at a common x.
     ///   - laterSystemHeaderWidth: Same for every later system (no time signature).
+    ///   - grouping: The staff plan's spans and bar-line joins, stamped on every group.
+    ///     Only the plan governing the tune's first stave applies, so every system of a
+    ///     tune is grouped the same way and the breaker has nothing to decide here.
     public func breakIntoGroups(
         _ voices: [VoiceLine],
         breaks: [ScoreLineBreak?],
         usableWidth: Double,
         firstSystemHeaderWidth: Double = 0,
-        laterSystemHeaderWidth: Double = 0
+        laterSystemHeaderWidth: Double = 0,
+        grouping: StaffGrouping? = nil
     ) -> [SystemGroup] {
         guard let first = voices.first, !first.measures.isEmpty else { return [] }
 
@@ -133,7 +137,7 @@ public struct LineBreaker: Sendable {
                         keySignature: voice.keySignature,
                         meter: isFirstOfTune ? voice.meter : nil
                     )
-                }))
+                }, grouping: grouping))
             }
         }
 
@@ -143,7 +147,7 @@ public struct LineBreaker: Sendable {
                 System(measures: staff.measures, isLastSystem: true,
                        sourceForced: staff.sourceForced, staveWasSplit: staff.staveWasSplit,
                        clef: staff.clef, keySignature: staff.keySignature, meter: staff.meter)
-            }))
+            }, grouping: last.grouping))
         }
 
         return groups

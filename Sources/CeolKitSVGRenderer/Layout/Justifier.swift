@@ -100,7 +100,7 @@ public struct Justifier: Sendable {
             finalWidths = columnWidths
         }
 
-        return JustifiedSystemGroup(staves: group.staves.map { staff in
+        let staves = group.staves.map { staff -> JustifiedSystem in
             let measures = staff.measures.enumerated().map { column, sized -> JustifiedMeasure in
                 let finalWidth = finalWidths[column]
                 guard finalWidth != sized.naturalWidth else {
@@ -116,7 +116,8 @@ public struct Justifier: Sendable {
             return JustifiedSystem(measures: measures, isLastSystem: staff.isLastSystem,
                                    sourceForced: staff.sourceForced, clef: staff.clef,
                                    keySignature: staff.keySignature, meter: staff.meter)
-        })
+        }
+        return JustifiedSystemGroup(staves: staves, grouping: group.grouping)
     }
 
     /// The width the system's music is laid out to.

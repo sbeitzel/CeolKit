@@ -21,7 +21,7 @@ struct StaffPlanSelectionTests {
         var diagnostics: [Diagnostic] = []
         let plan = tune.staffPlans.last { $0.effectiveFromStave == 0 }?.plan
         let chosen = VoiceSelector.select(from: tune.voices, plan: plan, into: &diagnostics)
-        return (chosen.map(\.id), diagnostics)
+        return (chosen.voices.map(\.id), diagnostics)
     }
 
     private func codes(_ diagnostics: [Diagnostic], _ code: DiagnosticCode) -> [Diagnostic] {

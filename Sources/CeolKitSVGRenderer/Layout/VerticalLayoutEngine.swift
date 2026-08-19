@@ -218,6 +218,29 @@ public struct VerticalLayoutEngine: Sendable {
         let last = metrics.staves[metrics.staves.count - 1]
         let groupBottomY = topY + last.staffTopOffset + staffHeight
 
+        // The plan's spans, placed: a span reaches from the top staff line of its first
+        // staff to the bottom staff line of its last.  Keyed by first staff, which is the
+        // one that draws it.
+        //
+        // A span reaching past the group's last staff is dropped rather than clamped: every
+        // group of a tune carries the same grouping, so one that does not fit did not come
+        // from this tune's selection, and drawing a bracket to a staff that is not there
+        // would be worse than drawing none.
+        let spansByFirstStaff = Dictionary(
+            grouping: (group.grouping?.spans ?? []).filter {
+                $0.staves.upperBound < metrics.staves.count
+            },
+            by: \.staves.lowerBound
+        ).mapValues { spans in
+            spans.map { span in
+                StaffGroup.Span(
+                    bracket: span.bracket, staves: span.staves, depth: span.depth,
+                    topY: topY + metrics.staves[span.staves.lowerBound].staffTopOffset,
+                    bottomY: topY + metrics.staves[span.staves.upperBound].staffTopOffset
+                             + staffHeight)
+            }
+        }
+
         return group.staves.enumerated().map { i, staff in
             let (extraAbove, extraBelow, staffTopOffset) = metrics.staves[i]
             // `origin.y` is the top of the staff's own band; `staffOrigin` walks down from
@@ -235,7 +258,13 @@ public struct VerticalLayoutEngine: Sendable {
                 nextStaffTopY: i + 1 < metrics.staves.count
                     ? topY + metrics.staves[i + 1].staffTopOffset
                     : nil,
-                bottomY: groupBottomY
+                bottomY: groupBottomY,
+                spans: spansByFirstStaff[i] ?? [],
+                // No plan means every boundary continues, as it has since multi-voice
+                // systems were introduced; a plan states the ones it wants and the rest
+                // stop at their own staff.
+                continuesBarlineBelow: i + 1 < group.staves.count
+                    && (group.grouping?.barlineJoins.contains(i) ?? true)
             ) : nil
             return ResolvedSystem(
                 origin: systemOrigin,

@@ -135,6 +135,7 @@ struct SemanticPass {
         name == "landscape" || name == "flatbeams" || name == "writefields"
             || name == "dateformat" || name == "footer"
             || name == "straightflags" || name == "graceslurs"
+            || name == "score" || name == "staves"
     }
 
     // MARK: - Tune builder
@@ -611,7 +612,8 @@ struct SemanticPass {
             }
         case "landscape", "flatbeams", "ceolkit:justifylast", "ceolkit:scale",
              "ceolkit:gracenotespacing", "writefields",
-             "dateformat", "footer", "straightflags", "graceslurs":
+             "dateformat", "footer", "straightflags", "graceslurs",
+             "score", "staves":
             var tempDiags: [Diagnostic] = []
             if let d = parseCeolKitDirective(name: name, payload: payload, source: source, diagnostics: &tempDiags) {
                 ctx.bodyTuneDirectives.append(CeolKitDirectiveScope(directive: d, scope: .tuneGlobal, source: source))
@@ -944,6 +946,12 @@ struct SemanticPass {
             diagnostics.append(Diagnostic(severity: .warning, code: .unknownDirective,
                 message: "%%graceslurs expects '0'/'false' or '1'/'true'", source: source))
             return nil
+        case "score", "staves":
+            // Both spellings normalise to one StaffPlan; a malformed payload drops the
+            // whole directive rather than storing a partial tree (ABC v2.2 §11.1).
+            let (plan, planDiags) = StaffPlanParser.parse(name: name, payload: payload, source: source)
+            diagnostics += planDiags
+            return plan.map { .staffPlan($0) }
         case "footer":
             // %%footer is file-scoped and extracted directly in build(); silently accept here.
             return nil

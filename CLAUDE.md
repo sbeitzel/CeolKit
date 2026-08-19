@@ -115,7 +115,7 @@ Six `%%ceolkit:*` directives are first-class model members:
 - `%%ceolkit:scale F` (F > 0; tune-wide, never per-voice)
 - `%%ceolkit:gracenotespacing F` (F >= 1, in grace notehead widths; tune-wide, never per-voice)
 
-All are represented in `CeolKitDirective` (an enum, not a string map) with an `.unknown(name:payload:)` case for forward compatibility. They attach to a `Scope` (`.fileGlobal`, `.tuneGlobal`, `.voiceLocal(VoiceId)`).
+All are represented in `CeolKitDirective` (an enum, not a string map). An unrecognised directive is not represented at all: it produces an `unknownDirective` diagnostic and is dropped. They attach to a `Scope` (`.fileGlobal`, `.tuneGlobal`, `.voiceLocal(VoiceId)`).
 
 ### Dialect
 ```swift

@@ -202,14 +202,22 @@ struct AccidentalScopeTests {
         #expect(two[1].pitch.alteration == Alteration(numerator: 0, denominator: 1))
     }
 
-    @Test("An inline [K:] still re-seeds every voice")
-    func keyChangeRekeysAllVoices() {
-        // [K:] is tune-wide until issue #66 makes it per voice; a voice that has not been
-        // walked since the change must still pick the new key up.
+    @Test("An inline [K:] re-seeds only the voice that wrote it")
+    func keyChangeRekeysOnlyItsOwnVoice() {
+        // §7.3: a field that sets a music property should be repeated in every voice it
+        // applies to — so voice 1's [K:G] moves voice 1 and leaves voice 2 in C.
         let result = parse(Self.twoVoiceHeader + "[V:1] F [K:G] F [V:2] F F|\n")
+        let one = voiceMeasures(result, "1").first?.noteEvents ?? []
         let two = voiceMeasures(result, "2").first?.noteEvents ?? []
-        guard two.count >= 2 else { Issue.record("Parser prerequisite not met"); return }
-        #expect(two[0].pitch.alteration == Alteration(numerator: 1, denominator: 1))
-        #expect(two[0].displayedAccidental == nil)
+        guard one.count >= 2, two.count >= 2 else { Issue.record("Parser prerequisite not met"); return }
+        let sharp = Alteration(numerator: 1, denominator: 1)
+        let natural = Alteration(numerator: 0, denominator: 1)
+        // Voice 1: natural before the change, sharpened by G major after it.
+        #expect(one[0].pitch.alteration == natural)
+        #expect(one[1].pitch.alteration == sharp)
+        #expect(one[1].displayedAccidental == nil)
+        // Voice 2 never wrote a K: and stays in the tune's C major.
+        #expect(two.allSatisfy { $0.pitch.alteration == natural })
+        #expect(two.allSatisfy { $0.displayedAccidental == nil })
     }
 }

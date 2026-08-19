@@ -95,6 +95,12 @@ public struct SVGRenderer: CeolKitRenderer {
             let printedVoices = VoiceSelector.select(from: tune.voices, plan: initialPlan,
                                                      into: &diagnostics)
 
+            // §7.3: a voice states its own `K:` and `L:` where it needs them, and the tune's
+            // stand in where it does not.  Resolved once here — every measure of a voice is
+            // sized against the same unit note length, and its staff head draws the same key.
+            let voiceKeys = printedVoices.map { tune.effectiveKey(for: $0) }
+            let voiceUnitLengths = printedVoices.map { tune.effectiveUnitNoteLength(for: $0) }
+
             // Bring the voices into agreement about how much music each source line holds,
             // so the break points chosen below are legal for every one of them. Voices that
             // disagree are padded and warned about rather than laid out sequentially.
@@ -112,7 +118,7 @@ public struct SVGRenderer: CeolKitRenderer {
                     for voiceIndex in printedVoices.indices {
                         columnsPerVoice[voiceIndex].append(
                             sizer.size(stave.measures[voiceIndex][column],
-                                       unitNoteLength: tune.unitNoteLength))
+                                       unitNoteLength: voiceUnitLengths[voiceIndex]))
                     }
                 }
             }
@@ -122,19 +128,21 @@ public struct SVGRenderer: CeolKitRenderer {
                 let voiceLines = printedVoices.enumerated().map { index, voice in
                     LineBreaker.VoiceLine(measures: columnsPerVoice[index],
                                           clef: voice.properties.clef,
-                                          keySignature: tune.key,
+                                          keySignature: voiceKeys[index],
                                           meter: tune.meter)
                 }
                 // Header widths differ between the first system (has time sig) and later
                 // ones, and are the max across the group: the staves of a system have to
                 // start at the same x even when one voice's clef or key signature is wider.
-                let firstHeaderW = printedVoices.reduce(0.0) { widest, voice in
-                    max(widest, systemHeaderWidth(clef: voice.properties.clef, keySignature: tune.key,
+                let firstHeaderW = printedVoices.indices.reduce(0.0) { widest, index in
+                    max(widest, systemHeaderWidth(clef: printedVoices[index].properties.clef,
+                                                  keySignature: voiceKeys[index],
                                                   meter: tune.meter, metadata: metadata,
                                                   staffSize: tuneConfig.staffSize))
                 }
-                let laterHeaderW = printedVoices.reduce(0.0) { widest, voice in
-                    max(widest, systemHeaderWidth(clef: voice.properties.clef, keySignature: tune.key,
+                let laterHeaderW = printedVoices.indices.reduce(0.0) { widest, index in
+                    max(widest, systemHeaderWidth(clef: printedVoices[index].properties.clef,
+                                                  keySignature: voiceKeys[index],
                                                   meter: nil, metadata: metadata,
                                                   staffSize: tuneConfig.staffSize))
                 }

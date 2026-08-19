@@ -24,6 +24,18 @@ struct VoiceAccumulator {
     /// (a lone `V:` line before any music makes one), so they are not counted here either.
     var completedStaveCount = 0
 
+    /// True once any musical content has landed in this voice — a closed measure, or a
+    /// non-spacer event in the measure now being written.
+    ///
+    /// What it distinguishes is a field stated at the head of a voice from one stated part
+    /// way through it: the first says what the voice opens in, the second is a change.
+    var hasMusic: Bool {
+        !closedMeasures.isEmpty || currentEvents.contains {
+            if case .spacer = $0 { return false }
+            return true
+        }
+    }
+
     /// True when measures or events have accumulated since the last boundary, so the stave
     /// now being written already holds music.
     var hasStaveInProgress: Bool {
@@ -111,6 +123,20 @@ struct VoiceState {
     /// bar *in the voice that wrote it*, so a `^F` in the melody must not make the harmony's
     /// `F` sound or print as F♯.
     var accidentals: AccidentalScope
+
+    /// The `K:` this voice stated before any of its music, or `nil` while the tune's stands —
+    /// ABC §7.3, which asks for a field that sets a music property to be repeated in every
+    /// voice it applies to, and so reads a `K:` as belonging to the voice that carries it.
+    ///
+    /// Only what the voice *opens* in, which is what gets drawn at the head of its staff.  A
+    /// later `K:` moves `accidentals` and leaves this alone: a key change part way through a
+    /// staff is not drawn at all yet, and reporting it here would put the wrong signature at
+    /// the head of the whole voice rather than no signature at the point of change.
+    var openingKey: KeySignature?
+
+    /// The `L:` this voice stated before any of its music, or `nil` while the tune's stands.
+    /// Mirrored into `accumulator.unitNoteLength`, which the beams are grouped against.
+    var openingUnitNoteLength: Fraction?
 
     // Pending attachments for this voice's next note/chord
     var pendingDecorations: [Decoration] = []
@@ -350,13 +376,18 @@ struct VoiceState {
 /// voice id from the caller, which threads it down the walk chain.  A method cannot reach a
 /// voice it was not handed.
 struct BodyContext {
-    var unitNoteLength: Fraction
+    /// The tune's `L:` — the header's, or the default for its meter.  It is the value a voice
+    /// is written against until that voice states an `L:` of its own; nothing moves it, because
+    /// an `L:` in the body belongs to the voice that carries it (§7.3).
+    let unitNoteLength: Fraction
     private(set) var meter: Meter
     /// Bumped by every `[M:]`, so each voice can tag its own next measure exactly once.
     private(set) var meterGeneration: Int = 0
-    private(set) var key: KeySignature
-    /// Always derived from `key`; `setKey` is the only thing that moves either.
-    private(set) var keySignatureAlterations: [DiatonicStep: Alteration]
+    /// The tune's `K:`, governing every voice that does not state one of its own.  Like
+    /// `unitNoteLength`, fixed for the tune: a body `K:` moves one voice, not this.
+    let key: KeySignature
+    /// Always derived from `key`.
+    let keySignatureAlterations: [DiatonicStep: Alteration]
     var userSymbols: [Character: Decoration]
 
     // Voice table — created on first musical content, never eagerly, so a voice that was
@@ -417,6 +448,9 @@ struct BodyContext {
         source: @autoclosure () -> SourceRange,
         _ body: (inout VoiceState) -> R
     ) -> R {
+        // Seeded from the tune, never from whichever voice was walked last: a voice that
+        // states no `K:`/`L:` of its own is written against the tune's, not against its
+        // neighbour's.
         let unitLen = unitNoteLength
         let alterations = keySignatureAlterations
         // Creating state for an id nothing has named yet also gives it a place in the print
@@ -488,17 +522,28 @@ struct BodyContext {
         meterGeneration += 1
     }
 
-    // MARK: Key
+    // MARK: Key and unit note length
 
-    /// The only way to move the key.  Re-seeds every voice's scope and drops all bar memory —
-    /// what the single shared scope did before, generalised to N voices.  `[K:]` is tune-wide
-    /// today; issue #66 makes it voice-local.
-    mutating func setKey(_ newKey: KeySignature) {
-        key = newKey
-        keySignatureAlterations = keyAlterations(for: newKey)
-        let alterations = keySignatureAlterations
-        for id in voices.keys {
-            voices[id]?.accidentals = AccidentalScope(keyAlterations: alterations)
+    /// Moves the key for one voice.  Re-seeds that voice's accidental scope and drops its bar
+    /// memory; every other voice keeps both, because a `K:` in the body belongs to the voice
+    /// that carries it — §7.3 asks for such a field to be repeated in every voice it should
+    /// affect, which is only meaningful if one voice's does not reach the rest.
+    mutating func setKey(_ newKey: KeySignature, in voice: String, source: SourceRange) {
+        let alterations = keyAlterations(for: newKey)
+        withVoice(voice, source: source) {
+            if !$0.accumulator.hasMusic { $0.openingKey = newKey }
+            $0.accidentals = AccidentalScope(keyAlterations: alterations)
+        }
+    }
+
+    /// Moves the unit note length for one voice, likewise — but only where it opens the
+    /// voice.  A change part way through has nowhere to land: one length sizes the whole
+    /// voice, in the beam resolver here and in the renderer's sizer alike.  Issue #85.
+    mutating func setUnitNoteLength(_ length: Fraction, in voice: String, source: SourceRange) {
+        withVoice(voice, source: source) {
+            guard !$0.accumulator.hasMusic else { return }
+            $0.openingUnitNoteLength = length
+            $0.accumulator.unitNoteLength = length
         }
     }
 

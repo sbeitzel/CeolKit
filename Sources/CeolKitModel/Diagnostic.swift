@@ -57,6 +57,10 @@ public enum DiagnosticCode: String, Codable, Sendable {
     /// A `%%score` / `%%staves` payload did not parse (ABC v2.2 §11.1).  The whole
     /// directive is dropped rather than stored as a partial tree.
     case invalidStaffPlan
+    /// A `%%score` / `%%staves` was written part-way through a stave, where the plan cannot
+    /// change without splitting the system.  It takes effect from the start of the stave
+    /// enclosing it instead — see `StaffPlanChange`.
+    case staffPlanSnappedToStave
     // Field keys
     case unknownKey
     // Include directive

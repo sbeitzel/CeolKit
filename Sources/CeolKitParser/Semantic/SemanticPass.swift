@@ -71,6 +71,7 @@ struct SemanticPass {
                     userSymbols: tune.userSymbols,
                     macros: tune.macros,
                     directives: preambleCeolKitDirectives + tune.directives,
+                    staffPlans: initialStaffPlans(from: preambleCeolKitDirectives) + tune.staffPlans,
                     source: tune.source
                 ))
             } else {
@@ -216,6 +217,7 @@ struct SemanticPass {
             userSymbols: ctx.userSymbols,
             macros: ctx.macros,
             directives: tuneDirectives + bodyCtx.bodyTuneDirectives,
+            staffPlans: initialStaffPlans(from: tuneDirectives) + bodyCtx.bodyStaffPlans,
             source: abcTune.source
         )
         return (tune, diagnostics)
@@ -610,10 +612,34 @@ struct SemanticPass {
                     source: source
                 ))
             }
+        case "score", "staves":
+            // §11.1: a plan in the body resets the music generator from here on, so unlike
+            // every other directive its position is part of what it means.
+            var tempDiags: [Diagnostic] = []
+            if let d = parseCeolKitDirective(name: name, payload: payload, source: source, diagnostics: &tempDiags) {
+                ctx.bodyTuneDirectives.append(CeolKitDirectiveScope(directive: d, scope: .tuneGlobal, source: source))
+                if case .staffPlan(let plan) = d {
+                    // The plan can only change where the staves of a system do, so one
+                    // written inside a stave governs the whole of the stave enclosing it
+                    // rather than breaking the system where it happens to fall.
+                    if ctx.hasStaveInProgress {
+                        tempDiags.append(Diagnostic(
+                            severity: .warning, code: .staffPlanSnappedToStave,
+                            message: "%%\(name) inside a stave takes effect from the start of that stave",
+                            source: source
+                        ))
+                    }
+                    ctx.bodyStaffPlans.append(StaffPlanChange(
+                        plan: plan,
+                        effectiveFromStave: ctx.currentStaveIndex,
+                        source: source
+                    ))
+                }
+            }
+            diagnostics += tempDiags
         case "landscape", "flatbeams", "ceolkit:justifylast", "ceolkit:scale",
              "ceolkit:gracenotespacing", "writefields",
-             "dateformat", "footer", "straightflags", "graceslurs",
-             "score", "staves":
+             "dateformat", "footer", "straightflags", "graceslurs":
             var tempDiags: [Diagnostic] = []
             if let d = parseCeolKitDirective(name: name, payload: payload, source: source, diagnostics: &tempDiags) {
                 ctx.bodyTuneDirectives.append(CeolKitDirectiveScope(directive: d, scope: .tuneGlobal, source: source))
@@ -844,6 +870,15 @@ struct SemanticPass {
             }
         }
         return result
+    }
+
+    /// The staff plans among `scopes`, each governing from the first stave — the position
+    /// of a plan written before any music, in the file preamble or the tune header.
+    private func initialStaffPlans(from scopes: [CeolKitDirectiveScope]) -> [StaffPlanChange] {
+        scopes.compactMap { scoped in
+            guard case .staffPlan(let plan) = scoped.directive else { return nil }
+            return StaffPlanChange(plan: plan, effectiveFromStave: 0, source: scoped.source)
+        }
     }
 
     private func parseCeolKitDirective(

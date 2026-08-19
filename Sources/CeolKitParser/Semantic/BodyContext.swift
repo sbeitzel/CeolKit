@@ -19,9 +19,25 @@ struct VoiceAccumulator {
         self.unitNoteLength = unitNoteLength
     }
 
+    /// How many staves of this voice are finished — the index of the stave now being
+    /// written.  Boundaries that close no measures are dropped when the staves are sliced
+    /// (a lone `V:` line before any music makes one), so they are not counted here either.
+    var completedStaveCount = 0
+
+    /// True when measures or events have accumulated since the last boundary, so the stave
+    /// now being written already holds music.
+    var hasStaveInProgress: Bool {
+        if closedMeasures.count > staveBreakIndices.last ?? 0 { return true }
+        return currentEvents.contains {
+            if case .spacer = $0 { return false }
+            return true
+        }
+    }
+
     mutating func markStaveBoundary() {
         let idx = closedMeasures.count
         guard idx != staveBreakIndices.last else { return }  // no new measures since last split
+        if idx > staveBreakIndices.last ?? 0 { completedStaveCount += 1 }
         staveBreakIndices.append(idx)
     }
 
@@ -362,6 +378,9 @@ struct BodyContext {
     var voiceProperties: [String: VoiceProperties] = [:]
     var voiceDirectives: [String: [CeolKitDirectiveScope]] = [:]
     var bodyTuneDirectives: [CeolKitDirectiveScope] = []
+    /// `%%score` / `%%staves` met in the body, in source order, each already carrying the
+    /// stave it governs from.
+    var bodyStaffPlans: [StaffPlanChange] = []
     var hasExplicitVoice: Bool = false
 
     // I:linebreak settings — ABC 2.2 §9.2 — default is I:linebreak <EOL> $
@@ -544,6 +563,21 @@ struct BodyContext {
 
     mutating func splitStave(in voice: String) {
         voices[voice]?.accumulator.markStaveBoundary()
+    }
+
+    /// The index of the stave now being written, for the tune as a whole.
+    ///
+    /// Every voice finishes a stave at the same system boundary, so the voices are expected
+    /// to agree; taking the maximum reads correctly when they do and tolerates a voice the
+    /// body has not written to yet, which has finished none.
+    var currentStaveIndex: Int {
+        voices.values.map(\.accumulator.completedStaveCount).max() ?? 0
+    }
+
+    /// True when some voice has already written into the stave now being written, so
+    /// anything landing here lands part-way through a system.
+    var hasStaveInProgress: Bool {
+        voices.values.contains(where: \.accumulator.hasStaveInProgress)
     }
 
     func isInGrace(_ voice: String) -> Bool { voices[voice]?.isInGrace ?? false }

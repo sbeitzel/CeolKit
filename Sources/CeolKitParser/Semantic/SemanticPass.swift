@@ -549,11 +549,11 @@ struct SemanticPass {
     ) {
         switch field {
         case .key(let k):
-            ctx.setKey(k)
+            ctx.setKey(k, in: voice, source: source)
         case .meter(let m, _):
             ctx.setMeter(m)
         case .unitNoteLength(let f, _):
-            ctx.unitNoteLength = f
+            ctx.setUnitNoteLength(f, in: voice, source: source)
         case .tempo(let t, _):
             ctx.emit(.tempoChange(t), in: voice)
         case .voice(let id, let props, _):
@@ -1047,6 +1047,8 @@ struct SemanticPass {
             let voice = Voice(
                 id: vid,
                 properties: props,
+                key: state?.openingKey,
+                unitNoteLength: state?.openingUnitNoteLength,
                 staves: staves,
                 directives: voiceDirs,
                 source: tuneSource

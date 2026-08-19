@@ -46,7 +46,8 @@ public struct SVGRenderer: CeolKitRenderer {
         // so each tune can start from that baseline and layer its own on top.
         let fileWriteFields: WriteFieldsConfig = {
             var wf = WriteFieldsConfig.default
-            for scope in score.tunes.first?.directives ?? [] where { if case .fileGlobal = scope.scope { true } else { false } }() {
+            for scope in score.tunes.first?.directives ?? [] {
+                guard case .fileGlobal = scope.scope else { continue }
                 wf.apply(scope.directive)
             }
             return wf

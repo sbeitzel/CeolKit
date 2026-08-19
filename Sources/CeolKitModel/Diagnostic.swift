@@ -61,6 +61,22 @@ public enum DiagnosticCode: String, Codable, Sendable {
     /// change without splitting the system.  It takes effect from the start of the stave
     /// enclosing it instead — see `StaffPlanChange`.
     case staffPlanSnappedToStave
+    /// A `%%score` / `%%staves` names a voice the tune does not declare anywhere.  The rest
+    /// of the plan is honoured.
+    case staffPlanVoiceNotFound
+    /// A `%%score` / `%%staves` names the same voice more than once.  It is printed once, at
+    /// the first position it was named in.
+    case staffPlanVoiceRepeated
+    /// A voice the tune body writes to is not named in the staff plan, so §11.1 does not
+    /// print it.  Spec-mandated, but dropping music the author wrote is worth saying aloud.
+    case voiceNotInStaffPlan
+    /// A staff plan names no voice the tune can print.  The plan is abandoned and the tune
+    /// laid out as though it had none, rather than rendered empty.
+    case staffPlanEmpty
+    /// The plan parsed and was applied as far as the renderer goes today: voice selection
+    /// and ordering.  Shared staves, floating voices and mid-tune plan changes are each
+    /// approximated, and the message says which one this is.
+    case staffPlanNotFullyApplied
     // Field keys
     case unknownKey
     // Include directive

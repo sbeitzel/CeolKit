@@ -80,12 +80,20 @@ public struct SVGRenderer: CeolKitRenderer {
             tuneConfig.graceNoteSpacing = graceNoteSpacing
             let sizer = MeasureSizer(config: tuneConfig, metadata: metadata)
 
-            // A voice a `V:` declared and the body never wrote to is in the model so a
-            // `%%score` plan can name it, but it has no music to engrave. Dropping it here
-            // rather than downstream matters: the aligner would pad it with invisible rests
-            // on every line and warn that the voices disagree, drawing a staff of silence
-            // the source never asked for.
-            let printedVoices = tune.voices.filter { !$0.isEmpty }
+            // §11.1: a `%%score` / `%%staves` plan decides which voices are printed and in
+            // what order. Only the plan governing the first stave applies — a plan written
+            // in the body changes the staff count part-way through the tune, and the driver
+            // below sizes its column store once for the whole tune.
+            let initialPlan = tune.staffPlans.last { $0.effectiveFromStave == 0 }?.plan
+            for change in tune.staffPlans where change.effectiveFromStave > 0 {
+                diagnostics.append(Diagnostic(
+                    severity: .info, code: .staffPlanNotFullyApplied,
+                    message: "a staff plan inside the tune body cannot change the staff count "
+                           + "yet; the plan in effect at the start of the tune governs throughout",
+                    source: change.source))
+            }
+            let printedVoices = VoiceSelector.select(from: tune.voices, plan: initialPlan,
+                                                     into: &diagnostics)
 
             // Bring the voices into agreement about how much music each source line holds,
             // so the break points chosen below are legal for every one of them. Voices that

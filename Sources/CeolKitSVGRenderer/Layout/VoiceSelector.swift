@@ -13,7 +13,21 @@ import CeolKitModel
 /// That is strictly better than ignoring the directive — the right voices print in the right
 /// order, and only the vertical grouping is missing — and it keeps every voice the plan
 /// names on the page, which silently dropping the ones this pass cannot group would not.
+///
+/// **It also translates the plan's grouping into printed staff indices.**  `StaffPlanLayout`
+/// counts staves in the *plan*, and the four approximations above mean those are not the
+/// staves that reach the page.  This is the only pass that sees both numberings at once, so
+/// it is the one that has to do the translation; see ``Selection/grouping``.
 enum VoiceSelector {
+
+    /// What the plan asked for, in the terms the rest of the layout works in.
+    struct Selection {
+        /// The voices to print, top to bottom — one staff each.
+        let voices: [Voice]
+        /// The plan's spans and bar-line joins over ``voices``, or `nil` when there was no
+        /// plan to take them from, or the plan selected nothing and was fallen back from.
+        let grouping: StaffGrouping?
+    }
 
     /// - Parameters:
     ///   - voices: every voice of the tune, including ones the body never wrote to.  Those
@@ -26,16 +40,20 @@ enum VoiceSelector {
         from voices: [Voice],
         plan: StaffPlan?,
         into diagnostics: inout [Diagnostic]
-    ) -> [Voice] {
+    ) -> Selection {
         let printable = voices.filter { !$0.isEmpty }
-        guard let plan else { return printable }
+        guard let plan else { return Selection(voices: printable, grouping: nil) }
 
         let layout = plan.layout
         let byId = Dictionary(voices.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
 
         var printed: [Voice] = []
         var seen: Set<VoiceId> = []
-        for id in order(of: layout) {
+        // Printed staff indices contributed by each staff of the plan, in order.  Empty for a
+        // plan staff whose every voice was dropped; more than one where a `( … )` shared staff
+        // was expanded to a staff per voice.
+        var printedByPlanStaff = [[Int]](repeating: [], count: layout.staves.count)
+        for (id, planStaff) in order(of: layout) {
             guard seen.insert(id).inserted else {
                 diagnostics.append(Diagnostic(
                     severity: .warning, code: .staffPlanVoiceRepeated,
@@ -55,6 +73,7 @@ enum VoiceSelector {
             // the tune body, and this one does not appear there.  Not worth a diagnostic —
             // the plan is right and the body simply has nothing to say.
             guard !voice.isEmpty else { continue }
+            if let planStaff { printedByPlanStaff[planStaff].append(printed.count) }
             printed.append(voice)
         }
 
@@ -65,12 +84,13 @@ enum VoiceSelector {
                 message: "staff plan selects none of this tune's voices; "
                        + "laying the tune out as though it had no plan",
                 source: plan.source))
-            return printable
+            return Selection(voices: printable, grouping: nil)
         }
 
         diagnostics += omissions(from: printable, namedBy: layout, plan: plan)
         diagnostics += approximations(of: layout, printedBy: printed, plan: plan)
-        return printed
+        return Selection(voices: printed,
+                         grouping: grouping(of: layout, printedBy: printedByPlanStaff))
     }
 
     // MARK: - Order
@@ -81,14 +101,57 @@ enum VoiceSelector {
     /// below — or first, where the plan gives it nothing above.  That is where the author
     /// wrote it, and it is the position `#80` will start from when it assigns such a voice
     /// per note.
-    private static func order(of layout: StaffPlanLayout) -> [VoiceId] {
+    ///
+    /// The staff index is the plan's, and `nil` for a floating voice — it belongs to no
+    /// staff of the plan, so no span or joint is stated over it.
+    private static func order(of layout: StaffPlanLayout) -> [(id: VoiceId, planStaff: Int?)] {
         let floatingByStaffAbove = Dictionary(grouping: layout.floating, by: \.above)
-        var ordered = (floatingByStaffAbove[nil] ?? []).map(\.id)
+        var ordered = (floatingByStaffAbove[nil] ?? []).map { (id: $0.id, planStaff: Int?.none) }
         for (index, staff) in layout.staves.enumerated() {
-            ordered += staff
-            ordered += (floatingByStaffAbove[index] ?? []).map(\.id)
+            ordered += staff.map { (id: $0, planStaff: Int?.some(index)) }
+            ordered += (floatingByStaffAbove[index] ?? []).map { (id: $0.id, planStaff: Int?.none) }
         }
         return ordered
+    }
+
+    // MARK: - Grouping
+
+    /// The plan's spans and joints, re-expressed over the staves that will actually print.
+    ///
+    /// Returned even when it is empty of both: a plan that groups nothing still says the
+    /// bar lines are *not* to run between its staves, which is not the same as having no
+    /// plan at all.
+    private static func grouping(
+        of layout: StaffPlanLayout,
+        printedBy printedByPlanStaff: [[Int]]
+    ) -> StaffGrouping {
+        // A span covers whichever printed staves its plan staves produced.  Taking the
+        // extremes rather than the union also pulls in a floating voice that was written
+        // inside the span, which is where its author put it.
+        let spans = layout.spans.compactMap { span -> StaffGrouping.Span? in
+            let covered = span.staves.flatMap { printedByPlanStaff[$0] }
+            guard let first = covered.min(), let last = covered.max() else { return nil }
+            return StaffGrouping.Span(bracket: span.bracket, staves: first...last,
+                                      depth: span.depth)
+        }
+
+        var joins: Set<Int> = []
+        for above in layout.barlineJoins {
+            // A joint whose staff above or below printed nothing joins nothing.  Where a
+            // floating voice sits between the two, every boundary it introduces is joined,
+            // so the continuation reads as the one stroke the plan asked for.
+            guard let top = printedByPlanStaff[above].last,
+                  let bottom = printedByPlanStaff[above + 1].first else { continue }
+            joins.formUnion(top..<bottom)
+        }
+        // §11.1 says nothing about the boundary between two staves that are one staff in the
+        // source: a `( … )` group the shared-staff work has not landed for yet.  Continuing
+        // the bar line through it is the closest drawing to the single staff it stands in for.
+        for printed in printedByPlanStaff where printed.count > 1 {
+            joins.formUnion(printed.dropLast())
+        }
+
+        return StaffGrouping(spans: spans, barlineJoins: joins)
     }
 
     // MARK: - Diagnostics

@@ -69,6 +69,43 @@ public struct System: Sendable {
     }
 }
 
+/// The brace/bracket spans and continued bar-line boundaries of one system, expressed in
+/// *printed* staff indices — positions in ``SystemGroup/staves``.
+///
+/// `%%score` / `%%staves` states them over the staves of the *plan*, which are not the
+/// staves that get printed: a voice the body never wrote to is dropped, a `( … )` shared
+/// staff is still drawn one staff per voice, and a floating `*V` takes a staff of its own.
+/// ``VoiceSelector`` translates them as it selects, so everything below this point can read
+/// the indices straight off.
+///
+/// `nil` on a group means the tune had no plan (or the selector fell back from one), and
+/// every stage behaves exactly as it did before plans existed.
+public struct StaffGrouping: Sendable {
+    /// Outermost first.  May be empty: a plan can order the voices without grouping them.
+    public let spans: [Span]
+    /// Printed staff `i` is joined to `i + 1` by a bar line that runs through the gap.
+    public let barlineJoins: Set<Int>
+
+    public init(spans: [Span], barlineJoins: Set<Int>) {
+        self.spans = spans
+        self.barlineJoins = barlineJoins
+    }
+
+    public struct Span: Hashable, Sendable {
+        public let bracket: StaffPlanBracket
+        /// Printed staff indices, inclusive.
+        public let staves: ClosedRange<Int>
+        /// 0 = outermost; drives sub-bracket thickness.
+        public let depth: Int
+
+        public init(bracket: StaffPlanBracket, staves: ClosedRange<Int>, depth: Int) {
+            self.bracket = bracket
+            self.staves = staves
+            self.depth = depth
+        }
+    }
+}
+
 /// One system's worth of unjustified music: the staves of every voice that is active on
 /// the source line the system came from, in `V:` declaration order.
 ///
@@ -82,8 +119,14 @@ public struct SystemGroup: Sendable {
     /// breaker ever saw them.
     public let staves: [System]
 
-    public init(staves: [System]) {
+    /// The plan's spans and bar-line joins for this system, or `nil` when the tune has no
+    /// plan.  Identical on every group of a tune: only the plan governing the first stave
+    /// applies (see `CeolKitSVGRenderer.render`).
+    public let grouping: StaffGrouping?
+
+    public init(staves: [System], grouping: StaffGrouping? = nil) {
         self.staves = staves
+        self.grouping = grouping
     }
 
     /// The properties the line breaker assigned to the group as a whole.  They are recorded
@@ -145,8 +188,13 @@ public struct JustifiedSystemGroup: Sendable {
     /// One entry per voice, top to bottom.  Never empty.
     public let staves: [JustifiedSystem]
 
-    public init(staves: [JustifiedSystem]) {
+    /// Carried through from ``SystemGroup/grouping`` — justification changes x positions,
+    /// never which staves a brace or bracket covers.
+    public let grouping: StaffGrouping?
+
+    public init(staves: [JustifiedSystem], grouping: StaffGrouping? = nil) {
         self.staves = staves
+        self.grouping = grouping
     }
 
     public var isLastSystem: Bool { staves[0].isLastSystem }
@@ -276,12 +324,53 @@ public struct StaffGroup: Sendable {
     /// Absolute y of the bottom staff line of the group's last staff — the foot of the
     /// vertical line that joins the staves at the left edge.
     public let bottomY: Double
+    /// The brace/bracket spans that *begin* at this staff, outermost first, resolved to
+    /// absolute y.  Empty on a staff no span starts at, and on every staff of a group whose
+    /// tune has no plan.
+    ///
+    /// Anchored on the first staff rather than listed on every staff it covers, because that
+    /// is the staff which draws the furniture spanning a group — see ``isGroupLeader``.  Two
+    /// spans can start on the same staff (`[{A B} C]`), so this is a list and not a single
+    /// bracket kind.
+    public let spans: [Span]
+    /// Whether the bar line at the boundary *below* this staff runs on into the next one.
+    /// Always `false` on the group's last staff.
+    ///
+    /// With no plan every boundary continues, which is the behaviour multi-voice systems
+    /// have had since they were introduced.  A plan states the boundaries it wants with `|`
+    /// and the rest stop at their own staff (issue #68).
+    public let continuesBarlineBelow: Bool
 
-    public init(index: Int, count: Int, nextStaffTopY: Double?, bottomY: Double) {
+    /// One brace or bracket, placed on the page.
+    public struct Span: Sendable {
+        public let bracket: StaffPlanBracket
+        /// Indices within the group, inclusive.  `lowerBound` is the staff carrying this span.
+        public let staves: ClosedRange<Int>
+        /// 0 = outermost; drives sub-bracket thickness.
+        public let depth: Int
+        /// Absolute y of the top staff line of the span's first staff.
+        public let topY: Double
+        /// Absolute y of the bottom staff line of the span's last staff.
+        public let bottomY: Double
+
+        public init(bracket: StaffPlanBracket, staves: ClosedRange<Int>, depth: Int,
+                    topY: Double, bottomY: Double) {
+            self.bracket = bracket
+            self.staves = staves
+            self.depth = depth
+            self.topY = topY
+            self.bottomY = bottomY
+        }
+    }
+
+    public init(index: Int, count: Int, nextStaffTopY: Double?, bottomY: Double,
+                spans: [Span] = [], continuesBarlineBelow: Bool = false) {
         self.index = index
         self.count = count
         self.nextStaffTopY = nextStaffTopY
         self.bottomY = bottomY
+        self.spans = spans
+        self.continuesBarlineBelow = continuesBarlineBelow
     }
 
     /// `true` on the staff that draws the furniture spanning the whole group.

@@ -92,8 +92,9 @@ public struct SVGRenderer: CeolKitRenderer {
                            + "yet; the plan in effect at the start of the tune governs throughout",
                     source: change.source))
             }
-            let printedVoices = VoiceSelector.select(from: tune.voices, plan: initialPlan,
-                                                     into: &diagnostics)
+            let selection = VoiceSelector.select(from: tune.voices, plan: initialPlan,
+                                                 into: &diagnostics)
+            let printedVoices = selection.voices
 
             // §7.3: a voice states its own `K:` and `L:` where it needs them, and the tune's
             // stand in where it does not.  Resolved once here — every measure of a voice is
@@ -149,7 +150,8 @@ public struct SVGRenderer: CeolKitRenderer {
                 let groups = breaker.breakIntoGroups(voiceLines, breaks: breaks,
                                                      usableWidth: usableWidth,
                                                      firstSystemHeaderWidth: firstHeaderW,
-                                                     laterSystemHeaderWidth: laterHeaderW)
+                                                     laterSystemHeaderWidth: laterHeaderW,
+                                                     grouping: selection.grouping)
                 let headerWidths = groups.indices.map { $0 == 0 ? firstHeaderW : laterHeaderW }
                 tuneGroups = justifier.justifyGroups(groups, usableWidth: usableWidth,
                                                      justifyLastSystem: justifyLastSystem,

@@ -91,6 +91,30 @@ struct BracketColumns: Sendable {
         }
     }
 
+    /// Whether two staves sit inside the *same innermost* span — whether the boundary
+    /// between them is inside one part rather than between two.
+    ///
+    /// Not "is some span drawn over both": in `[{A B} C]` the bracket covers all three, so
+    /// that question answers yes everywhere and the tightening says nothing.  What
+    /// distinguishes A–B from B–C is that A and B bottom out in the same group while B and
+    /// C meet only further out, and it is the innermost span that a reader takes as the
+    /// part.  `[{1 2} {3 4}]` separates the two braced pairs by the same reasoning, and
+    /// `[1 2] 3` still tightens the bracketed pair, whose innermost span is the bracket.
+    ///
+    /// Asked here, of the spans that survived ``drawable(_:staffCount:)``, so the tightening
+    /// and the furniture always agree about what is joined to what.  A span the renderer
+    /// declined to draw tightens nothing: the reader would have no mark on the page to read
+    /// the closer spacing against.
+    func sharesInnermostSpan(_ upper: Int, _ lower: Int) -> Bool {
+        guard let inner = innermostSpan(over: upper) else { return false }
+        return inner == innermostSpan(over: lower)
+    }
+
+    /// The deepest drawn span covering `staff`, or `nil` where none does.
+    private func innermostSpan(over staff: Int) -> StaffGrouping.Span? {
+        spans.filter { $0.staves.contains(staff) }.max { $0.depth < $1.depth }
+    }
+
     /// Absolute x of the left edge of the spine drawn for a span at `depth`, given the x the
     /// staves start at.
     func spineX(depth: Int, staffLeftX: Double) -> Double {

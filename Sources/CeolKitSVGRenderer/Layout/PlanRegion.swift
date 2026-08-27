@@ -17,8 +17,9 @@ import CeolKitModel
 /// stave *k* of one voice is stave *k* of every other.  A source that gives a voice no line at
 /// all in some line-set breaks that assumption before a plan is involved — the voice's later
 /// staves all shift up one — and a region cut then lands in the wrong place for it, exactly as
-/// the aligner's padding already does.  Write every voice a line per system and the numbering
-/// holds.
+/// the aligner's padding already does.  That is issue #102, and it is the parser that has to
+/// fix it: nothing here can recover a stave the model never recorded.  Until then, write every
+/// voice a line per system and the numbering holds.
 struct PlanRegion {
     /// The plan governing this region, or `nil` for the opening region of a tune whose plans
     /// all start later — that stretch is laid out exactly as a tune with no plan at all.

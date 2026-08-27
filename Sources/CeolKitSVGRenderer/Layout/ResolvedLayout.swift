@@ -349,16 +349,21 @@ public struct StaffGroup: Sendable {
         public let staves: ClosedRange<Int>
         /// 0 = outermost; drives sub-bracket thickness.
         public let depth: Int
+        /// Absolute x of the left edge of the span's vertical spine.  Left of the staves,
+        /// in the indent ``BracketColumns`` reserved for it — the deeper the span, the
+        /// closer to them.
+        public let x: Double
         /// Absolute y of the top staff line of the span's first staff.
         public let topY: Double
         /// Absolute y of the bottom staff line of the span's last staff.
         public let bottomY: Double
 
         public init(bracket: StaffPlanBracket, staves: ClosedRange<Int>, depth: Int,
-                    topY: Double, bottomY: Double) {
+                    x: Double, topY: Double, bottomY: Double) {
             self.bracket = bracket
             self.staves = staves
             self.depth = depth
+            self.x = x
             self.topY = topY
             self.bottomY = bottomY
         }

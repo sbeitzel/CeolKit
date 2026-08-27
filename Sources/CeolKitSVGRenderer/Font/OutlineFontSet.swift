@@ -48,6 +48,16 @@ struct OutlineFontSet: Sendable {
         return .success(OutlineFontSet(fonts: fonts))
     }()
 
+    /// The face every run of ordinary text is set in — titles, footers, voice labels.
+    ///
+    /// `nil` where the bundled resource could not be read.  Layout asks for it to measure
+    /// text it has to reserve space for, and has to keep working without it: a score that
+    /// engraves with an estimated gutter is worth more than one that refuses to render.
+    static func textFace() -> OpenTypeFont? {
+        try? shared().resolve(family: CeolKitFonts.Face.libertinusSerifRegular.familyName,
+                              italic: false)?.font
+    }
+
     /// The face the emitter's `font-family` / `font-style` pair names, or `nil` for a
     /// family this renderer does not bundle.
     func resolve(family: String, italic: Bool) -> (key: FaceKey, font: OpenTypeFont)? {

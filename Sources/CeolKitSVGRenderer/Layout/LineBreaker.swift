@@ -64,13 +64,22 @@ public struct LineBreaker: Sendable {
         public let keySignature: KeySignature?
         /// Stamped on the voice's first system only.
         public let meter: Meter?
+        /// What the voice is called on the first system it appears on — its `V:` `name=`.
+        public let firstSystemLabel: String?
+        /// What it is called on every system after that — its `sname=`.  Nil where the voice
+        /// has none, and deliberately not defaulted to ``firstSystemLabel``: a voice named
+        /// once and never again is what the spec asks for and what abcm2ps prints.
+        public let laterSystemLabel: String?
 
         public init(measures: [SizedMeasure], clef: ClefSpec = ClefSpec(clef: .treble, octaveShift: 0),
-                    keySignature: KeySignature? = nil, meter: Meter? = nil) {
+                    keySignature: KeySignature? = nil, meter: Meter? = nil,
+                    firstSystemLabel: String? = nil, laterSystemLabel: String? = nil) {
             self.measures = measures
             self.clef = clef
             self.keySignature = keySignature
             self.meter = meter
+            self.firstSystemLabel = firstSystemLabel
+            self.laterSystemLabel = laterSystemLabel
         }
     }
 
@@ -135,7 +144,8 @@ public struct LineBreaker: Sendable {
                         staveWasSplit: ranges.count > 1,
                         clef: voice.clef,
                         keySignature: voice.keySignature,
-                        meter: isFirstOfTune ? voice.meter : nil
+                        meter: isFirstOfTune ? voice.meter : nil,
+                        voiceLabel: isFirstOfTune ? voice.firstSystemLabel : voice.laterSystemLabel
                     )
                 }, grouping: grouping))
             }
@@ -146,7 +156,8 @@ public struct LineBreaker: Sendable {
             groups.append(SystemGroup(staves: last.staves.map { staff in
                 System(measures: staff.measures, isLastSystem: true,
                        sourceForced: staff.sourceForced, staveWasSplit: staff.staveWasSplit,
-                       clef: staff.clef, keySignature: staff.keySignature, meter: staff.meter)
+                       clef: staff.clef, keySignature: staff.keySignature, meter: staff.meter,
+                       voiceLabel: staff.voiceLabel)
             }, grouping: last.grouping))
         }
 

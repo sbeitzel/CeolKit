@@ -184,6 +184,7 @@ struct SVGEmitter: Sendable {
                              builder: inout SVGBuilder) {
         emitStaffLines(system, builder: &builder)
         emitStaffGroupConnector(system, builder: &builder)
+        emitVoiceLabel(system, builder: &builder)
         emitClef(system, builder: &builder)
         if let keySig = system.keySignature {
             emitKeySignature(keySig, system: system, builder: &builder)
@@ -226,6 +227,30 @@ struct SVGEmitter: Sendable {
                                 kind: .slur, builder: &builder)
             }
         }
+    }
+
+    /// The voice's `V:` `name=` / `sname=`, standing in the gutter left of the system
+    /// (ABC v2.2 §4.1).
+    ///
+    /// Right-aligned against the gutter's right edge rather than measured out from the
+    /// staff, so the labels of a system line up with each other whatever their lengths, and
+    /// optically centred on the staff — the middle staff line, plus half a cap height, which
+    /// puts the letterforms' centre on it rather than their baseline.
+    ///
+    /// Drawn through the same `builder.text` path as the title block, so it takes whichever
+    /// of `<text>` and outlines the document is in.  A bare `<text>` would vanish in every
+    /// non-browser rasteriser, which is the default here.
+    private func emitVoiceLabel(_ system: ResolvedSystem, builder: inout SVGBuilder) {
+        guard let label = system.voiceLabel else { return }
+        let topY = system.origin.y + system.staffOrigin
+        builder.text(
+            label.text,
+            x: label.x,
+            y: topY + VoiceLabelGutter.baselineOffset(staffSize: config.staffSize),
+            fontFamily: "Libertinus Serif",
+            fontSize: VoiceLabelGutter.fontSize(staffSize: config.staffSize),
+            textAnchor: "end"
+        )
     }
 
     private func emitStaffLines(_ system: ResolvedSystem, builder: inout SVGBuilder) {

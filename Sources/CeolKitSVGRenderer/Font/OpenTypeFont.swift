@@ -271,4 +271,15 @@ struct OpenTypeFont: Sendable {
     func outline(forGlyph glyph: Int) throws -> GlyphPath {
         try charstrings.outline(forGlyph: glyph)
     }
+
+    /// How wide `text` is drawn at `fontSize`, in points.
+    ///
+    /// Summed nominal advances, one glyph per Unicode scalar, which is exactly what
+    /// ``SVGBuilder`` lays a run out with — so a caller reserving space from this measure
+    /// and the emitter drawing into it cannot disagree.  An unencoded scalar falls back to
+    /// glyph 0, whose `.notdef` box is what gets drawn for it.
+    func width(of text: String, fontSize: Double) -> Double {
+        let units = text.unicodeScalars.reduce(0.0) { $0 + advance(forGlyph: glyphID(for: $1) ?? 0) }
+        return units * fontSize / unitsPerEm
+    }
 }

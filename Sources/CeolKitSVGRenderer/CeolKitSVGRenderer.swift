@@ -35,9 +35,18 @@ public struct SVGRenderer: CeolKitRenderer {
         // File-preamble directives are promoted to the first tune by the parser.
         let effectiveConfig = applyingScoreDirectives(score)
 
+        // The face voice labels are measured in, read once and only when a voice has a label
+        // to measure: parsing the bundled faces is the most expensive thing this renderer
+        // does, and a score that names no voice needs none of it.  `nil` where the resource
+        // could not be read — `VoiceLabelGutter` estimates from there, on both sides of the
+        // reservation, so the labels still land in the space kept for them.
+        let labelFont = score.tunes.contains(where: \.hasVoiceLabels)
+            ? OutlineFontSet.textFace() : nil
+
         let breaker   = LineBreaker(overflowTolerance: effectiveConfig.lineOverflowTolerance)
         let justifier = Justifier(maxStretch: effectiveConfig.maxSystemStretch)
-        let engine    = VerticalLayoutEngine(config: effectiveConfig, metadata: metadata)
+        let engine    = VerticalLayoutEngine(config: effectiveConfig, metadata: metadata,
+                                             labelFont: labelFont)
 
         let usableWidth = effectiveConfig.pageSize.width - effectiveConfig.margins.left - effectiveConfig.margins.right
 
@@ -134,11 +143,22 @@ public struct SVGRenderer: CeolKitRenderer {
                 let isOpeningRegion = groups.isEmpty
                 let regionMeter = isOpeningRegion ? tune.meter : nil
 
+                // §4.1: `name=` labels the voice on the first system it appears on and
+                // `sname=` on every later one.  A region after the opening one is not the
+                // first system of anything — the voice has already been named — so it takes
+                // the subname throughout, exactly as a line break within a region does.
+                let firstLabels = printedVoices.map {
+                    isOpeningRegion ? $0.properties.name : $0.properties.subname
+                }
+                let laterLabels = printedVoices.map(\.properties.subname)
+
                 let voiceLines = printedVoices.enumerated().map { index, voice in
                     LineBreaker.VoiceLine(measures: columnsPerVoice[index],
                                           clef: voice.properties.clef,
                                           keySignature: voiceKeys[index],
-                                          meter: regionMeter)
+                                          meter: regionMeter,
+                                          firstSystemLabel: firstLabels[index],
+                                          laterSystemLabel: laterLabels[index])
                 }
                 // Space for the region's braces and brackets, reserved before anything is
                 // packed into the line.  It is added to the header widths rather than taken
@@ -150,16 +170,26 @@ public struct SVGRenderer: CeolKitRenderer {
                                             metadata: metadata,
                                             staffSize: tuneConfig.staffSize).indent
 
+                // Space for the voice names, outside the furniture.  Two widths, because the
+                // labels differ: the first system carries the full names and later ones the
+                // subnames, so a voice named "Soprano" with `snm="S"` indents its opening
+                // system further than the rest — which is what an engraver draws, and what
+                // the separate first/later header widths below already express.
+                let openingGutter = VoiceLabelGutter(labels: firstLabels, font: labelFont,
+                                                     staffSize: tuneConfig.staffSize).width
+                let laterGutter = VoiceLabelGutter(labels: laterLabels, font: labelFont,
+                                                   staffSize: tuneConfig.staffSize).width
+
                 // Header widths differ between the first system (has time sig) and later
                 // ones, and are the max across the group: the staves of a system have to
                 // start at the same x even when one voice's clef or key signature is wider.
-                let openingHeaderW = indent + printedVoices.indices.reduce(0.0) { widest, index in
+                let openingHeaderW = indent + openingGutter + printedVoices.indices.reduce(0.0) { widest, index in
                     max(widest, systemHeaderWidth(clef: printedVoices[index].properties.clef,
                                                   keySignature: voiceKeys[index],
                                                   meter: regionMeter, metadata: metadata,
                                                   staffSize: tuneConfig.staffSize))
                 }
-                let laterHeaderW = indent + printedVoices.indices.reduce(0.0) { widest, index in
+                let laterHeaderW = indent + laterGutter + printedVoices.indices.reduce(0.0) { widest, index in
                     max(widest, systemHeaderWidth(clef: printedVoices[index].properties.clef,
                                                   keySignature: voiceKeys[index],
                                                   meter: nil, metadata: metadata,
@@ -316,6 +346,16 @@ public struct SVGRenderer: CeolKitRenderer {
     }
 }
 
+// MARK: - Voice labels
+
+private extension Tune {
+    /// Whether any voice of this tune prints a name in the left gutter — which is what
+    /// decides whether the renderer has to read a text face at all.
+    var hasVoiceLabels: Bool {
+        voices.contains { $0.properties.name != nil || $0.properties.subname != nil }
+    }
+}
+
 // MARK: - Plan regions
 
 private extension SystemGroup {
@@ -325,7 +365,8 @@ private extension SystemGroup {
         return SystemGroup(staves: staves.map {
             System(measures: $0.measures, isLastSystem: isLast, sourceForced: $0.sourceForced,
                    staveWasSplit: $0.staveWasSplit, clef: $0.clef,
-                   keySignature: $0.keySignature, meter: $0.meter)
+                   keySignature: $0.keySignature, meter: $0.meter,
+                   voiceLabel: $0.voiceLabel)
         }, grouping: grouping)
     }
 }

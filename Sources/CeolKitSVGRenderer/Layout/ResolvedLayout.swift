@@ -49,6 +49,11 @@ public struct System: Sendable {
     public let keySignature: KeySignature?
     /// Non-nil only on the first system of a tune; time signatures do not repeat at line breaks.
     public let meter: Meter?
+    /// What this voice prints in the left gutter of *this* system: its `V:` `name=` on the
+    /// tune's first system, its `sname=` on every later one, and `nil` where it has none
+    /// (ABC v2.2 §4.1).  A voice with a name but no subname is therefore labelled once and
+    /// then not again, which is what abcm2ps does.
+    public let voiceLabel: String?
 
     public init(
         measures: [SizedMeasure],
@@ -57,7 +62,8 @@ public struct System: Sendable {
         staveWasSplit: Bool = false,
         clef: ClefSpec = ClefSpec(clef: .treble, octaveShift: 0),
         keySignature: KeySignature? = nil,
-        meter: Meter? = nil
+        meter: Meter? = nil,
+        voiceLabel: String? = nil
     ) {
         self.measures = measures
         self.isLastSystem = isLastSystem
@@ -66,6 +72,7 @@ public struct System: Sendable {
         self.clef = clef
         self.keySignature = keySignature
         self.meter = meter
+        self.voiceLabel = voiceLabel
     }
 }
 
@@ -210,6 +217,9 @@ public struct JustifiedSystem: Sendable {
     public let keySignature: KeySignature?
     /// Non-nil only on the first system of a tune; time signatures do not repeat at line breaks.
     public let meter: Meter?
+    /// Carried through from ``System/voiceLabel`` — justification moves x positions, never
+    /// what a staff is called.
+    public let voiceLabel: String?
 
     public init(
         measures: [JustifiedMeasure],
@@ -217,7 +227,8 @@ public struct JustifiedSystem: Sendable {
         sourceForced: Bool,
         clef: ClefSpec = ClefSpec(clef: .treble, octaveShift: 0),
         keySignature: KeySignature? = nil,
-        meter: Meter? = nil
+        meter: Meter? = nil,
+        voiceLabel: String? = nil
     ) {
         self.measures = measures
         self.isLastSystem = isLastSystem
@@ -225,6 +236,7 @@ public struct JustifiedSystem: Sendable {
         self.clef = clef
         self.keySignature = keySignature
         self.meter = meter
+        self.voiceLabel = voiceLabel
     }
 }
 
@@ -383,6 +395,24 @@ public struct StaffGroup: Sendable {
     public var isGroupLeader: Bool { index == 0 }
 }
 
+/// A voice's `V:` `name=` / `sname=`, placed on the page.
+///
+/// The text and its x arrive together because the x is not derived from the staff: it is
+/// the right edge of the gutter ``VoiceLabelGutter`` reserved for the *system*, which is
+/// as far left as the widest label in it reaches.  Every staff of a system shares that
+/// edge, so the labels right-align with each other rather than each ending where its own
+/// staff begins.
+public struct VoiceLabel: Sendable {
+    public let text: String
+    /// Absolute x the label is right-aligned against.
+    public let x: Double
+
+    public init(text: String, x: Double) {
+        self.text = text
+        self.x = x
+    }
+}
+
 public struct ResolvedSystem: Sendable {
     public let origin: Point
     public let measures: [ResolvedMeasure]
@@ -415,6 +445,10 @@ public struct ResolvedSystem: Sendable {
     public let abcLine: Int
     /// Non-nil when this staff is one of several in a system; see ``StaffGroup``.
     public let staffGroup: StaffGroup?
+    /// The voice name drawn in this system's left gutter, already placed.  `nil` where the
+    /// voice has nothing to print on this system, which is every voice of every tune that
+    /// names none.
+    public let voiceLabel: VoiceLabel?
 
     public init(
         origin: Point,
@@ -430,7 +464,8 @@ public struct ResolvedSystem: Sendable {
         keySignature: KeySignature? = nil,
         meter: Meter? = nil,
         abcLine: Int = 1,
-        staffGroup: StaffGroup? = nil
+        staffGroup: StaffGroup? = nil,
+        voiceLabel: VoiceLabel? = nil
     ) {
         self.origin = origin
         self.measures = measures
@@ -446,6 +481,7 @@ public struct ResolvedSystem: Sendable {
         self.meter = meter
         self.abcLine = abcLine
         self.staffGroup = staffGroup
+        self.voiceLabel = voiceLabel
     }
 }
 

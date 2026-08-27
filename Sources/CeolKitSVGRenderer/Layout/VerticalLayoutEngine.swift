@@ -9,10 +9,19 @@ import CeolKitModel
 public struct VerticalLayoutEngine: Sendable {
     private let config: SVGRenderConfig
     private let metadata: BravuraMetadata
+    /// The text face voice labels are measured in, or `nil` where none was supplied or it
+    /// could not be read.  ``VoiceLabelGutter`` falls back to an estimate, and the caller
+    /// that reserved the gutter took the same fallback, so the two still agree.
+    private let labelFont: OpenTypeFont?
 
     public init(config: SVGRenderConfig, metadata: BravuraMetadata) {
+        self.init(config: config, metadata: metadata, labelFont: nil)
+    }
+
+    init(config: SVGRenderConfig, metadata: BravuraMetadata, labelFont: OpenTypeFont?) {
         self.config = config
         self.metadata = metadata
+        self.labelFont = labelFont
     }
 
     /// Converts justified systems into a fully positioned layout.
@@ -190,6 +199,9 @@ public struct VerticalLayoutEngine: Sendable {
         /// rather than where they are drawn because the spans decide the spacing as well as
         /// the furniture: a staff a span reaches past is not drawn *and* not tightened.
         let columns: BracketColumns
+        /// The space this system's voice labels stand in, left of the braces and brackets.
+        /// Empty on every system whose voices print no name.
+        let labels: VoiceLabelGutter
     }
 
     private func groupMetrics(of group: JustifiedSystemGroup,
@@ -212,7 +224,9 @@ public struct VerticalLayoutEngine: Sendable {
             startWidth = max(startWidth, systemStartWidth(for: staff, staffSize: staffSize))
         }
         return GroupMetrics(staves: staves, totalHeight: offset, startWidth: startWidth,
-                            columns: columns)
+                            columns: columns,
+                            labels: VoiceLabelGutter(labels: group.staves.map(\.voiceLabel),
+                                                     font: labelFont, staffSize: staffSize))
     }
 
     /// Places every staff of one system, top to bottom, starting at `topY`.
@@ -228,13 +242,15 @@ public struct VerticalLayoutEngine: Sendable {
         let last = metrics.staves[metrics.staves.count - 1]
         let groupBottomY = topY + last.staffTopOffset + staffHeight
 
-        // The staves start right of the margin by whatever the group's braces and brackets
-        // need, and nowhere else: with no plan, or a plan that groups nothing, the indent is
-        // zero and the page is the one the renderer drew before brackets existed.  The line
+        // The staves start right of the margin by whatever the group's voice labels and its
+        // braces and brackets need, in that order — the labels stand outside the furniture,
+        // or they would be printed over it — and nowhere else: a tune with neither reserves
+        // nothing and lands on the page the renderer drew before either existed.  The line
         // breaker was handed the same reservation, so the music still ends on the right
-        // margin (see `BracketColumns`).
+        // margin (see `VoiceLabelGutter` and `BracketColumns`).
         let columns = metrics.columns
-        let staffLeftX = config.margins.left + columns.indent
+        let staffLeftX = config.margins.left + metrics.labels.width + columns.indent
+        let labelRightX = metrics.labels.rightEdgeX(from: config.margins.left)
 
         // The plan's spans, placed: a span reaches from the top staff line of its first
         // staff to the bottom staff line of its last, standing in the column its depth was
@@ -291,7 +307,8 @@ public struct VerticalLayoutEngine: Sendable {
                 keySignature: staff.keySignature,
                 meter: staff.meter,
                 abcLine: abcLine,
-                staffGroup: membership
+                staffGroup: membership,
+                voiceLabel: staff.voiceLabel.map { VoiceLabel(text: $0, x: labelRightX) }
             )
         }
     }

@@ -115,7 +115,8 @@ public struct Justifier: Sendable {
             }
             return JustifiedSystem(measures: measures, isLastSystem: staff.isLastSystem,
                                    sourceForced: staff.sourceForced, clef: staff.clef,
-                                   keySignature: staff.keySignature, meter: staff.meter)
+                                   keySignature: staff.keySignature, meter: staff.meter,
+                                   voiceLabel: staff.voiceLabel)
         }
         return JustifiedSystemGroup(staves: staves, grouping: group.grouping)
     }

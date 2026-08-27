@@ -131,8 +131,8 @@ struct StaffPlanSelectionTests {
         #expect(notes.first?.message.contains("floats between staves") == true)
     }
 
-    @Test("A body plan is reported as not yet applied, and the tune renders")
-    func bodyPlanIsReported() {
+    @Test("A body plan takes effect from its own stave, without complaint")
+    func bodyPlanTakesEffect() {
         let result = render("""
         X:1
         L:1/4
@@ -149,11 +149,12 @@ struct StaffPlanSelectionTests {
         V:2
         CDEF|
         """)
-        let notes = result.diagnostics.filter { $0.code == .staffPlanNotFullyApplied }
-        #expect(notes.count == 1)
-        #expect(notes.first?.message.contains("cannot change the staff count") == true)
-        // Both voices still print: the plan in effect at the start of the tune is none.
-        #expect(result.pages.flatMap(\.systems).count == 4)
+        // Two staves before the plan, one after — see `StaffPlanRegionTests` for the
+        // segmentation this rests on.
+        #expect(result.pages.flatMap(\.systems).count == 3)
+        #expect(result.diagnostics.filter { $0.code == .staffPlanNotFullyApplied }.isEmpty)
+        // Voice 2 still has music the second plan does not print, and §11.1 says so.
+        #expect(codes(result.diagnostics, .voiceNotInStaffPlan).count == 1)
     }
 
     // MARK: - Plans the tune cannot honour

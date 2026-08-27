@@ -222,10 +222,10 @@ public struct VerticalLayoutEngine: Sendable {
         // staff to the bottom staff line of its last.  Keyed by first staff, which is the
         // one that draws it.
         //
-        // A span reaching past the group's last staff is dropped rather than clamped: every
-        // group of a tune carries the same grouping, so one that does not fit did not come
-        // from this tune's selection, and drawing a bracket to a staff that is not there
-        // would be worse than drawing none.
+        // A span reaching past the group's last staff is dropped rather than clamped: a
+        // grouping is built over the very staves of the region it is stamped on, so one that
+        // does not fit did not come from this group's selection, and drawing a bracket to a
+        // staff that is not there would be worse than drawing none.
         let spansByFirstStaff = Dictionary(
             grouping: (group.grouping?.spans ?? []).filter {
                 $0.staves.upperBound < metrics.staves.count

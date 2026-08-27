@@ -55,6 +55,17 @@ import Testing
         #expect(ed.repeatBarlineDotSeparation < ed.barlineSeparation)
     }
 
+    /// `CeolKitSVGGeometry` tells a bar line from a note stem by comparing each stroke
+    /// against the staff line's, so what it depends on is not the three weights but their
+    /// order.  A metadata swap that reordered them would leave it misreading every drawing
+    /// without anything else failing.
+    @Test func stemsAreThinnerThanStaffLinesAndBarLinesThicker() {
+        let ed = metadata.engravingDefaults
+        #expect(ed.stemThickness < ed.staffLineThickness)
+        #expect(ed.staffLineThickness < ed.thinBarlineThickness)
+        #expect(ed.thinBarlineThickness < ed.thickBarlineThickness)
+    }
+
     @Test func noteheadBlackBBoxIsNonZero() throws {
         let bbox = try #require(metadata.glyphBBoxes["noteheadBlack"])
         #expect(bbox.width  > 0)

@@ -317,9 +317,9 @@ public struct StaffGroup: Sendable {
     public let count: Int
     /// Absolute y of the *next* staff's top staff line, or `nil` on the group's last staff.
     ///
-    /// Bar lines are drawn down to this instead of stopping at their own staff, so the
-    /// group's bar lines read as one continuous stroke through the whole system.  Repeat
-    /// dots still sit within the staff that owns them.
+    /// Where ``continuesBarlineBelow`` is set, bar lines are drawn down to this instead of
+    /// stopping at their own staff, so the joined staves' bar lines read as one continuous
+    /// stroke.  Repeat dots still sit within the staff that owns them.
     public let nextStaffTopY: Double?
     /// Absolute y of the bottom staff line of the group's last staff — the foot of the
     /// vertical line that joins the staves at the left edge.

@@ -399,10 +399,15 @@ struct SVGEmitter: Sendable {
                               builder: inout SVGBuilder) {
         let topY    = system.origin.y + system.staffOrigin
         let bottomY = topY + system.staffHeight
-        // In a multi-staff system the bar lines run on down to the next staff's top line, so
-        // the group's bar lines read as one stroke through the whole system.  Repeat dots
-        // still belong to the staff that owns them, so they keep `bottomY`.
-        let lineBottomY = system.staffGroup?.nextStaffTopY ?? bottomY
+        // Where the boundary below this staff is joined, the bar lines run on down to the
+        // next staff's top line, so the joined staves' bar lines read as one stroke.  §11.1
+        // makes that a property of the boundary — `|` in `%%score` — and with no plan every
+        // boundary is joined, so a multi-voice system without one is drawn as it always was.
+        // Repeat dots still belong to the staff that owns them, so they keep `bottomY`.
+        let group = system.staffGroup
+        let lineBottomY = (group?.continuesBarlineBelow ?? false)
+            ? (group?.nextStaffTopY ?? bottomY)
+            : bottomY
 
         if let opening = measure.openingBar {
             emitBarLine(opening, topY: topY, bottomY: bottomY, lineBottomY: lineBottomY, builder: &builder)

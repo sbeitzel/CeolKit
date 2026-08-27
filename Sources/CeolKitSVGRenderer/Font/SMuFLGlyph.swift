@@ -68,9 +68,11 @@ public enum SMuFLGlyph: String, Sendable, CaseIterable {
     case fermataAbove
     case fermataBelow
 
-    // Staff brackets
+    // Staff brackets and braces
     case bracketTop
     case bracketBottom
+    /// Stretchy: drawn at whatever height the staves it joins span, not at its natural one.
+    case brace
 
     public var unicodeScalar: Unicode.Scalar {
         // swiftlint:disable:next force_unwrapping — all values are valid PUA codepoints
@@ -124,6 +126,7 @@ public enum SMuFLGlyph: String, Sendable, CaseIterable {
         case .fermataBelow:                return 0xE4C1
         case .bracketTop:                  return 0xE003
         case .bracketBottom:               return 0xE004
+        case .brace:                       return 0xE000
         }
     }
 }

@@ -81,64 +81,72 @@ public struct SVGRenderer: CeolKitRenderer {
             let sizer = MeasureSizer(config: tuneConfig, metadata: metadata)
 
             // §11.1: a `%%score` / `%%staves` plan decides which voices are printed and in
-            // what order. Only the plan governing the first stave applies — a plan written
-            // in the body changes the staff count part-way through the tune, and the driver
-            // below sizes its column store once for the whole tune.
-            let initialPlan = tune.staffPlans.last { $0.effectiveFromStave == 0 }?.plan
-            for change in tune.staffPlans where change.effectiveFromStave > 0 {
-                diagnostics.append(Diagnostic(
-                    severity: .info, code: .staffPlanNotFullyApplied,
-                    message: "a staff plan inside the tune body cannot change the staff count "
-                           + "yet; the plan in effect at the start of the tune governs throughout",
-                    source: change.source))
-            }
-            let selection = VoiceSelector.select(from: tune.voices, plan: initialPlan,
-                                                 into: &diagnostics)
-            let printedVoices = selection.voices
+            // what order, and one written in the tune body resets that part-way through.
+            // The staff count is therefore not a property of the tune, so the whole
+            // align → size → break block below runs once per *plan region* — a maximal run
+            // of staves under one plan — and the systems are concatenated.  A region
+            // boundary is always a system break; a staff plan cannot change mid-system.
+            var groups: [SystemGroup] = []
+            var headerWidths: [Double] = []
 
-            // §7.3: a voice states its own `K:` and `L:` where it needs them, and the tune's
-            // stand in where it does not.  Resolved once here — every measure of a voice is
-            // sized against the same unit note length, and its staff head draws the same key.
-            let voiceKeys = printedVoices.map { tune.effectiveKey(for: $0) }
-            let voiceUnitLengths = printedVoices.map { tune.effectiveUnitNoteLength(for: $0) }
+            for region in PlanRegions.segment(tune) {
+                let selection = VoiceSelector.select(from: region.voices, plan: region.plan,
+                                                     into: &diagnostics)
+                let printedVoices = selection.voices
+                guard !printedVoices.isEmpty else { continue }
 
-            // Bring the voices into agreement about how much music each source line holds,
-            // so the break points chosen below are legal for every one of them. Voices that
-            // disagree are padded and warned about rather than laid out sequentially.
-            let alignedStaves = VoiceAligner.align(printedVoices, into: &diagnostics)
+                // §7.3: a voice states its own `K:` and `L:` where it needs them, and the
+                // tune's stand in where it does not.  Resolved once here — every measure of
+                // a voice is sized against the same unit note length, and its staff head
+                // draws the same key.
+                let voiceKeys = printedVoices.map { tune.effectiveKey(for: $0) }
+                let voiceUnitLengths = printedVoices.map { tune.effectiveUnitNoteLength(for: $0) }
 
-            // Flatten the aligned staves into one measure column per bar, carrying the
-            // stave boundaries as .hard breaks: the semantic pass makes one Staff per source
-            // line-break, so the last column of every non-final stave forces a system break.
-            var breaks: [ScoreLineBreak?] = []
-            var columnsPerVoice = [[SizedMeasure]](repeating: [], count: printedVoices.count)
-            for (si, stave) in alignedStaves.enumerated() {
-                let isLastStave = si == alignedStaves.count - 1
-                for column in 0..<stave.measureCount {
-                    breaks.append(!isLastStave && column == stave.measureCount - 1 ? .hard : nil)
-                    for voiceIndex in printedVoices.indices {
-                        columnsPerVoice[voiceIndex].append(
-                            sizer.size(stave.measures[voiceIndex][column],
-                                       unitNoteLength: voiceUnitLengths[voiceIndex]))
+                // Bring the voices into agreement about how much music each source line
+                // holds, so the break points chosen below are legal for every one of them.
+                // Voices that disagree are padded and warned about rather than laid out
+                // sequentially.
+                let alignedStaves = VoiceAligner.align(printedVoices, into: &diagnostics)
+
+                // Flatten the aligned staves into one measure column per bar, carrying the
+                // stave boundaries as .hard breaks: the semantic pass makes one Staff per
+                // source line-break, so the last column of every non-final stave forces a
+                // system break.  The region's own final stave needs none — the region ends
+                // there, and the next one starts a new system anyway.
+                var breaks: [ScoreLineBreak?] = []
+                var columnsPerVoice = [[SizedMeasure]](repeating: [], count: printedVoices.count)
+                for (si, stave) in alignedStaves.enumerated() {
+                    let isLastStave = si == alignedStaves.count - 1
+                    for column in 0..<stave.measureCount {
+                        breaks.append(!isLastStave && column == stave.measureCount - 1 ? .hard : nil)
+                        for voiceIndex in printedVoices.indices {
+                            columnsPerVoice[voiceIndex].append(
+                                sizer.size(stave.measures[voiceIndex][column],
+                                           unitNoteLength: voiceUnitLengths[voiceIndex]))
+                        }
                     }
                 }
-            }
+                guard !breaks.isEmpty else { continue }
 
-            var tuneGroups: [JustifiedSystemGroup] = []
-            if !breaks.isEmpty {
+                // A time signature is drawn once, on the tune's very first system.  A later
+                // region opens a fresh set of staves, but it is still the same tune, and a
+                // meter no more repeats at a staff-plan change than it does at a line break.
+                let isOpeningRegion = groups.isEmpty
+                let regionMeter = isOpeningRegion ? tune.meter : nil
+
                 let voiceLines = printedVoices.enumerated().map { index, voice in
                     LineBreaker.VoiceLine(measures: columnsPerVoice[index],
                                           clef: voice.properties.clef,
                                           keySignature: voiceKeys[index],
-                                          meter: tune.meter)
+                                          meter: regionMeter)
                 }
                 // Header widths differ between the first system (has time sig) and later
                 // ones, and are the max across the group: the staves of a system have to
                 // start at the same x even when one voice's clef or key signature is wider.
-                let firstHeaderW = printedVoices.indices.reduce(0.0) { widest, index in
+                let openingHeaderW = printedVoices.indices.reduce(0.0) { widest, index in
                     max(widest, systemHeaderWidth(clef: printedVoices[index].properties.clef,
                                                   keySignature: voiceKeys[index],
-                                                  meter: tune.meter, metadata: metadata,
+                                                  meter: regionMeter, metadata: metadata,
                                                   staffSize: tuneConfig.staffSize))
                 }
                 let laterHeaderW = printedVoices.indices.reduce(0.0) { widest, index in
@@ -147,16 +155,24 @@ public struct SVGRenderer: CeolKitRenderer {
                                                   meter: nil, metadata: metadata,
                                                   staffSize: tuneConfig.staffSize))
                 }
-                let groups = breaker.breakIntoGroups(voiceLines, breaks: breaks,
-                                                     usableWidth: usableWidth,
-                                                     firstSystemHeaderWidth: firstHeaderW,
-                                                     laterSystemHeaderWidth: laterHeaderW,
-                                                     grouping: selection.grouping)
-                let headerWidths = groups.indices.map { $0 == 0 ? firstHeaderW : laterHeaderW }
-                tuneGroups = justifier.justifyGroups(groups, usableWidth: usableWidth,
-                                                     justifyLastSystem: justifyLastSystem,
-                                                     systemHeaderWidths: headerWidths)
+                let regionGroups = breaker.breakIntoGroups(voiceLines, breaks: breaks,
+                                                           usableWidth: usableWidth,
+                                                           firstSystemHeaderWidth: openingHeaderW,
+                                                           laterSystemHeaderWidth: laterHeaderW,
+                                                           grouping: selection.grouping)
+                headerWidths += regionGroups.indices.map { $0 == 0 ? openingHeaderW : laterHeaderW }
+                groups += regionGroups
             }
+
+            // The line breaker marks the last system of whatever it was handed, and it was
+            // handed one region at a time; only the last system of the last region ends the
+            // tune.
+            groups = groups.enumerated().map {
+                $0.element.markingLastSystem($0.offset == groups.count - 1)
+            }
+            let tuneGroups = groups.isEmpty ? [] : justifier.justifyGroups(
+                groups, usableWidth: usableWidth, justifyLastSystem: justifyLastSystem,
+                systemHeaderWidths: headerWidths)
 
             // Build the title block for this tune per §6.1.3.
             // Title row baselineY values are tune-relative; the layout engine offsets
@@ -287,5 +303,19 @@ public struct SVGRenderer: CeolKitRenderer {
             }
         }
         return effective
+    }
+}
+
+// MARK: - Plan regions
+
+private extension SystemGroup {
+    /// The same group with `isLastSystem` set to `isLast` on every staff.
+    func markingLastSystem(_ isLast: Bool) -> SystemGroup {
+        guard isLastSystem != isLast else { return self }
+        return SystemGroup(staves: staves.map {
+            System(measures: $0.measures, isLastSystem: isLast, sourceForced: $0.sourceForced,
+                   staveWasSplit: $0.staveWasSplit, clef: $0.clef,
+                   keySignature: $0.keySignature, meter: $0.meter)
+        }, grouping: grouping)
     }
 }

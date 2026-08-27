@@ -93,8 +93,8 @@ public struct LineBreaker: Sendable {
     ///     `max` across voices, since the group's staves must start at a common x.
     ///   - laterSystemHeaderWidth: Same for every later system (no time signature).
     ///   - grouping: The staff plan's spans and bar-line joins, stamped on every group.
-    ///     Only the plan governing the tune's first stave applies, so every system of a
-    ///     tune is grouped the same way and the breaker has nothing to decide here.
+    ///     One call covers one plan region (see `PlanRegions`), so a single grouping governs
+    ///     everything the breaker is handed and it has nothing to decide here.
     public func breakIntoGroups(
         _ voices: [VoiceLine],
         breaks: [ScoreLineBreak?],

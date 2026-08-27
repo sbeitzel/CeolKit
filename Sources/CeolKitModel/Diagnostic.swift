@@ -73,9 +73,9 @@ public enum DiagnosticCode: String, Codable, Sendable {
     /// A staff plan names no voice the tune can print.  The plan is abandoned and the tune
     /// laid out as though it had none, rather than rendered empty.
     case staffPlanEmpty
-    /// The plan parsed and was applied as far as the renderer goes today: voice selection
-    /// and ordering.  Shared staves, floating voices and mid-tune plan changes are each
-    /// approximated, and the message says which one this is.
+    /// The plan parsed and was applied as far as the renderer goes today: voice selection,
+    /// ordering, and where it takes effect.  Shared staves and floating voices are each
+    /// approximated by a staff per voice, and the message says which one this is.
     case staffPlanNotFullyApplied
     // Field keys
     case unknownKey

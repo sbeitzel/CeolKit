@@ -119,9 +119,10 @@ public struct SystemGroup: Sendable {
     /// breaker ever saw them.
     public let staves: [System]
 
-    /// The plan's spans and bar-line joins for this system, or `nil` when the tune has no
-    /// plan.  Identical on every group of a tune: only the plan governing the first stave
-    /// applies (see `CeolKitSVGRenderer.render`).
+    /// The plan's spans and bar-line joins for this system, or `nil` when no plan governs
+    /// it.  Identical on every group of one plan region, and free to differ between regions:
+    /// a `%%score` in the tune body changes both the staves and how they are grouped (see
+    /// `PlanRegions`).
     public let grouping: StaffGrouping?
 
     public init(staves: [System], grouping: StaffGrouping? = nil) {

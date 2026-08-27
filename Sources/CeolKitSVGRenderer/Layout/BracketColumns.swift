@@ -21,6 +21,17 @@ struct BracketColumns: Sendable {
         /// How far a nested span's end hooks reach towards the staff.  A sub-bracket has no
         /// glyph of its own in SMuFL: it is a thin spine with short serifs at each end.
         static let subBracketHook = 0.5
+        /// The widest a brace is ever drawn.
+        ///
+        /// Bravura draws its brace 0.32 spaces wide at a natural height of 3.988 — the
+        /// proportions of a brace over *one* staff.  Stretched to a piano system's 11
+        /// spaces on the vertical axis alone it comes out four times too thin to read as a
+        /// brace at all, so the arms grow with it; past a staff space of width they stop,
+        /// or a brace over five staves is a slab.  abcm2ps settles on a constant width too,
+        /// and by the same reasoning from the other end: its brace is drawn at system
+        /// height and only ever compressed, leaving it a shade heavier than this at about
+        /// 1.5 spaces.
+        static let braceMaxWidth = 1.0
     }
 
     /// The spans that are actually drawn, and so the ones that get to reserve space.
@@ -42,9 +53,41 @@ struct BracketColumns: Sendable {
             widths = []
             return
         }
-        let tipWidth = metadata.glyphBBoxes["bracketTop"].map { $0.width } ?? 1.876
+        // One column per depth, wide enough for the widest thing standing in it: one depth
+        // can hold both kinds at once — `[{A B} [C D]]` puts a brace and a sub-bracket in
+        // the same column — and they are nothing like the same width.
+        var ink: [Int: Double] = [:]
+        for span in spans {
+            ink[span.depth] = max(ink[span.depth] ?? 0, Self.inkWidth(of: span, metadata: metadata))
+        }
         widths = (0...deepest).map { depth in
-            ((depth == 0 ? tipWidth : Clearance.subBracketHook) + Clearance.column) * staffSize
+            // A depth with nothing left in it reserves nothing: `drawable` can empty an
+            // outer depth while an inner span survives, and a column no furniture stands
+            // in would just be a gap.
+            guard let width = ink[depth] else { return 0 }
+            return (width + Clearance.column) * staffSize
+        }
+    }
+
+    /// How far right of its column's left edge a span's furniture reaches, in staff spaces.
+    ///
+    /// Read off the face's own bounding box where a glyph is drawn — measured from the
+    /// glyph origin, which is what the emitter places at the column's left edge, so the
+    /// reservation covers the ink and not just its width.
+    private static func inkWidth(of span: StaffGrouping.Span,
+                                 metadata: BravuraMetadata) -> Double {
+        switch span.bracket {
+        // The brace grows with its span, so what is reserved is the widest it can get.  A
+        // shorter one leaves a little air rather than a differently indented system: the
+        // indent is a property of the plan, and a plan does not change between systems of
+        // one region while the staves it covers may.
+        case .brace:
+            guard let box = metadata.glyphBBoxes["brace"] else { return 0.328 }
+            return box.neX * Self.braceWidthScale(box: box)
+        case .bracket:
+            guard span.depth == 0 else { return Clearance.subBracketHook }
+            guard let box = metadata.glyphBBoxes["bracketTop"] else { return 1.876 }
+            return box.neX
         }
     }
 
@@ -59,6 +102,29 @@ struct BracketColumns: Sendable {
     /// them and the hooks drawn into it stay the same size.
     static func subBracketHookLength(staffSize: Double) -> Double {
         Clearance.subBracketHook * staffSize
+    }
+
+    /// The factors a brace is scaled by to reach `height` points: uniform until its arms
+    /// are ``Clearance/braceMaxWidth`` wide, vertical-only after that.
+    ///
+    /// `nil` where there is nothing to draw — a span of no height, or a face whose brace
+    /// has none.  Stated here, next to the space reserved for it, so that the column and
+    /// the glyph standing in it cannot disagree about how wide a brace gets.
+    static func braceScale(height: Double, metadata: BravuraMetadata,
+                           staffSize: Double) -> (x: Double, y: Double)? {
+        let box = metadata.glyphBBoxes["brace"]
+        let naturalHeight = (box?.height ?? 3.988) * staffSize
+        guard naturalHeight > 0, height > 0 else { return nil }
+        let yScale = height / naturalHeight
+        let cap = box.map(braceWidthScale) ?? Clearance.braceMaxWidth / 0.32
+        return (min(yScale, cap), yScale)
+    }
+
+    /// The largest horizontal factor a brace is drawn at, for a face whose brace has the
+    /// given box: the one that makes its arms exactly ``Clearance/braceMaxWidth`` wide.
+    private static func braceWidthScale(box: BravuraMetadata.BoundingBox) -> Double {
+        guard box.width > 0 else { return 1 }
+        return Clearance.braceMaxWidth / box.width
     }
 
     /// The spans worth drawing furniture for, of the ones the plan states.

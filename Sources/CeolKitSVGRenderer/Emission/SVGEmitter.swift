@@ -242,7 +242,8 @@ struct SVGEmitter: Sendable {
     }
 
     /// The furniture at the left edge of a multi-voice system: the rule that joins its
-    /// staves, and a bracket over each span the tune's `%%score`/`%%staves` plan states.
+    /// staves, and the brace or bracket over each span the tune's `%%score`/`%%staves`
+    /// plan states.
     ///
     /// Without the rule the staves of a system are just neighbouring staves; with it they
     /// read as one system, which is what tells a player that the parts are to be followed
@@ -262,19 +263,49 @@ struct SVGEmitter: Sendable {
             builder.line(x1: system.origin.x, y1: topY, x2: system.origin.x, y2: group.bottomY,
                          stroke: "black", strokeWidth: thickness)
         }
-        for span in group.spans { emitStaffSpanBracket(span, builder: &builder) }
+        for span in group.spans { emitStaffSpan(span, builder: &builder) }
     }
 
     /// One brace or bracket, standing in the indent reserved for its depth.
+    private func emitStaffSpan(_ span: StaffGroup.Span, builder: inout SVGBuilder) {
+        switch span.bracket {
+        case .brace:   emitStaffSpanBrace(span, builder: &builder)
+        case .bracket: emitStaffSpanBracket(span, builder: &builder)
+        }
+    }
+
+    /// The brace over a `{ … }` span, stretched from the first staff's top line to the
+    /// last's bottom one.
     ///
-    /// Every span is drawn as a bracket for now, the brace glyph being stretchy and so a
-    /// piece of `SVGBuilder` work of its own (issue #72).  A bracket over a braced span says
-    /// less than the brace will, but it says the true thing — these staves are one group —
-    /// which drawing nothing does not.
+    /// SMuFL's brace is a *stretchy* glyph: the face draws it 3.988 staff spaces tall, a
+    /// third of what two staves of a piano system span, so it is never drawn at its natural
+    /// size.  The two axes move independently — see ``BracketColumns/braceScale(height:metadata:staffSize:)``
+    /// for how far the arms are allowed to thicken as the span grows.
     ///
-    /// A nested span is drawn at `subBracketThickness` with short hooks in place of the
-    /// bracket's flared tips: SMuFL publishes no sub-bracket glyph, a sub-bracket being a
-    /// thin spine serifed at each end.
+    /// A nested brace is drawn exactly like an outer one.  Unlike the bracket it has no
+    /// thinner form to fall back to, and it needs none: it stands in its own column, so the
+    /// nesting is legible from where it sits.
+    private func emitStaffSpanBrace(_ span: StaffGroup.Span, builder: inout SVGBuilder) {
+        let s = config.staffSize
+        guard let scale = BracketColumns.braceScale(height: span.bottomY - span.topY,
+                                                    metadata: metadata, staffSize: s)
+        else { return }
+        // The glyph stands on its baseline — Bravura's `bBoxSW.y` is 0 — but read the offset
+        // rather than assume it, and stretch it along with everything else, so the brace's
+        // foot lands on the bottom staff line and not near it.
+        let footOffset = (metadata.glyphBBoxes["brace"]?.swY ?? 0) * s * scale.y
+        builder.stretchedText(String(SMuFLGlyph.brace.character),
+                              x: span.x, y: span.bottomY + footOffset,
+                              fontFamily: "Bravura", fontSize: 4.0 * s,
+                              xScale: scale.x, yScale: scale.y)
+    }
+
+    /// The bracket over a `[ … ]` span: a spine at `bracketThickness` with the face's
+    /// flared tips at its ends.
+    ///
+    /// A nested span is drawn at `subBracketThickness` with short hooks in place of those
+    /// tips: SMuFL publishes no sub-bracket glyph, a sub-bracket being a thin spine serifed
+    /// at each end.
     private func emitStaffSpanBracket(_ span: StaffGroup.Span, builder: inout SVGBuilder) {
         let s = config.staffSize
         let defaults = metadata.engravingDefaults

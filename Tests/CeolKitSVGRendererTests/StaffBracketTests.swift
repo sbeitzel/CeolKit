@@ -149,7 +149,7 @@ struct StaffBracketTests {
 
     @Test("A nested span is drawn inside the outer one, at sub-bracket thickness")
     func nestedSpanIsThinnerAndCloserToTheStaff() throws {
-        let (svg, staves) = render(threeVoices("%%score [{1 2} 3]"))
+        let (svg, staves) = render(threeVoices("%%score [[1 2] 3]"))
         let spines = bracketSpines(svg, staves: staves)
         #expect(spines.count == 2)
         let (outer, inner) = (spines[0], spines[1])
@@ -157,14 +157,14 @@ struct StaffBracketTests {
         let defaults = metadata.engravingDefaults
         #expect(abs((outer.width ?? 0) - defaults.bracketThickness * config.staffSize) < 1e-3)
         #expect(abs((inner.width ?? 0) - defaults.subBracketThickness * config.staffSize) < 1e-3)
-        // The outer span covers all three staves; the brace inside it stops at the second.
+        // The outer span covers all three staves; the one inside it stops at the second.
         #expect(abs(outer.y2 - (staves[2].topY + 4 * staves[2].staffLineGap)) < 1e-3)
         #expect(abs(inner.y2 - (staves[1].topY + 4 * staves[1].staffLineGap)) < 1e-3)
     }
 
     @Test("A span opening below the top staff is drawn from the staff it opens at")
     func spanOpeningLowerDownIsStillDrawn() throws {
-        let (svg, staves) = render(threeVoices("%%score [1 {2 3}]"))
+        let (svg, staves) = render(threeVoices("%%score [1 [2 3]]"))
         let spines = bracketSpines(svg, staves: staves)
         #expect(spines.count == 2)
         let inner = try #require(spines.last)

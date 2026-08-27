@@ -241,25 +241,65 @@ struct SVGEmitter: Sendable {
         }
     }
 
-    /// The vertical rule at the left edge that joins the staves of a multi-voice system.
+    /// The furniture at the left edge of a multi-voice system: the rule that joins its
+    /// staves, and a bracket over each span the tune's `%%score`/`%%staves` plan states.
     ///
-    /// Without it the staves of a system are just neighbouring staves; with it they read as
-    /// one system, which is what tells a player that the parts are to be followed together.
-    /// Drawn once per group, by its top staff.
+    /// Without the rule the staves of a system are just neighbouring staves; with it they
+    /// read as one system, which is what tells a player that the parts are to be followed
+    /// together.  It is drawn once per group, by its top staff, and at the staff lines' own
+    /// weight rather than a barline's: it is a continuation of the staff furniture, so that
+    /// is what it should look like — and it is what lets `CeolKitSVGGeometry` tell it apart
+    /// from the barlines it sits alongside, which are thicker.
     ///
-    /// Deliberately just the joining rule, and no brace or bracket: which staves a brace or
-    /// bracket spans is a property of `%%score`/`%%staves`, which CeolKit does not parse yet.
-    ///
-    /// Drawn at the staff lines' own weight rather than a barline's.  It is a continuation
-    /// of the staff furniture, so that is what it should look like — and it is what lets
-    /// `CeolKitSVGGeometry` tell it apart from the barlines it now sits alongside, which
-    /// are thicker.
+    /// The spans are drawn each by the staff it starts at, which is where
+    /// `VerticalLayoutEngine` anchored it, so a span opening below the group's top staff is
+    /// drawn by that staff and not by the leader.
     private func emitStaffGroupConnector(_ system: ResolvedSystem, builder: inout SVGBuilder) {
-        guard let group = system.staffGroup, group.isGroupLeader else { return }
-        let topY = system.origin.y + system.staffOrigin
-        let thickness = metadata.engravingDefaults.staffLineThickness * config.staffSize
-        builder.line(x1: system.origin.x, y1: topY, x2: system.origin.x, y2: group.bottomY,
+        guard let group = system.staffGroup else { return }
+        if group.isGroupLeader {
+            let topY = system.origin.y + system.staffOrigin
+            let thickness = metadata.engravingDefaults.staffLineThickness * config.staffSize
+            builder.line(x1: system.origin.x, y1: topY, x2: system.origin.x, y2: group.bottomY,
+                         stroke: "black", strokeWidth: thickness)
+        }
+        for span in group.spans { emitStaffSpanBracket(span, builder: &builder) }
+    }
+
+    /// One brace or bracket, standing in the indent reserved for its depth.
+    ///
+    /// Every span is drawn as a bracket for now, the brace glyph being stretchy and so a
+    /// piece of `SVGBuilder` work of its own (issue #72).  A bracket over a braced span says
+    /// less than the brace will, but it says the true thing — these staves are one group —
+    /// which drawing nothing does not.
+    ///
+    /// A nested span is drawn at `subBracketThickness` with short hooks in place of the
+    /// bracket's flared tips: SMuFL publishes no sub-bracket glyph, a sub-bracket being a
+    /// thin spine serifed at each end.
+    private func emitStaffSpanBracket(_ span: StaffGroup.Span, builder: inout SVGBuilder) {
+        let s = config.staffSize
+        let defaults = metadata.engravingDefaults
+        let isNested = span.depth > 0
+        let thickness = (isNested ? defaults.subBracketThickness : defaults.bracketThickness) * s
+        // `span.x` is the spine's left edge; a stroke is drawn centred on its x.
+        let spineX = span.x + thickness / 2
+        builder.line(x1: spineX, y1: span.topY, x2: spineX, y2: span.bottomY,
                      stroke: "black", strokeWidth: thickness)
+
+        guard isNested else {
+            let fontSize = 4.0 * s
+            builder.text(String(SMuFLGlyph.bracketTop.character), x: span.x, y: span.topY,
+                         fontFamily: "Bravura", fontSize: fontSize)
+            builder.text(String(SMuFLGlyph.bracketBottom.character), x: span.x, y: span.bottomY,
+                         fontFamily: "Bravura", fontSize: fontSize)
+            return
+        }
+        // Inset by half the spine's weight so the hooks stay inside the span rather than
+        // overhanging the staff lines they terminate on.
+        let hookEndX = span.x + BracketColumns.subBracketHookLength(staffSize: s)
+        for y in [span.topY + thickness / 2, span.bottomY - thickness / 2] {
+            builder.line(x1: spineX, y1: y, x2: hookEndX, y2: y,
+                         stroke: "black", strokeWidth: thickness)
+        }
     }
 
     // MARK: - Clef

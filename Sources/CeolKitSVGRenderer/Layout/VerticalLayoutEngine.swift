@@ -218,23 +218,25 @@ public struct VerticalLayoutEngine: Sendable {
         let last = metrics.staves[metrics.staves.count - 1]
         let groupBottomY = topY + last.staffTopOffset + staffHeight
 
+        // The staves start right of the margin by whatever the group's braces and brackets
+        // need, and nowhere else: with no plan, or a plan that groups nothing, the indent is
+        // zero and the page is the one the renderer drew before brackets existed.  The line
+        // breaker was handed the same reservation, so the music still ends on the right
+        // margin (see `BracketColumns`).
+        let columns = BracketColumns(grouping: group.grouping, staffCount: metrics.staves.count,
+                                     metadata: metadata, staffSize: staffSize)
+        let staffLeftX = config.margins.left + columns.indent
+
         // The plan's spans, placed: a span reaches from the top staff line of its first
-        // staff to the bottom staff line of its last.  Keyed by first staff, which is the
-        // one that draws it.
-        //
-        // A span reaching past the group's last staff is dropped rather than clamped: a
-        // grouping is built over the very staves of the region it is stamped on, so one that
-        // does not fit did not come from this group's selection, and drawing a bracket to a
-        // staff that is not there would be worse than drawing none.
+        // staff to the bottom staff line of its last, standing in the column its depth was
+        // given.  Keyed by first staff, which is the one that draws it.
         let spansByFirstStaff = Dictionary(
-            grouping: (group.grouping?.spans ?? []).filter {
-                $0.staves.upperBound < metrics.staves.count
-            },
-            by: \.staves.lowerBound
+            grouping: columns.spans, by: \.staves.lowerBound
         ).mapValues { spans in
             spans.map { span in
                 StaffGroup.Span(
                     bracket: span.bracket, staves: span.staves, depth: span.depth,
+                    x: columns.spineX(depth: span.depth, staffLeftX: staffLeftX),
                     topY: topY + metrics.staves[span.staves.lowerBound].staffTopOffset,
                     bottomY: topY + metrics.staves[span.staves.upperBound].staffTopOffset
                              + staffHeight)
@@ -245,7 +247,7 @@ public struct VerticalLayoutEngine: Sendable {
             let (extraAbove, extraBelow, staffTopOffset) = metrics.staves[i]
             // `origin.y` is the top of the staff's own band; `staffOrigin` walks down from
             // there to the top staff line, exactly as in the single-staff case.
-            let systemOrigin = Point(x: config.margins.left, y: topY + staffTopOffset - extraAbove)
+            let systemOrigin = Point(x: staffLeftX, y: topY + staffTopOffset - extraAbove)
             let measures = resolveMeasures(
                 staff.measures,
                 systemOrigin: systemOrigin,

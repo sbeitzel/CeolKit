@@ -55,6 +55,25 @@ import Testing
         #expect(ed.repeatBarlineDotSeparation < ed.barlineSeparation)
     }
 
+    /// A bracket's spine is drawn at its own weight, and a nested one thinner still, so the
+    /// two read as an outer group and an inner one rather than as two brackets.
+    @Test func bracketThicknessesAreDecoded() {
+        let ed = metadata.engravingDefaults
+        #expect(ed.bracketThickness == 0.5)
+        #expect(ed.subBracketThickness == 0.16)
+        #expect(ed.subBracketThickness < ed.bracketThickness)
+    }
+
+    /// The bracket is drawn as a spine the renderer strokes plus the face's own end glyphs,
+    /// so a face without them would leave a bracket with no tips.
+    @Test func bracketTipGlyphsHaveBoundingBoxes() throws {
+        for name in ["bracketTop", "bracketBottom"] {
+            let bbox = try #require(metadata.glyphBBoxes[name])
+            #expect(bbox.width  > 0)
+            #expect(bbox.height > 0)
+        }
+    }
+
     /// `CeolKitSVGGeometry` tells a bar line from a note stem by comparing each stroke
     /// against the staff line's, so what it depends on is not the three weights but their
     /// order.  A metadata swap that reordered them would leave it misreading every drawing

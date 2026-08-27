@@ -140,16 +140,26 @@ public struct SVGRenderer: CeolKitRenderer {
                                           keySignature: voiceKeys[index],
                                           meter: regionMeter)
                 }
+                // Space for the region's braces and brackets, reserved before anything is
+                // packed into the line.  It is added to the header widths rather than taken
+                // off `usableWidth` because that is the one number both the breaker and the
+                // justifier already subtract, and `VerticalLayoutEngine` spends exactly the
+                // same amount moving the staves right (see `BracketColumns`).
+                let indent = BracketColumns(grouping: selection.grouping,
+                                            staffCount: printedVoices.count,
+                                            metadata: metadata,
+                                            staffSize: tuneConfig.staffSize).indent
+
                 // Header widths differ between the first system (has time sig) and later
                 // ones, and are the max across the group: the staves of a system have to
                 // start at the same x even when one voice's clef or key signature is wider.
-                let openingHeaderW = printedVoices.indices.reduce(0.0) { widest, index in
+                let openingHeaderW = indent + printedVoices.indices.reduce(0.0) { widest, index in
                     max(widest, systemHeaderWidth(clef: printedVoices[index].properties.clef,
                                                   keySignature: voiceKeys[index],
                                                   meter: regionMeter, metadata: metadata,
                                                   staffSize: tuneConfig.staffSize))
                 }
-                let laterHeaderW = printedVoices.indices.reduce(0.0) { widest, index in
+                let laterHeaderW = indent + printedVoices.indices.reduce(0.0) { widest, index in
                     max(widest, systemHeaderWidth(clef: printedVoices[index].properties.clef,
                                                   keySignature: voiceKeys[index],
                                                   meter: nil, metadata: metadata,

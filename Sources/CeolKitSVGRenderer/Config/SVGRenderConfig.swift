@@ -6,13 +6,25 @@ public struct SVGRenderConfig: Sendable {
     public var staffSize: Double
     /// Vertical gap added between systems within a single tune.
     public var systemGap: Double
-    /// Vertical gap added between the staves *within* one system — the staff group a
-    /// multi-voice tune draws for each source line.
+    /// Vertical gap added between two staves of one system that no brace or bracket joins
+    /// — the staff group a multi-voice tune draws for each source line.
     ///
     /// Deliberately smaller than ``systemGap``: the staves of a system are read together,
     /// so they have to sit closer to each other than the system does to its neighbours,
     /// or the group stops reading as a unit.  Only tunes with more than one voice use it.
     public var staffGap: Double
+    /// Vertical gap added between two staves whose innermost brace or bracket is the same
+    /// one — the staves of a single part.
+    ///
+    /// Smaller again than ``staffGap``, and for the same reason one step further in: staves
+    /// under one span are read as a unit, and the spacing has to say so on its own.
+    /// `[{A B} C]` should read as "A and B belong together, C is alongside" without the
+    /// reader having to trace the brace to find out — so A–B is spaced with this and B–C,
+    /// which meets only at the bracket outside them both, with ``staffGap``.  See
+    /// ``BracketColumns/sharesInnermostSpan(_:_:)``.  A system with no plan has no spans at
+    /// all, so every boundary in it uses ``staffGap`` and the page is the one the renderer
+    /// drew before spans existed.
+    public var spanStaffGap: Double
     /// Vertical gap added after the last system of a tune, before the next tune's title block.
     public var tuneGap: Double
     public var justifyLastSystem: Bool
@@ -44,6 +56,7 @@ public struct SVGRenderConfig: Sendable {
         staffSize: Double = 6.0,
         systemGap: Double? = nil,
         staffGap: Double? = nil,
+        spanStaffGap: Double? = nil,
         tuneGap: Double? = nil,
         justifyLastSystem: Bool = false,
         straightFlags: Bool = false,
@@ -58,6 +71,7 @@ public struct SVGRenderConfig: Sendable {
         self.staffSize = staffSize
         self.systemGap = systemGap ?? staffSize * 4
         self.staffGap = staffGap ?? staffSize * 3
+        self.spanStaffGap = spanStaffGap ?? staffSize * 2
         self.tuneGap = tuneGap ?? staffSize * 16
         self.justifyLastSystem = justifyLastSystem
         self.straightFlags = straightFlags
@@ -77,6 +91,7 @@ public struct SVGRenderConfig: Sendable {
         copy.staffSize = staffSize * factor
         copy.systemGap = systemGap * factor
         copy.staffGap = staffGap * factor
+        copy.spanStaffGap = spanStaffGap * factor
         copy.tuneGap = tuneGap * factor
         return copy
     }

@@ -137,7 +137,7 @@ public struct VerticalLayoutEngine: Sendable {
             y += block.titleBlockHeight
 
             for (gi, group) in groups.enumerated() {
-                let metrics = groupMetrics(of: group, staffSize: staffSize, staffGap: tuneConfig.staffGap)
+                let metrics = groupMetrics(of: group, config: tuneConfig)
 
                 // A group breaks to the next page whole: splitting it would separate staves
                 // that only mean anything read together.
@@ -154,7 +154,7 @@ public struct VerticalLayoutEngine: Sendable {
                 previousAbcLine = abcLine
                 pageSystems.append(contentsOf: resolveGroup(
                     group, metrics: metrics, topY: y, staffSize: staffSize,
-                    staffHeight: staffHeight, staffGap: tuneConfig.staffGap,
+                    staffHeight: staffHeight,
                     graceNoteSpacing: block.graceNoteSpacing, abcLine: abcLine))
 
                 let isLastInBlock = gi == groups.count - 1
@@ -186,11 +186,18 @@ public struct VerticalLayoutEngine: Sendable {
         /// Width of the widest clef + key + time signature run in the group.  Every staff
         /// starts its first measure there, so their bar lines can align.
         let startWidth: Double
+        /// The group's braces and brackets, and the indent they stand in.  Computed here
+        /// rather than where they are drawn because the spans decide the spacing as well as
+        /// the furniture: a staff a span reaches past is not drawn *and* not tightened.
+        let columns: BracketColumns
     }
 
-    private func groupMetrics(of group: JustifiedSystemGroup, staffSize: Double,
-                              staffGap: Double) -> GroupMetrics {
+    private func groupMetrics(of group: JustifiedSystemGroup,
+                              config: SVGRenderConfig) -> GroupMetrics {
+        let staffSize = config.staffSize
         let staffHeight = 4.0 * staffSize
+        let columns = BracketColumns(grouping: group.grouping, staffCount: group.staves.count,
+                                     metadata: metadata, staffSize: staffSize)
         var staves: [(extraAbove: Double, extraBelow: Double, staffTopOffset: Double)] = []
         staves.reserveCapacity(group.staves.count)
         var offset = 0.0
@@ -199,16 +206,19 @@ public struct VerticalLayoutEngine: Sendable {
             let (extraAbove, extraBelow) = verticalExtent(of: staff, staffSize: staffSize)
             staves.append((extraAbove, extraBelow, offset + extraAbove))
             offset += extraAbove + staffHeight + extraBelow
-            if i < group.staves.count - 1 { offset += staffGap }
+            if i < group.staves.count - 1 {
+                offset += columns.sharesInnermostSpan(i, i + 1) ? config.spanStaffGap : config.staffGap
+            }
             startWidth = max(startWidth, systemStartWidth(for: staff, staffSize: staffSize))
         }
-        return GroupMetrics(staves: staves, totalHeight: offset, startWidth: startWidth)
+        return GroupMetrics(staves: staves, totalHeight: offset, startWidth: startWidth,
+                            columns: columns)
     }
 
     /// Places every staff of one system, top to bottom, starting at `topY`.
     private func resolveGroup(_ group: JustifiedSystemGroup, metrics: GroupMetrics,
                               topY: Double, staffSize: Double, staffHeight: Double,
-                              staffGap: Double, graceNoteSpacing: Double,
+                              graceNoteSpacing: Double,
                               abcLine: Int) -> [ResolvedSystem] {
         // A group of one is an ordinary system: no membership, no group furniture, and the
         // same output the renderer produced before staff groups existed.
@@ -223,8 +233,7 @@ public struct VerticalLayoutEngine: Sendable {
         // zero and the page is the one the renderer drew before brackets existed.  The line
         // breaker was handed the same reservation, so the music still ends on the right
         // margin (see `BracketColumns`).
-        let columns = BracketColumns(grouping: group.grouping, staffCount: metrics.staves.count,
-                                     metadata: metadata, staffSize: staffSize)
+        let columns = metrics.columns
         let staffLeftX = config.margins.left + columns.indent
 
         // The plan's spans, placed: a span reaches from the top staff line of its first
@@ -296,8 +305,7 @@ public struct VerticalLayoutEngine: Sendable {
         let tuneConfig = config.scaled(by: block.scale)
         var h = block.titleBlockHeight
         for (i, group) in block.systemGroups.enumerated() {
-            h += groupMetrics(of: group, staffSize: tuneConfig.staffSize,
-                              staffGap: tuneConfig.staffGap).totalHeight
+            h += groupMetrics(of: group, config: tuneConfig).totalHeight
             if i < block.systemGroups.count - 1 { h += tuneConfig.systemGap }
         }
         return h

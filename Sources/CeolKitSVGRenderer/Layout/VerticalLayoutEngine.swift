@@ -308,7 +308,8 @@ public struct VerticalLayoutEngine: Sendable {
                 meter: staff.meter,
                 abcLine: abcLine,
                 staffGroup: membership,
-                voiceLabel: staff.voiceLabel.map { VoiceLabel(text: $0, x: labelRightX) }
+                voiceLabel: staff.voiceLabel.map { VoiceLabel(text: $0, x: labelRightX) },
+                stemDirection: staff.stemDirection
             )
         }
     }

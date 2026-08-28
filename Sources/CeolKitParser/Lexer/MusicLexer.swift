@@ -24,6 +24,19 @@ struct MusicLexer {
             let token = scan(leading: ch)
             let length = max(1, localOffset - startOffset)
             result.append((token, makeRange(at: startOffset, length: length)))
+
+            // §4.9: a bar line may be followed straight away by the numbers of the variant
+            // ending it opens — `|1`, `:|2`, `||1,2`.  Scanned here rather than inside each
+            // bar-line scanner so that every kind of bar line spells it the same way, and
+            // so that the number is an *extra* token: `|1` is a bar line and an ending, and
+            // dropping the bar merges the ending into the measure before it.
+            if token.isBarLine, current?.isNumber == true {
+                let numberStart = localOffset
+                let numbers = scanEndingNumber()
+                result.append((numbers,
+                               makeRange(at: numberStart,
+                                         length: max(1, localOffset - numberStart))))
+            }
         }
         return result
     }
@@ -155,7 +168,6 @@ struct MusicLexer {
         case "]": advance(); return .barFinal
         case "|": advance(); return .barDouble
         case ":": advance(); return .barRepeatStart
-        case let d? where d.isNumber: return scanEndingNumber()
         default: return .barSingle
         }
     }

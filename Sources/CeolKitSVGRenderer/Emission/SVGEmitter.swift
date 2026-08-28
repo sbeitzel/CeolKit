@@ -45,13 +45,23 @@ private struct SlurAnchor {
 struct SVGEmitter: Sendable {
     let config: SVGRenderConfig
     let metadata: BravuraMetadata
+    /// What `%%ceolkit:pipeformat` asked of the whole document.  A voice that states its own
+    /// `V:` `stem=` overrides it (issue #74), so this is the fallback rather than the answer
+    /// — see ``configured(for:)``.
+    let documentStemDirection: StemDirection
+    /// The direction in force for the system being emitted: the voice's own where it stated
+    /// one, ``documentStemDirection`` where it did not.  `.auto` leaves the choice to the
+    /// note's staff position, which is the ordinary engraving rule.
     let stemDirection: StemDirection
     let accidentalMetrics: AccidentalMetrics
 
-    init(config: SVGRenderConfig, metadata: BravuraMetadata, stemDirection: StemDirection = .auto) {
+    init(config: SVGRenderConfig, metadata: BravuraMetadata,
+         stemDirection: StemDirection = .auto,
+         systemStemDirection: StemDirection? = nil) {
         self.config = config
         self.metadata = metadata
-        self.stemDirection = stemDirection
+        self.documentStemDirection = stemDirection
+        self.stemDirection = systemStemDirection ?? stemDirection
         self.accidentalMetrics = AccidentalMetrics(config: config, metadata: metadata)
     }
 
@@ -114,13 +124,25 @@ struct SVGEmitter: Sendable {
     /// threading a size argument through the whole emission tree.  `graceNoteSpacing` rides
     /// along for a different reason: the sizer reserved this system's grace groups with it,
     /// and a group drawn at any other step would not fill the space it was given.
+    ///
+    /// Stem direction is resolved here too, and for the same reason: it varies per staff,
+    /// and threading it down to `emitStem` through every note, chord, tuplet and beam group
+    /// would touch the whole emission tree to say one thing.  The voice's `V:` `stem=` beats
+    /// `%%ceolkit:pipeformat`, which beats the note's own staff position (issue #74).
+    ///
+    /// Always called on the page-level emitter, whose ``stemDirection`` is still the
+    /// document's — resolving from ``documentStemDirection`` rather than from
+    /// ``stemDirection`` keeps that from mattering.
     private func configured(for system: ResolvedSystem) -> SVGEmitter {
+        let systemStem = system.stemDirection != .auto ? system.stemDirection : documentStemDirection
         guard system.staffSize != config.staffSize
-                || system.graceNoteSpacing != config.graceNoteSpacing else { return self }
+                || system.graceNoteSpacing != config.graceNoteSpacing
+                || systemStem != stemDirection else { return self }
         var systemConfig = config
         systemConfig.staffSize = system.staffSize
         systemConfig.graceNoteSpacing = system.graceNoteSpacing
-        return SVGEmitter(config: systemConfig, metadata: metadata, stemDirection: stemDirection)
+        return SVGEmitter(config: systemConfig, metadata: metadata,
+                          stemDirection: documentStemDirection, systemStemDirection: systemStem)
     }
 
     // MARK: - Scroll-sync metadata

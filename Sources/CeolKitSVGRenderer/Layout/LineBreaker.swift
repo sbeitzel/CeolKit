@@ -70,16 +70,21 @@ public struct LineBreaker: Sendable {
         /// has none, and deliberately not defaulted to ``firstSystemLabel``: a voice named
         /// once and never again is what the spec asks for and what abcm2ps prints.
         public let laterSystemLabel: String?
+        /// The voice's `V:` `stem=`, stamped on every system it appears on — unlike the
+        /// label, it does not change between the first system and the rest.
+        public let stemDirection: StemDirection
 
         public init(measures: [SizedMeasure], clef: ClefSpec = ClefSpec(clef: .treble, octaveShift: 0),
                     keySignature: KeySignature? = nil, meter: Meter? = nil,
-                    firstSystemLabel: String? = nil, laterSystemLabel: String? = nil) {
+                    firstSystemLabel: String? = nil, laterSystemLabel: String? = nil,
+                    stemDirection: StemDirection = .auto) {
             self.measures = measures
             self.clef = clef
             self.keySignature = keySignature
             self.meter = meter
             self.firstSystemLabel = firstSystemLabel
             self.laterSystemLabel = laterSystemLabel
+            self.stemDirection = stemDirection
         }
     }
 
@@ -145,7 +150,8 @@ public struct LineBreaker: Sendable {
                         clef: voice.clef,
                         keySignature: voice.keySignature,
                         meter: isFirstOfTune ? voice.meter : nil,
-                        voiceLabel: isFirstOfTune ? voice.firstSystemLabel : voice.laterSystemLabel
+                        voiceLabel: isFirstOfTune ? voice.firstSystemLabel : voice.laterSystemLabel,
+                        stemDirection: voice.stemDirection
                     )
                 }, grouping: grouping))
             }
@@ -157,7 +163,7 @@ public struct LineBreaker: Sendable {
                 System(measures: staff.measures, isLastSystem: true,
                        sourceForced: staff.sourceForced, staveWasSplit: staff.staveWasSplit,
                        clef: staff.clef, keySignature: staff.keySignature, meter: staff.meter,
-                       voiceLabel: staff.voiceLabel)
+                       voiceLabel: staff.voiceLabel, stemDirection: staff.stemDirection)
             }, grouping: last.grouping))
         }
 

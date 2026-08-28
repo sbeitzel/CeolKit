@@ -63,7 +63,9 @@ public struct SVGRenderer: CeolKitRenderer {
         }()
 
         var tuneBlocks: [TuneBlock] = []
-        var stemDirection: StemDirection = .auto
+        // What the *document* asks for. A voice's own `V:` stem= outranks it; the emitter
+        // resolves the two per staff (issue #74).
+        var documentStemDirection: StemDirection = .auto
         var justifyLastSystem = effectiveConfig.justifyLastSystem
         // %%ceolkit:scale is tune-scoped but sticky: a preamble value governs every following
         // tune until a later tune header overrides it. %%ceolkit:gracenotespacing behaves the
@@ -74,7 +76,7 @@ public struct SVGRenderer: CeolKitRenderer {
         for tune in score.tunes {
             for scope in tune.directives {
                 switch scope.directive {
-                case .pipeFormat(true):     stemDirection = .down
+                case .pipeFormat(true):     documentStemDirection = .down
                 case .justifyLast(let on):  justifyLastSystem = on
                 case .scale(let factor):    scale = factor
                 case .graceNoteSpacing(let step): graceNoteSpacing = step
@@ -158,7 +160,8 @@ public struct SVGRenderer: CeolKitRenderer {
                                           keySignature: voiceKeys[index],
                                           meter: regionMeter,
                                           firstSystemLabel: firstLabels[index],
-                                          laterSystemLabel: laterLabels[index])
+                                          laterSystemLabel: laterLabels[index],
+                                          stemDirection: voice.properties.stemDirection)
                 }
                 // Space for the region's braces and brackets, reserved before anything is
                 // packed into the line.  It is added to the header widths rather than taken
@@ -230,7 +233,8 @@ public struct SVGRenderer: CeolKitRenderer {
                                         graceNoteSpacing: graceNoteSpacing))
         }
 
-        let emitter = SVGEmitter(config: effectiveConfig, metadata: metadata, stemDirection: stemDirection)
+        let emitter = SVGEmitter(config: effectiveConfig, metadata: metadata,
+                                 stemDirection: documentStemDirection)
         let layout = engine.layout(tuneBlocks)
         let finalLayout = attachFooters(layout, score: score, config: effectiveConfig)
         return try emitter.emit(finalLayout)
@@ -366,7 +370,7 @@ private extension SystemGroup {
             System(measures: $0.measures, isLastSystem: isLast, sourceForced: $0.sourceForced,
                    staveWasSplit: $0.staveWasSplit, clef: $0.clef,
                    keySignature: $0.keySignature, meter: $0.meter,
-                   voiceLabel: $0.voiceLabel)
+                   voiceLabel: $0.voiceLabel, stemDirection: $0.stemDirection)
         }, grouping: grouping)
     }
 }

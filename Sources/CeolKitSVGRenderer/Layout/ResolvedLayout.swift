@@ -54,6 +54,9 @@ public struct System: Sendable {
     /// (ABC v2.2 §4.1).  A voice with a name but no subname is therefore labelled once and
     /// then not again, which is what abcm2ps does.
     public let voiceLabel: String?
+    /// What this voice asked for with `V:` `stem=` (§4.1, issue #74).  `.auto` — the
+    /// overwhelmingly common case — means it asked for nothing and the document decides.
+    public let stemDirection: StemDirection
 
     public init(
         measures: [SizedMeasure],
@@ -63,7 +66,8 @@ public struct System: Sendable {
         clef: ClefSpec = ClefSpec(clef: .treble, octaveShift: 0),
         keySignature: KeySignature? = nil,
         meter: Meter? = nil,
-        voiceLabel: String? = nil
+        voiceLabel: String? = nil,
+        stemDirection: StemDirection = .auto
     ) {
         self.measures = measures
         self.isLastSystem = isLastSystem
@@ -73,6 +77,7 @@ public struct System: Sendable {
         self.keySignature = keySignature
         self.meter = meter
         self.voiceLabel = voiceLabel
+        self.stemDirection = stemDirection
     }
 }
 
@@ -220,6 +225,9 @@ public struct JustifiedSystem: Sendable {
     /// Carried through from ``System/voiceLabel`` — justification moves x positions, never
     /// what a staff is called.
     public let voiceLabel: String?
+    /// Carried through from ``System/stemDirection`` — justification moves x positions,
+    /// never which way a voice's stems point.
+    public let stemDirection: StemDirection
 
     public init(
         measures: [JustifiedMeasure],
@@ -228,7 +236,8 @@ public struct JustifiedSystem: Sendable {
         clef: ClefSpec = ClefSpec(clef: .treble, octaveShift: 0),
         keySignature: KeySignature? = nil,
         meter: Meter? = nil,
-        voiceLabel: String? = nil
+        voiceLabel: String? = nil,
+        stemDirection: StemDirection = .auto
     ) {
         self.measures = measures
         self.isLastSystem = isLastSystem
@@ -237,6 +246,7 @@ public struct JustifiedSystem: Sendable {
         self.keySignature = keySignature
         self.meter = meter
         self.voiceLabel = voiceLabel
+        self.stemDirection = stemDirection
     }
 }
 
@@ -449,6 +459,10 @@ public struct ResolvedSystem: Sendable {
     /// voice has nothing to print on this system, which is every voice of every tune that
     /// names none.
     public let voiceLabel: VoiceLabel?
+    /// What this staff's voice asked for with `V:` `stem=`.  A voice that states a
+    /// direction overrides `%%ceolkit:pipeformat`; `.auto` leaves the choice to the
+    /// document, and failing that to the note's own staff position.
+    public let stemDirection: StemDirection
 
     public init(
         origin: Point,
@@ -465,7 +479,8 @@ public struct ResolvedSystem: Sendable {
         meter: Meter? = nil,
         abcLine: Int = 1,
         staffGroup: StaffGroup? = nil,
-        voiceLabel: VoiceLabel? = nil
+        voiceLabel: VoiceLabel? = nil,
+        stemDirection: StemDirection = .auto
     ) {
         self.origin = origin
         self.measures = measures
@@ -482,6 +497,7 @@ public struct ResolvedSystem: Sendable {
         self.abcLine = abcLine
         self.staffGroup = staffGroup
         self.voiceLabel = voiceLabel
+        self.stemDirection = stemDirection
     }
 }
 

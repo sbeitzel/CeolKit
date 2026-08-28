@@ -7,26 +7,48 @@ struct LineClassifier {
     func classify() -> [LogicalLine] {
         var result: [LogicalLine] = []
         var mode = ParserMode.preamble
-        var pendingContinuation: (text: String, source: SourceRange)? = nil
+        // A music line ended in `\`.  `text` is what has been gathered so far and `source`
+        // where it started; `deferred` holds the lines that fell between it and its
+        // continuation, which are emitted once the music line is whole again.
+        var pendingContinuation: (text: String, source: SourceRange, deferred: [LogicalLine])? = nil
 
         for (lineNumber, text, _) in source.lines() {
             let str = String(text)
             let lineSource = source.range(line: lineNumber, column: 1, length: text.utf8.count)
-
-            // Continuation: this line is a raw extension of the previous music line.
-            if var cont = pendingContinuation {
-                if str.hasSuffix("\\") {
-                    cont.text += String(str.dropLast())
-                    pendingContinuation = cont
-                } else {
-                    cont.text += str
-                    result.append(.musicLine(text: cont.text, source: cont.source))
-                    pendingContinuation = nil
-                }
-                continue
-            }
-
             let line = classifyLine(str, source: lineSource, mode: mode)
+
+            // §2.2: a backslash continues a music line *through* information fields,
+            // comments and stylesheet directives — only the next line of music code joins
+            // it.  Anything else is set aside and emitted after the music line it
+            // interrupted, so a `w:` still lands on the line it belongs to.  Comments are
+            // dropped, as they are everywhere else.
+            if var cont = pendingContinuation {
+                switch line {
+                case .musicLine(let t, _):
+                    if t.hasSuffix("\\") {
+                        cont.text += String(t.dropLast())
+                        pendingContinuation = cont
+                    } else {
+                        cont.text += t
+                        result.append(.musicLine(text: cont.text, source: cont.source))
+                        result += cont.deferred
+                        pendingContinuation = nil
+                    }
+                    continue
+                case .comment:
+                    continue
+                case .empty:
+                    // Illegal per §6.1.1 — a backslash must not precede an empty line.
+                    // Flush what there is rather than swallow the rest of the tune.
+                    result.append(.musicLine(text: cont.text, source: cont.source))
+                    result += cont.deferred
+                    pendingContinuation = nil
+                default:
+                    cont.deferred.append(line)
+                    pendingContinuation = cont
+                    continue
+                }
+            }
 
             // Update state machine
             switch line {
@@ -45,7 +67,7 @@ struct LineClassifier {
 
             // Start continuation tracking for music lines ending with backslash.
             if case .musicLine(let t, let s) = line, t.hasSuffix("\\") {
-                pendingContinuation = (text: String(t.dropLast()), source: s)
+                pendingContinuation = (text: String(t.dropLast()), source: s, deferred: [])
                 continue
             }
 
@@ -55,6 +77,7 @@ struct LineClassifier {
         // Flush dangling continuation.
         if let cont = pendingContinuation {
             result.append(.musicLine(text: cont.text, source: cont.source))
+            result += cont.deferred
         }
 
         return result

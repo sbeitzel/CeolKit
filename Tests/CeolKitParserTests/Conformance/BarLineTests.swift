@@ -103,6 +103,31 @@ struct BarLineTests {
         #expect(ending1 != nil)
     }
 
+    /// `|1` is a bar line *and* an ending number.  The lexer used to read the digit in
+    /// place of the bar, which merged the measure before the ending into the ending itself
+    /// and lost one bar from every repeat written this way — §14.4 among them.
+    @Test("|1 closes the measure before the ending as well as opening it")
+    func endingNumberDoesNotSwallowItsBarLine() {
+        let result = parse(barTune("CDEF|GABC|1CDEF:|2GABC|]"))
+        let measures = result.score.firstTune?.singleVoiceMeasures ?? []
+        #expect(measures.count == 4)
+        #expect(measures.count(where: { $0.endingNumber != nil }) == 2)
+        // The bar that the ending number followed keeps its own closing bar line.
+        guard measures.count == 4 else { return }
+        #expect(measures[1].closingBar.kind == .single)
+        #expect(measures[1].endingNumber == nil)
+        #expect(measures[2].endingNumber?.contains(1) == true)
+    }
+
+    @Test("|1,2 and |1-3 keep their bar line and their whole list")
+    func endingListsKeepTheirBarLine() {
+        for (body, expected) in [("CDEF|1,2 GABC|]", [1, 2]), ("CDEF|1-3 GABC|]", [1, 2, 3])] {
+            let measures = parse(barTune(body)).score.firstTune?.singleVoiceMeasures ?? []
+            #expect(measures.count == 2, "\(body) gave \(measures.count) measures")
+            #expect(measures.last?.endingNumber == expected)
+        }
+    }
+
     @Test("Measures without ending numbers have nil endingNumber")
     func noEndingNumber() {
         let result = parse(barTune("CDEF|GABC|"))

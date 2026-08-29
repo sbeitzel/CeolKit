@@ -141,15 +141,24 @@ public struct Justifier: Sendable {
     /// `naturalWidth` minus the leading margin (`base`) and all fixed grace-to-note gaps
     /// (`fixedTotal`).  Grace events (identified by `graceIndices`) stay fixed relative to
     /// the note they precede; every other event is scaled proportionally.
+    ///
+    /// How much fixed width lies to an event's left is asked of the *offsets*, not of the
+    /// array order.  On a single-voice measure the two agree, because offsets only ever
+    /// increase.  A shared staff (§11.1 `( … )`) is where they part: its events are ordered
+    /// voice by voice within each onset so that no grace group is separated from its note,
+    /// which means the array steps backwards every time a new voice starts its run.
     private func stretchOffsets(_ offsets: [Double], naturalWidth: Double, finalWidth: Double,
                                  graceIndices: Set<Int>) -> [Double] {
         guard !offsets.isEmpty else { return offsets }
         let base = offsets[0]
 
-        // Total fixed gap = sum of (note_offset - grace_offset) for each grace+note pair.
-        let fixedTotal = graceIndices.reduce(0.0) { sum, i in
-            i + 1 < offsets.count ? sum + (offsets[i + 1] - offsets[i]) : sum
+        // One entry per grace+note pair: where its note sits, and the incompressible gap
+        // between the two.
+        let pairs: [(note: Int, x: Double, gap: Double)] = graceIndices.sorted().compactMap {
+            guard $0 + 1 < offsets.count else { return nil }
+            return (note: $0 + 1, x: offsets[$0 + 1], gap: offsets[$0 + 1] - offsets[$0])
         }
+        let fixedTotal = pairs.reduce(0.0) { $0 + $1.gap }
 
         let elasticNatural = naturalWidth - base - fixedTotal
         guard elasticNatural > 0 else { return offsets }
@@ -157,18 +166,26 @@ public struct Justifier: Sendable {
         // measure are incompressible, so there is nothing sane to do below that point.
         let elasticScale = max(0, (finalWidth - base - fixedTotal) / elasticNatural)
 
+        /// The fixed width of every grace pair that finishes to the left of event `i`.
+        /// Ties — a zero-width column, or a second voice sounding at the same x — are broken
+        /// by array position, which is what the single-voice walk this replaces did.
+        func fixedLeftOf(_ i: Int) -> Double {
+            pairs.reduce(0.0) { sum, pair in
+                guard pair.note != i, pair.note - 1 != i else { return sum }
+                let isLeft = pair.x < offsets[i] || (pair.x == offsets[i] && pair.note < i)
+                return isLeft ? sum + pair.gap : sum
+            }
+        }
+
         var result = [Double](repeating: 0, count: offsets.count)
-        var cumFixed = 0.0
         for i in 0..<offsets.count {
             if i > 0 && graceIndices.contains(i - 1) {
                 // Pair-follower: preserve the fixed gap from the preceding grace event.
-                let gap = offsets[i] - offsets[i - 1]
-                result[i] = result[i - 1] + gap
-                cumFixed += gap
+                result[i] = result[i - 1] + (offsets[i] - offsets[i - 1])
             } else {
                 // Elastic event: scale its position relative to the base.
-                let elasticOffset = offsets[i] - base - cumFixed
-                result[i] = base + cumFixed + elasticOffset * elasticScale
+                let fixed = fixedLeftOf(i)
+                result[i] = base + fixed + (offsets[i] - base - fixed) * elasticScale
             }
         }
         return result

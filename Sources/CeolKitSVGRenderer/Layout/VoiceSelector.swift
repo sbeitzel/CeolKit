@@ -7,26 +7,52 @@ import CeolKitModel
 /// the score directive."  A plan therefore both *filters* and *orders*, and its order wins
 /// over the order the voices were declared in.
 ///
-/// **One staff per voice, always.**  This pass runs ahead of the shared-staff work, so the
-/// voices of a `( … )` group each get a staff of their own and a floating `*V` gets one at
-/// the position it was written; both say so in a `staffPlanNotFullyApplied` diagnostic.
-/// That is strictly better than ignoring the directive — the right voices print in the right
-/// order, and only the vertical grouping is missing — and it keeps every voice the plan
-/// names on the page, which silently dropping the ones this pass cannot group would not.
+/// **A `( … )` group is one staff.**  Its voices come back as several entries of ``voices``
+/// mapped by ``Selection/staffOfVoice`` onto a single printed staff, which the driver hands
+/// to ``SharedStaffMerger`` to lay out on a common onset grid.  A floating `*V` still gets a
+/// staff of its own at the position it was written, and says so in a
+/// `staffPlanNotFullyApplied` diagnostic: that is strictly better than ignoring the directive
+/// — the right voices print in the right order, and only the vertical placement is missing —
+/// and it keeps every voice the plan names on the page, which silently dropping the ones this
+/// pass cannot place would not.
 ///
 /// **It also translates the plan's grouping into printed staff indices.**  `StaffPlanLayout`
-/// counts staves in the *plan*, and the four approximations above mean those are not the
+/// counts staves in the *plan*, and a dropped voice or a floating one means those are not the
 /// staves that reach the page.  This is the only pass that sees both numberings at once, so
 /// it is the one that has to do the translation; see ``Selection/grouping``.
 enum VoiceSelector {
 
     /// What the plan asked for, in the terms the rest of the layout works in.
     struct Selection {
-        /// The voices to print, top to bottom — one staff each.
+        /// The voices to print, top to bottom.
         let voices: [Voice]
-        /// The plan's spans and bar-line joins over ``voices``, or `nil` when there was no
-        /// plan to take them from, or the plan selected nothing and was fallen back from.
+        /// Which printed staff each of ``voices`` is drawn on, parallel to it.  Two voices
+        /// share an entry exactly when the plan put them in one `( … )` group; otherwise
+        /// this is `[0, 1, 2, …]` and a staff is a voice, as it always was.
+        let staffOfVoice: [Int]
+        /// The plan's spans and bar-line joins over the *printed staves*, or `nil` when there
+        /// was no plan to take them from, or the plan selected nothing and was fallen back from.
         let grouping: StaffGrouping?
+
+        /// How many staves will be drawn.
+        var staffCount: Int { (staffOfVoice.max() ?? -1) + 1 }
+
+        /// The voices on each printed staff, top to bottom.
+        var voicesByStaff: [[Int]] {
+            (0..<staffCount).map { staff in voices.indices.filter { staffOfVoice[$0] == staff } }
+        }
+
+        /// One staff per voice, in the order given — the shape every tune without a `( … )`
+        /// group has.
+        init(voices: [Voice], grouping: StaffGrouping?) {
+            self.init(voices: voices, staffOfVoice: Array(voices.indices), grouping: grouping)
+        }
+
+        init(voices: [Voice], staffOfVoice: [Int], grouping: StaffGrouping?) {
+            self.voices = voices
+            self.staffOfVoice = staffOfVoice
+            self.grouping = grouping
+        }
     }
 
     /// - Parameters:
@@ -48,11 +74,13 @@ enum VoiceSelector {
         let byId = Dictionary(voices.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
 
         var printed: [Voice] = []
+        var staffOfVoice: [Int] = []
         var seen: Set<VoiceId> = []
-        // Printed staff indices contributed by each staff of the plan, in order.  Empty for a
-        // plan staff whose every voice was dropped; more than one where a `( … )` shared staff
-        // was expanded to a staff per voice.
-        var printedByPlanStaff = [[Int]](repeating: [], count: layout.staves.count)
+        // The printed staff each staff of the plan turned into.  Absent for a plan staff whose
+        // every voice was dropped; shared by every voice of a `( … )` group, which is what
+        // makes the group one staff.
+        var staffForPlanStaff: [Int: Int] = [:]
+        var nextStaff = 0
         for (id, planStaff) in order(of: layout) {
             guard seen.insert(id).inserted else {
                 diagnostics.append(Diagnostic(
@@ -73,9 +101,21 @@ enum VoiceSelector {
             // the tune body, and this one does not appear there.  Not worth a diagnostic —
             // the plan is right and the body simply has nothing to say.
             guard !voice.isEmpty else { continue }
-            if let planStaff { printedByPlanStaff[planStaff].append(printed.count) }
+            // A floating voice belongs to no staff of the plan, so it takes one of its own.
+            let staff: Int
+            if let planStaff, let existing = staffForPlanStaff[planStaff] {
+                staff = existing
+            } else {
+                staff = nextStaff
+                nextStaff += 1
+                if let planStaff { staffForPlanStaff[planStaff] = staff }
+            }
+            staffOfVoice.append(staff)
             printed.append(voice)
         }
+        // Printed staff indices contributed by each staff of the plan: at most one now, and
+        // none where every voice of a plan staff was dropped.
+        let printedByPlanStaff = layout.staves.indices.map { staffForPlanStaff[$0].map { [$0] } ?? [] }
 
         guard !printed.isEmpty else {
             // Reporting each voice as unprinted would be a lie: the fallback prints them all.
@@ -89,7 +129,7 @@ enum VoiceSelector {
 
         diagnostics += omissions(from: printable, namedBy: layout, plan: plan)
         diagnostics += approximations(of: layout, printedBy: printed, plan: plan)
-        return Selection(voices: printed,
+        return Selection(voices: printed, staffOfVoice: staffOfVoice,
                          grouping: grouping(of: layout, printedBy: printedByPlanStaff))
     }
 
@@ -144,13 +184,6 @@ enum VoiceSelector {
                   let bottom = printedByPlanStaff[above + 1].first else { continue }
             joins.formUnion(top..<bottom)
         }
-        // §11.1 says nothing about the boundary between two staves that are one staff in the
-        // source: a `( … )` group the shared-staff work has not landed for yet.  Continuing
-        // the bar line through it is the closest drawing to the single staff it stands in for.
-        for printed in printedByPlanStaff where printed.count > 1 {
-            joins.formUnion(printed.dropLast())
-        }
-
         return StaffGrouping(spans: spans, barlineJoins: joins)
     }
 
@@ -181,16 +214,6 @@ enum VoiceSelector {
         let ids = Set(printed.map(\.id))
         var result: [Diagnostic] = []
 
-        for staff in layout.staves {
-            let sharing = staff.filter { ids.contains($0) }
-            guard sharing.count > 1 else { continue }
-            result.append(Diagnostic(
-                severity: .info, code: .staffPlanNotFullyApplied,
-                message: "voices \(list(sharing)) share one staff in the plan; "
-                       + "each is drawn on a staff of its own for now",
-                source: plan.source))
-        }
-
         for floating in layout.floating where ids.contains(floating.id) {
             result.append(Diagnostic(
                 severity: .info, code: .staffPlanNotFullyApplied,
@@ -211,7 +234,4 @@ enum VoiceSelector {
         }
     }
 
-    private static func list(_ ids: [VoiceId]) -> String {
-        ids.map(label).joined(separator: ", ")
-    }
 }

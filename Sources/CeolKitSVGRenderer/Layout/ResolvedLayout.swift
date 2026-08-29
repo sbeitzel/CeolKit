@@ -20,10 +20,11 @@ public struct SizedMeasure: Sendable {
     /// The voice each event came from, parallel to `eventOffsets`.
     /// `eventVoiceIndices.count == eventOffsets.count`.
     ///
-    /// An index into the *printed* voices of the plan region the measure belongs to — the
-    /// same numbering ``SystemGroup/staves`` is in.  A staff carrying one voice tags every
-    /// event with that staff's own index; a shared staff (§11.1 `( … )`) is what makes this
-    /// a per-event table rather than a property of the measure.
+    /// The voice's position *within its own staff*, top to bottom — which staff that is, the
+    /// enclosing ``System`` already says.  A staff carrying one voice therefore tags every
+    /// event `0`; a shared staff (§11.1 `( … )`) is what makes this a per-event table rather
+    /// than a property of the measure, and what the opposed stems and per-voice beaming above
+    /// this pass read to tell its tenants apart.
     public let eventVoiceIndices: [Int]
 
     public init(
@@ -98,8 +99,8 @@ public struct System: Sendable {
 /// *printed* staff indices — positions in ``SystemGroup/staves``.
 ///
 /// `%%score` / `%%staves` states them over the staves of the *plan*, which are not the
-/// staves that get printed: a voice the body never wrote to is dropped, a `( … )` shared
-/// staff is still drawn one staff per voice, and a floating `*V` takes a staff of its own.
+/// staves that get printed: a voice the body never wrote to is dropped, and a floating `*V`
+/// takes a staff of its own that the plan never counted.
 /// ``VoiceSelector`` translates them as it selects, so everything below this point can read
 /// the indices straight off.
 ///
@@ -131,13 +132,15 @@ public struct StaffGrouping: Sendable {
     }
 }
 
-/// One system's worth of unjustified music: the staves of every voice that is active on
-/// the source line the system came from, in `V:` declaration order.
+/// One system's worth of unjustified music: the staves the voices active on the source line
+/// the system came from are drawn on, top to bottom.
 ///
-/// A single-voice tune produces groups of exactly one staff, which is the pre-grouping
-/// path unchanged — every stage below treats a one-staff group as an ordinary system.
+/// One staff per voice, except where a `%%score ( … )` group put several on one — those are
+/// merged into a single staff before this point (see ``SharedStaffMerger``).  A single-voice
+/// tune produces groups of exactly one staff, which is the pre-grouping path unchanged:
+/// every stage below treats a one-staff group as an ordinary system.
 public struct SystemGroup: Sendable {
-    /// One entry per voice, top to bottom.  Never empty.
+    /// One entry per printed staff, top to bottom.  Never empty.
     ///
     /// Every staff holds the same number of measures and was broken at the same measure
     /// index, because `VoiceAligner` padded the voices into agreement before the line
@@ -567,8 +570,8 @@ public struct ResolvedEvent: Sendable {
     public let origin: Point
     public let kind: ResolvedEventKind
     /// The voice this event was written by, carried through from
-    /// ``SizedMeasure/eventVoiceIndices``.  With one voice per staff every event on a staff
-    /// shares the staff's index; a shared staff is where they differ.
+    /// ``SizedMeasure/eventVoiceIndices``: its position within the staff it is drawn on.
+    /// With one voice per staff every event is `0`; a shared staff is where they differ.
     public let voiceIndex: Int
 
     public init(origin: Point, kind: ResolvedEventKind, voiceIndex: Int = 0) {

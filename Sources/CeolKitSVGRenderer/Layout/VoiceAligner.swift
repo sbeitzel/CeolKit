@@ -24,8 +24,21 @@ enum VoiceAligner {
     struct AlignedStave {
         /// `measures[voiceIndex]` — one entry per voice, all of the same count.
         let measures: [[Measure]]
+        /// How many of each voice's measures the source actually wrote; everything from
+        /// there to ``measureCount`` is padding this pass invented.
+        ///
+        /// Recorded rather than recognised later: an invisible full-measure rest is
+        /// something an author may legitimately write, and a shared staff has to drop the
+        /// padding while keeping the `X` that was typed (see ``SharedStaffMerger``).
+        let realMeasureCounts: [Int]
 
         var measureCount: Int { measures.first?.count ?? 0 }
+
+        /// Whether `voice` has nothing of its own in `column`.
+        func isPadding(voice: Int, column: Int) -> Bool {
+            guard realMeasureCounts.indices.contains(voice) else { return false }
+            return column >= realMeasureCounts[voice]
+        }
     }
 
     /// Aligns `voices` stave by stave, padding wherever they disagree.
@@ -40,7 +53,9 @@ enum VoiceAligner {
         guard !voices.isEmpty else { return [] }
         // The single-voice case has nothing to align and nothing to warn about.
         guard voices.count > 1 else {
-            return voices[0].staves.map { AlignedStave(measures: [$0.measures]) }
+            return voices[0].staves.map {
+                AlignedStave(measures: [$0.measures], realMeasureCounts: [$0.measures.count])
+            }
         }
 
         let staveCount = voices.reduce(0) { max($0, $1.staves.count) }
@@ -59,7 +74,8 @@ enum VoiceAligner {
                 diagnostics.append(diagnostic)
             }
 
-            result.append(AlignedStave(measures: perVoice.map { pad($0, to: width) }))
+            result.append(AlignedStave(measures: perVoice.map { pad($0, to: width) },
+                                       realMeasureCounts: perVoice.map(\.count)))
             measureOrigin += width
         }
 

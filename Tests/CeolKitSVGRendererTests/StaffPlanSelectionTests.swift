@@ -16,12 +16,13 @@ struct StaffPlanSelectionTests {
     // MARK: - Helpers
 
     /// Runs the selection the renderer runs, on a real parse.
-    private func select(_ abc: String) -> (voices: [VoiceId], diagnostics: [Diagnostic]) {
+    private func select(_ abc: String)
+        -> (voices: [VoiceId], selection: VoiceSelector.Selection, diagnostics: [Diagnostic]) {
         let tune = CeolKitParser().parse(abc, options: .default).score.tunes[0]
         var diagnostics: [Diagnostic] = []
         let plan = tune.staffPlans.last { $0.effectiveFromStave == 0 }?.plan
         let chosen = VoiceSelector.select(from: tune.voices, plan: plan, into: &diagnostics)
-        return (chosen.voices.map(\.id), diagnostics)
+        return (chosen.voices.map(\.id), chosen, diagnostics)
     }
 
     private func codes(_ diagnostics: [Diagnostic], _ code: DiagnosticCode) -> [Diagnostic] {
@@ -110,15 +111,14 @@ struct StaffPlanSelectionTests {
 
     // MARK: - Approximations this phase makes
 
-    @Test("A shared-staff group is drawn as separate staves, and says so")
-    func sharedStaffIsSeparateForNow() {
+    @Test("A shared-staff group keeps both voices and puts them on one staff")
+    func sharedStaffIsOneStaff() {
         let result = select(threeVoices("%%score (1 2)"))
         #expect(result.voices == [.named("1"), .named("2")])
-
-        let notes = codes(result.diagnostics, .staffPlanNotFullyApplied)
-        #expect(notes.count == 1)
-        #expect(notes.first?.message.contains("share one staff") == true)
-        #expect(notes.first?.severity == .info)
+        #expect(result.selection.staffOfVoice == [0, 0])
+        #expect(result.selection.staffCount == 1)
+        // Nothing is approximated any more: #76 lays the group out on a shared staff.
+        #expect(codes(result.diagnostics, .staffPlanNotFullyApplied).isEmpty)
     }
 
     @Test("A floating voice keeps the position it was written at, and says so")
@@ -214,9 +214,9 @@ struct StaffPlanSelectionTests {
         #expect(render(threeVoices("%%score [1 2]")).pages.flatMap(\.systems).count == 2)
     }
 
-    @Test("%%score (1 2) renders two staves at this phase, not one")
-    func sharedStaffStillDrawsTwo() {
-        #expect(render(threeVoices("%%score (1 2)")).pages.flatMap(\.systems).count == 2)
+    @Test("%%score (1 2) renders one staff carrying both voices")
+    func sharedStaffDrawsOne() {
+        #expect(render(threeVoices("%%score (1 2)")).pages.flatMap(\.systems).count == 1)
     }
 
     /// Two voices on known source lines.  The system's scroll-sync anchor is taken from the

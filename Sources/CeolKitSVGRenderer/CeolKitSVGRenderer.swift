@@ -124,21 +124,36 @@ public struct SVGRenderer: CeolKitRenderer {
                 // source line-break, so the last column of every non-final stave forces a
                 // system break.  The region's own final stave needs none — the region ends
                 // there, and the next one starts a new system anyway.
+                //
+                // §11.1 `( … )`: a staff may carry more than one voice, and those are merged
+                // onto a common onset grid here — before sizing, because interleaved onsets
+                // need more columns than either voice alone and neither the breaker's nor
+                // the justifier's `max` across staves can invent one.
+                let voicesByStaff = selection.voicesByStaff
                 var breaks: [ScoreLineBreak?] = []
-                var columnsPerVoice = [[SizedMeasure]](repeating: [], count: printedVoices.count)
+                var columnsPerStaff = [[SizedMeasure]](repeating: [], count: voicesByStaff.count)
                 for (si, stave) in alignedStaves.enumerated() {
                     let isLastStave = si == alignedStaves.count - 1
                     for column in 0..<stave.measureCount {
                         breaks.append(!isLastStave && column == stave.measureCount - 1 ? .hard : nil)
-                        for voiceIndex in printedVoices.indices {
-                            columnsPerVoice[voiceIndex].append(
-                                sizer.size(stave.measures[voiceIndex][column],
-                                           unitNoteLength: voiceUnitLengths[voiceIndex],
-                                           voiceIndex: voiceIndex))
+                        for (staffIndex, members) in voicesByStaff.enumerated() {
+                            columnsPerStaff[staffIndex].append(
+                                sizer.size(sharedStaff: members.enumerated().map { position, voice in
+                                    MeasureSizer.SharedVoice(
+                                        measure: stave.measures[voice][column],
+                                        unitNoteLength: voiceUnitLengths[voice],
+                                        voiceIndex: position,
+                                        isPadding: stave.isPadding(voice: voice, column: column))
+                                }))
                         }
                     }
                 }
                 guard !breaks.isEmpty else { continue }
+
+                // Everything below draws one staff at a time, and a shared staff draws the
+                // clef, key and name of the voice written at the top of it — as an engraver
+                // does, and as `V:` order decides.
+                let staffLead = voicesByStaff.map { $0[0] }
 
                 // A time signature is drawn once, on the tune's very first system.  A later
                 // region opens a fresh set of staves, but it is still the same tune, and a
@@ -150,19 +165,20 @@ public struct SVGRenderer: CeolKitRenderer {
                 // `sname=` on every later one.  A region after the opening one is not the
                 // first system of anything — the voice has already been named — so it takes
                 // the subname throughout, exactly as a line break within a region does.
-                let firstLabels = printedVoices.map {
-                    isOpeningRegion ? $0.properties.name : $0.properties.subname
+                let firstLabels = staffLead.map {
+                    isOpeningRegion ? printedVoices[$0].properties.name
+                                    : printedVoices[$0].properties.subname
                 }
-                let laterLabels = printedVoices.map(\.properties.subname)
+                let laterLabels = staffLead.map { printedVoices[$0].properties.subname }
 
-                let voiceLines = printedVoices.enumerated().map { index, voice in
-                    LineBreaker.VoiceLine(measures: columnsPerVoice[index],
-                                          clef: voice.properties.clef,
-                                          keySignature: voiceKeys[index],
+                let voiceLines = staffLead.enumerated().map { staffIndex, voice in
+                    LineBreaker.VoiceLine(measures: columnsPerStaff[staffIndex],
+                                          clef: printedVoices[voice].properties.clef,
+                                          keySignature: voiceKeys[voice],
                                           meter: regionMeter,
-                                          firstSystemLabel: firstLabels[index],
-                                          laterSystemLabel: laterLabels[index],
-                                          stemDirection: voice.properties.stemDirection)
+                                          firstSystemLabel: firstLabels[staffIndex],
+                                          laterSystemLabel: laterLabels[staffIndex],
+                                          stemDirection: printedVoices[voice].properties.stemDirection)
                 }
                 // Space for the region's braces and brackets, reserved before anything is
                 // packed into the line.  It is added to the header widths rather than taken
@@ -170,7 +186,7 @@ public struct SVGRenderer: CeolKitRenderer {
                 // justifier already subtract, and `VerticalLayoutEngine` spends exactly the
                 // same amount moving the staves right (see `BracketColumns`).
                 let indent = BracketColumns(grouping: selection.grouping,
-                                            staffCount: printedVoices.count,
+                                            staffCount: voicesByStaff.count,
                                             metadata: metadata,
                                             staffSize: tuneConfig.staffSize).indent
 
@@ -187,15 +203,15 @@ public struct SVGRenderer: CeolKitRenderer {
                 // Header widths differ between the first system (has time sig) and later
                 // ones, and are the max across the group: the staves of a system have to
                 // start at the same x even when one voice's clef or key signature is wider.
-                let openingHeaderW = indent + openingGutter + printedVoices.indices.reduce(0.0) { widest, index in
-                    max(widest, systemHeaderWidth(clef: printedVoices[index].properties.clef,
-                                                  keySignature: voiceKeys[index],
+                let openingHeaderW = indent + openingGutter + staffLead.reduce(0.0) { widest, voice in
+                    max(widest, systemHeaderWidth(clef: printedVoices[voice].properties.clef,
+                                                  keySignature: voiceKeys[voice],
                                                   meter: regionMeter, metadata: metadata,
                                                   staffSize: tuneConfig.staffSize))
                 }
-                let laterHeaderW = indent + laterGutter + printedVoices.indices.reduce(0.0) { widest, index in
-                    max(widest, systemHeaderWidth(clef: printedVoices[index].properties.clef,
-                                                  keySignature: voiceKeys[index],
+                let laterHeaderW = indent + laterGutter + staffLead.reduce(0.0) { widest, voice in
+                    max(widest, systemHeaderWidth(clef: printedVoices[voice].properties.clef,
+                                                  keySignature: voiceKeys[voice],
                                                   meter: nil, metadata: metadata,
                                                   staffSize: tuneConfig.staffSize))
                 }

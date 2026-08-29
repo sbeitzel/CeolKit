@@ -101,13 +101,13 @@ struct StaffSpanThreadingTests {
         #expect(grouping.barlineJoins == [0, 1])
     }
 
-    @Test("The staves standing in for one shared staff are joined")
-    func sharedStaffStandInsAreJoined() throws {
-        // `(1 2)` is one staff in the source and two on the page until the shared-staff work
-        // lands; a continued bar line is the closest drawing to the staff it stands in for.
+    @Test("A shared staff is one staff, so the span over it covers one")
+    func sharedStaffIsOneStaff() throws {
+        // `(1 2)` is one staff in the source and one on the page (#76), so the bracket
+        // covers two staves and there is no boundary inside the group to join.
         let grouping = try #require(selectGrouping(threeVoices("%%score [(1 2) 3]")))
-        #expect(grouping.spans == [StaffGrouping.Span(bracket: .bracket, staves: 0...2, depth: 0)])
-        #expect(grouping.barlineJoins == [0])
+        #expect(grouping.spans == [StaffGrouping.Span(bracket: .bracket, staves: 0...1, depth: 0)])
+        #expect(grouping.barlineJoins.isEmpty)
     }
 
     @Test("A plan that selects no voice is fallen back from, grouping and all")

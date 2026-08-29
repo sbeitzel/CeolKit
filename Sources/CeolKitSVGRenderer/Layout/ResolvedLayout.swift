@@ -17,19 +17,32 @@ public struct SizedMeasure: Sendable {
     /// following event.  The justifier keeps the gap within each such pair fixed so
     /// grace notes stay visually attached to their melody note when measures are stretched.
     public let graceEventIndices: Set<Int>
+    /// The voice each event came from, parallel to `eventOffsets`.
+    /// `eventVoiceIndices.count == eventOffsets.count`.
+    ///
+    /// An index into the *printed* voices of the plan region the measure belongs to — the
+    /// same numbering ``SystemGroup/staves`` is in.  A staff carrying one voice tags every
+    /// event with that staff's own index; a shared staff (§11.1 `( … )`) is what makes this
+    /// a per-event table rather than a property of the measure.
+    public let eventVoiceIndices: [Int]
 
     public init(
         measure: Measure,
         naturalWidth: Double,
         eventOffsets: [Double],
         unitNoteLength: Fraction = Fraction(numerator: 1, denominator: 8),
-        graceEventIndices: Set<Int> = []
+        graceEventIndices: Set<Int> = [],
+        eventVoiceIndices: [Int]? = nil
     ) {
         self.measure = measure
         self.naturalWidth = naturalWidth
         self.eventOffsets = eventOffsets
         self.unitNoteLength = unitNoteLength
         self.graceEventIndices = graceEventIndices
+        // Kept parallel by construction: a caller that says nothing about voices gets the
+        // single-voice answer rather than an array the rest of the pipeline has to test.
+        self.eventVoiceIndices = eventVoiceIndices
+            ?? Array(repeating: 0, count: eventOffsets.count)
     }
 }
 
@@ -265,6 +278,11 @@ public struct JustifiedMeasure: Sendable {
         self.finalWidth = finalWidth
         self.eventOffsets = eventOffsets
     }
+
+    /// The voice tags of ``SizedMeasure/eventVoiceIndices``, still parallel to
+    /// ``eventOffsets``.  Justification moves events along the line; it never adds, drops or
+    /// reorders one, so the sizer's table is as valid after it as before.
+    public var eventVoiceIndices: [Int] { source.eventVoiceIndices }
 }
 
 // MARK: - Pass 4 output
@@ -548,10 +566,15 @@ public struct ResolvedEvent: Sendable {
     /// Absolute position in page coordinates; y is at the top staff line.
     public let origin: Point
     public let kind: ResolvedEventKind
+    /// The voice this event was written by, carried through from
+    /// ``SizedMeasure/eventVoiceIndices``.  With one voice per staff every event on a staff
+    /// shares the staff's index; a shared staff is where they differ.
+    public let voiceIndex: Int
 
-    public init(origin: Point, kind: ResolvedEventKind) {
+    public init(origin: Point, kind: ResolvedEventKind, voiceIndex: Int = 0) {
         self.origin = origin
         self.kind = kind
+        self.voiceIndex = voiceIndex
     }
 }
 

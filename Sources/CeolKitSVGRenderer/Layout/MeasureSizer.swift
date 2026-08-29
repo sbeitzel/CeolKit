@@ -24,7 +24,11 @@ public struct MeasureSizer: Sendable {
     ///   - measure: The measure to size.
     ///   - unitNoteLength: The voice's `L:` value (e.g. `Fraction(1, 8)` for eighth-note unit).
     ///     Used to convert `Note.duration` multipliers to an absolute quarter-note reference.
-    public func size(_ measure: Measure, unitNoteLength: Fraction) -> SizedMeasure {
+    ///   - voiceIndex: Which printed voice the measure belongs to.  Every event is tagged
+    ///     with it, so the passes below can tell the voices of a shared staff apart without
+    ///     the layout types growing a second dimension.
+    public func size(_ measure: Measure, unitNoteLength: Fraction,
+                     voiceIndex: Int = 0) -> SizedMeasure {
         // Quarter-note duration expressed in unit-note-length units.
         // e.g. unitNoteLength = 1/8 → quarterInUnits = 2.0
         let unl = Double(unitNoteLength.numerator) / Double(unitNoteLength.denominator)
@@ -63,7 +67,8 @@ public struct MeasureSizer: Sendable {
         let naturalWidth = x + rightPadding(for: measure)
 
         return SizedMeasure(measure: measure, naturalWidth: naturalWidth, eventOffsets: offsets,
-                            unitNoteLength: unitNoteLength, graceEventIndices: graceEventIndices)
+                            unitNoteLength: unitNoteLength, graceEventIndices: graceEventIndices,
+                            eventVoiceIndices: Array(repeating: voiceIndex, count: offsets.count))
     }
 
     // MARK: - Column width

@@ -133,7 +133,8 @@ public struct SVGRenderer: CeolKitRenderer {
                         for voiceIndex in printedVoices.indices {
                             columnsPerVoice[voiceIndex].append(
                                 sizer.size(stave.measures[voiceIndex][column],
-                                           unitNoteLength: voiceUnitLengths[voiceIndex]))
+                                           unitNoteLength: voiceUnitLengths[voiceIndex],
+                                           voiceIndex: voiceIndex))
                         }
                     }
                 }

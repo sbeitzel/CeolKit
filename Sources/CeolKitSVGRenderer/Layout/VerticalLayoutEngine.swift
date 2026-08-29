@@ -470,12 +470,18 @@ public struct VerticalLayoutEngine: Sendable {
             let measureOrigin = Point(x: measureX, y: systemOrigin.y)
             let eventBaseY = systemOrigin.y + extraAbove
 
-            let events: [ResolvedEvent] = zip(jm.eventOffsets, jm.source.measure.events).map { offset, event in
-                ResolvedEvent(
-                    origin: Point(x: measureOrigin.x + offset, y: eventBaseY),
-                    kind: ResolvedEventKind(from: event)
-                )
-            }
+            let voices = jm.eventVoiceIndices
+            let events: [ResolvedEvent] = zip(jm.eventOffsets, jm.source.measure.events)
+                .enumerated().map { i, pair in
+                    let (offset, event) = pair
+                    return ResolvedEvent(
+                        origin: Point(x: measureOrigin.x + offset, y: eventBaseY),
+                        kind: ResolvedEventKind(from: event),
+                        // Parallel by construction, but a hand-built `SizedMeasure` in a test
+                        // can be short; fall back to the staff's own voice rather than trap.
+                        voiceIndex: i < voices.count ? voices[i] : 0
+                    )
+                }
 
             // A bar line between two measures belongs to both of them: the semantic
             // pass stores the same `BarLine` as the left measure's `closingBar` and

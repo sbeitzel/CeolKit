@@ -16,71 +16,19 @@ import CeolKitParser
 @Suite("Stem direction (V: stem=)")
 struct StemDirectionTests {
 
-    /// One drawn stem, with the direction recovered from where its notehead sits.
-    private struct Stem {
-        let x: Double
-        let noteheadY: Double
-        let tipY: Double
-        var isUp: Bool { tipY < noteheadY }
-    }
-
-    /// Every stem in `svg`, paired with the notehead it grows from.
-    ///
-    /// Stems are the `<line>`s at Bravura's stem thickness — thinner than every staff line
-    /// and bar line in the document, which is what ``BravuraMetadataTests`` pins.  Noteheads
-    /// are the Bravura `<text>` runs, so the renderer is driven in `.fontFace` mode to keep
-    /// them readable as text.
-    private func stems(in svg: String, staffSize: Double, metadata: BravuraMetadata) -> [Stem] {
-        let stemWidth = metadata.engravingDefaults.stemThickness * staffSize
-        let noteheads = svg.matches(
-            of: /<text x="([-0-9.]+)" y="([-0-9.]+)" font-family="Bravura"[^>]*>(.)<\/text>/
-        ).compactMap { match -> (x: Double, y: Double)? in
-            let heads: Set<Character> = [SMuFLGlyph.noteheadBlack.character,
-                                         SMuFLGlyph.noteheadHalf.character,
-                                         SMuFLGlyph.noteheadWhole.character]
-            guard let x = Double(match.1), let y = Double(match.2),
-                  let ch = String(match.3).first, heads.contains(ch) else { return nil }
-            return (x, y)
-        }
-
-        return svg.matches(
-            of: /<line x1="([-0-9.]+)" y1="([-0-9.]+)" x2="([-0-9.]+)" y2="([-0-9.]+)" stroke="black" stroke-width="([-0-9.]+)"\/>/
-        ).compactMap { match -> Stem? in
-            guard let x = Double(match.1), let y1 = Double(match.2),
-                  let y2 = Double(match.4), let width = Double(match.5),
-                  abs(width - stemWidth) < 0.01, y1 != y2 else { return nil }
-            // The notehead end is whichever end a notehead is drawn at.  A stem is attached
-            // to the right of its notehead when it points up and to the left when it points
-            // down, so the x match has to allow a notehead's width either way.
-            let touches: (Double) -> Bool = { end in
-                noteheads.contains { abs($0.y - end) < 0.01 && abs($0.x - x) < 4 * staffSize }
-            }
-            if touches(y2) { return Stem(x: x, noteheadY: y2, tipY: y1) }
-            if touches(y1) { return Stem(x: x, noteheadY: y1, tipY: y2) }
-            return nil
-        }
-    }
-
     /// Renders `abc` and returns the stems of each staff, top staff first.
     ///
-    /// Bucketed by the staff the notehead falls nearest, so a two-voice tune's staves can be
-    /// asserted against each other — the whole point of "other voices unaffected".
-    private func stemsPerStaff(_ abc: String, staffCount: Int) throws -> [[Stem]] {
+    /// Bucketed by pitch, which separates the staves of these tunes exactly: they are far
+    /// enough apart vertically that every stem of a staff is nearer its own staff's notes
+    /// than the next staff's.  See ``probedStemsByPitchGroup(in:staffSize:metadata:bucketCount:)``.
+    private func stemsPerStaff(_ abc: String, staffCount: Int) throws -> [[ProbedStem]] {
         let metadata = try BravuraMetadata.load()
         let config = SVGRenderConfig()
         let score = CeolKitParser().parse(abc, options: .default).score
         var diagnostics: [Diagnostic] = []
         let svg = try textProbeRenderer(config).render(score, diagnostics: &diagnostics).joined()
-        let all = stems(in: svg, staffSize: config.staffSize, metadata: metadata)
-        // Staves are far enough apart vertically that sorting the noteheads into `staffCount`
-        // clusters by y is unambiguous: every stem of a staff is nearer its own staff's notes
-        // than the next staff's.
-        let sorted = all.sorted { $0.noteheadY < $1.noteheadY }
-        guard staffCount > 1, !sorted.isEmpty else { return [sorted.sorted { $0.x < $1.x }] }
-        let perStaff = sorted.count / staffCount
-        return (0..<staffCount).map { staff in
-            Array(sorted[(staff * perStaff)..<((staff + 1) * perStaff)]).sorted { $0.x < $1.x }
-        }
+        return probedStemsByPitchGroup(in: svg, staffSize: config.staffSize, metadata: metadata,
+                                       bucketCount: staffCount)
     }
 
     /// Two voices over the same four notes, so any difference between the staves is the

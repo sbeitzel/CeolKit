@@ -49,19 +49,26 @@ struct SVGEmitter: Sendable {
     /// `V:` `stem=` overrides it (issue #74), so this is the fallback rather than the answer
     /// — see ``configured(for:)``.
     let documentStemDirection: StemDirection
-    /// The direction in force for the system being emitted: the voice's own where it stated
-    /// one, ``documentStemDirection`` where it did not.  `.auto` leaves the choice to the
-    /// note's staff position, which is the ordinary engraving rule.
+    /// The direction in force for the staff being emitted, where its voices state none of
+    /// their own: the lead voice's where it stated one, ``documentStemDirection`` where it
+    /// did not.  `.auto` leaves the choice to the note's staff position, which is the
+    /// ordinary engraving rule.
     let stemDirection: StemDirection
+    /// What each voice of the staff being emitted asked for with `V:` `stem=`, in staff
+    /// order — carried from ``ResolvedSystem/voiceStemDirections``, so its count is how many
+    /// voices share the staff.  Empty on the page-level emitter, which draws nothing itself.
+    let voiceStemDirections: [StemDirection]
     let accidentalMetrics: AccidentalMetrics
 
     init(config: SVGRenderConfig, metadata: BravuraMetadata,
          stemDirection: StemDirection = .auto,
-         systemStemDirection: StemDirection? = nil) {
+         systemStemDirection: StemDirection? = nil,
+         voiceStemDirections: [StemDirection] = []) {
         self.config = config
         self.metadata = metadata
         self.documentStemDirection = stemDirection
         self.stemDirection = systemStemDirection ?? stemDirection
+        self.voiceStemDirections = voiceStemDirections
         self.accidentalMetrics = AccidentalMetrics(config: config, metadata: metadata)
     }
 
@@ -137,12 +144,80 @@ struct SVGEmitter: Sendable {
         let systemStem = system.stemDirection != .auto ? system.stemDirection : documentStemDirection
         guard system.staffSize != config.staffSize
                 || system.graceNoteSpacing != config.graceNoteSpacing
-                || systemStem != stemDirection else { return self }
+                || systemStem != stemDirection
+                || system.voiceStemDirections != voiceStemDirections else { return self }
         var systemConfig = config
         systemConfig.staffSize = system.staffSize
         systemConfig.graceNoteSpacing = system.graceNoteSpacing
         return SVGEmitter(config: systemConfig, metadata: metadata,
-                          stemDirection: documentStemDirection, systemStemDirection: systemStem)
+                          stemDirection: documentStemDirection, systemStemDirection: systemStem,
+                          voiceStemDirections: system.voiceStemDirections)
+    }
+
+    // MARK: - Voices on a staff
+
+    /// How many voices are drawn on the staff being emitted.  One everywhere but inside a
+    /// `%%score ( … )` group (§11.1).
+    private var staffVoiceCount: Int { max(1, voiceStemDirections.count) }
+
+    /// Which way voice `index` of this staff stems, before the note's own pitch is consulted.
+    ///
+    /// The order is the one §11.1 implies and #77 asks for: what the voice itself said with
+    /// `V:` `stem=` beats everything; failing that, a staff shared by more than one voice
+    /// opposes them — the top voice up and the bottom voice down, whatever the pitches, so
+    /// that a low note in the upper voice and a high note in the lower one stay legible as
+    /// two parts; failing *that*, the staff's own answer (`%%ceolkit:pipeformat`, else
+    /// `.auto` for the pitch rule).
+    ///
+    /// A staff with three or more voices opposes only its outer two.  Nothing an engraver
+    /// draws opposes a middle voice against both its neighbours, so it keeps the ordinary
+    /// rule.
+    private func resolvedStemDirection(forVoice index: Int) -> StemDirection {
+        let own = index < voiceStemDirections.count ? voiceStemDirections[index] : .auto
+        guard own == .auto else { return own }
+        guard staffVoiceCount > 1 else { return stemDirection }
+        if index == 0 { return .up }
+        if index == staffVoiceCount - 1 { return .down }
+        return documentStemDirection
+    }
+
+    /// How far off centre a rest of voice `index` is drawn, in points, positive downward.
+    ///
+    /// Two voices resting at the same onset draw the same glyph at the same x, so without
+    /// this they land exactly on top of each other and the staff reads as one part resting.
+    /// An engraver separates them the way the stems are separated: the upper voice's rest
+    /// one staff space above centre, the lower voice's one below.  A middle voice keeps the
+    /// centre, as its stems keep the pitch rule.
+    private func restOffset(forVoice index: Int) -> Double {
+        guard staffVoiceCount > 1 else { return 0 }
+        if index == 0 { return -config.staffSize }
+        if index == staffVoiceCount - 1 { return config.staffSize }
+        return 0
+    }
+
+    /// Which voices draw ink in `measure` — the ones a reader can see are there.
+    ///
+    /// A voice written as invisible rests (`x`, §4.9) occupies the bar without appearing in
+    /// it, and a bar where only one voice appears is read as that voice's alone.  Rests are
+    /// therefore left centred there: displacing the only rest on the staff would open a gap
+    /// under a part nobody can see.  It is what `abcm2ps -g` draws for the `x8` bars of the
+    /// §7 Zocharti Loch example, and the stems are deliberately *not* conditioned this way —
+    /// a voice keeps one stem direction for the whole staff however its partner is written.
+    private func inkedVoices(of measure: ResolvedMeasure) -> Set<Int> {
+        var voices: Set<Int> = []
+        for event in measure.events {
+            switch event.kind {
+            case .note, .chord, .grace, .tuplet:
+                voices.insert(event.voiceIndex)
+            case .rest(let r):
+                if r.kind != .invisible && r.kind != .fullMeasureInvisible {
+                    voices.insert(event.voiceIndex)
+                }
+            case .spacer, .directiveAnchor, .tempoChange:
+                break
+            }
+        }
+        return voices
     }
 
     // MARK: - Scroll-sync metadata
@@ -539,6 +614,9 @@ struct SVGEmitter: Sendable {
                                    system: system, builder: &builder)
         }
 
+        // Two parts are only visibly two where both of them draw: see `inkedVoices(of:)`.
+        let separateRests = inkedVoices(of: measure).count > 1
+
         // Beam accumulator: per-note (StemInfo, beamCount) pairs for the current beam run.
         var pendingBeam: [(stem: StemInfo, beamCount: Int)]?
         // Grace note beam tip Y for the note that immediately follows; reset after each non-grace event.
@@ -560,6 +638,7 @@ struct SVGEmitter: Sendable {
             }
             let stemInfo = emitEvent(event, topStaffY: topY, bottomStaffY: bottomY,
                                      unitNoteLength: measure.unitNoteLength,
+                                     separateRests: separateRests,
                                      precedingGraceBeamY: lastGraceBeamY,
                                      builder: &builder)
             lastGraceBeamY = nil
@@ -830,20 +909,30 @@ struct SVGEmitter: Sendable {
 
     @discardableResult
     private func emitEvent(_ event: ResolvedEvent, topStaffY: Double, bottomStaffY: Double,
-                           unitNoteLength: Fraction, precedingGraceBeamY: Double? = nil,
+                           unitNoteLength: Fraction, separateRests: Bool = false,
+                           precedingGraceBeamY: Double? = nil,
                            builder: inout SVGBuilder) -> StemInfo? {
+        // Which voice of the staff wrote this decides which way it stems and where its
+        // rests sit — the two things a shared staff has to draw differently from a staff of
+        // its own (issue #77).  On every other staff `voiceIndex` is 0 and both resolve to
+        // exactly what they always did.
+        let stem = resolvedStemDirection(forVoice: event.voiceIndex)
         switch event.kind {
         case .note(let n):
             return emitNote(n, x: event.origin.x, topStaffY: topStaffY, bottomStaffY: bottomStaffY,
-                            unitNoteLength: unitNoteLength, precedingGraceBeamY: precedingGraceBeamY,
+                            unitNoteLength: unitNoteLength, stemDirection: stem,
+                            precedingGraceBeamY: precedingGraceBeamY,
                             builder: &builder)
         case .rest(let r):
             emitRest(r, x: event.origin.x, topStaffY: topStaffY, bottomStaffY: bottomStaffY,
-                     unitNoteLength: unitNoteLength, builder: &builder)
+                     unitNoteLength: unitNoteLength,
+                     voiceIndex: separateRests ? event.voiceIndex : nil,
+                     builder: &builder)
         case .chord(let c):
             for note in c.notes {
                 emitNote(note, x: event.origin.x, topStaffY: topStaffY, bottomStaffY: bottomStaffY,
-                         unitNoteLength: unitNoteLength, precedingGraceBeamY: precedingGraceBeamY,
+                         unitNoteLength: unitNoteLength, stemDirection: stem,
+                         precedingGraceBeamY: precedingGraceBeamY,
                          builder: &builder)
             }
         case .grace:
@@ -865,7 +954,8 @@ struct SVGEmitter: Sendable {
 
     @discardableResult
     private func emitNote(_ note: Note, x: Double, topStaffY: Double, bottomStaffY: Double,
-                          unitNoteLength: Fraction, precedingGraceBeamY: Double? = nil,
+                          unitNoteLength: Fraction, stemDirection: StemDirection,
+                          precedingGraceBeamY: Double? = nil,
                           builder: inout SVGBuilder) -> StemInfo? {
         let staffPos  = self.staffPos(for: note.pitch)
         let y         = noteY(staffPos: staffPos, bottomStaffY: bottomStaffY)
@@ -891,7 +981,7 @@ struct SVGEmitter: Sendable {
         var stemInfo: StemInfo?
         if absDur < 1.0 {
             stemInfo = emitStem(staffPos: staffPos, noteheadY: y, x: x, absDur: absDur,
-                                beamState: note.beam, builder: &builder)
+                                beamState: note.beam, direction: stemDirection, builder: &builder)
         }
 
         emitLedgerLines(staffPos: staffPos, x: x, bottomStaffY: bottomStaffY, builder: &builder)
@@ -925,11 +1015,15 @@ struct SVGEmitter: Sendable {
         return rounded % 3 == 0
     }
 
+    /// - Parameter direction: The direction resolved for this note's voice — its own
+    ///   `V:` `stem=`, the opposition a shared staff imposes, or the document's — with
+    ///   `.auto` left for the note's own staff position to settle here.
     @discardableResult
     private func emitStem(staffPos: Int, noteheadY: Double, x: Double, absDur: Double,
-                           beamState: BeamState, builder: inout SVGBuilder) -> StemInfo {
+                           beamState: BeamState, direction: StemDirection,
+                           builder: inout SVGBuilder) -> StemInfo {
         let stemUp: Bool
-        switch stemDirection {
+        switch direction {
         case .up:   stemUp = true
         case .down: stemUp = false
         case .auto: stemUp = staffPos <= 4
@@ -1120,8 +1214,13 @@ struct SVGEmitter: Sendable {
 
     // MARK: - Rests
 
+    /// - Parameter voiceIndex: Which voice of the staff is resting, where the bar draws more
+    ///   than one of them: it moves the glyph off centre so two voices resting at one onset
+    ///   stay apart (see ``restOffset(forVoice:)``).  `nil` in a bar that shows one part,
+    ///   which is every bar of every staff carrying one voice.
     private func emitRest(_ rest: Rest, x: Double, topStaffY: Double, bottomStaffY: Double,
-                          unitNoteLength: Fraction, builder: inout SVGBuilder) {
+                          unitNoteLength: Fraction, voiceIndex: Int? = nil,
+                          builder: inout SVGBuilder) {
         switch rest.kind {
         case .invisible, .fullMeasureInvisible: return
         default: break
@@ -1159,7 +1258,8 @@ struct SVGEmitter: Sendable {
             y = bottomStaffY - 4.0 * s / 2.0
         }
 
-        builder.text(String(glyph.character), x: x, y: y,
+        let offset = voiceIndex.map { restOffset(forVoice: $0) } ?? 0
+        builder.text(String(glyph.character), x: x, y: y + offset,
                      fontFamily: "Bravura", fontSize: fontSize)
     }
 

@@ -171,6 +171,10 @@ public struct SVGRenderer: CeolKitRenderer {
                 }
                 let laterLabels = staffLead.map { printedVoices[$0].properties.subname }
 
+                // The clef, key and label are the staff lead's; the stem directions are
+                // every tenant's, in staff order.  A shared staff opposes its voices' stems
+                // rather than reading each note's pitch (issue #77), and it is the voices
+                // that were *not* drawn first whose own `stem=` would otherwise be lost.
                 let voiceLines = staffLead.enumerated().map { staffIndex, voice in
                     LineBreaker.VoiceLine(measures: columnsPerStaff[staffIndex],
                                           clef: printedVoices[voice].properties.clef,
@@ -178,7 +182,9 @@ public struct SVGRenderer: CeolKitRenderer {
                                           meter: regionMeter,
                                           firstSystemLabel: firstLabels[staffIndex],
                                           laterSystemLabel: laterLabels[staffIndex],
-                                          stemDirection: printedVoices[voice].properties.stemDirection)
+                                          voiceStemDirections: voicesByStaff[staffIndex].map {
+                                              printedVoices[$0].properties.stemDirection
+                                          })
                 }
                 // Space for the region's braces and brackets, reserved before anything is
                 // packed into the line.  It is added to the header widths rather than taken
@@ -387,7 +393,7 @@ private extension SystemGroup {
             System(measures: $0.measures, isLastSystem: isLast, sourceForced: $0.sourceForced,
                    staveWasSplit: $0.staveWasSplit, clef: $0.clef,
                    keySignature: $0.keySignature, meter: $0.meter,
-                   voiceLabel: $0.voiceLabel, stemDirection: $0.stemDirection)
+                   voiceLabel: $0.voiceLabel, voiceStemDirections: $0.voiceStemDirections)
         }, grouping: grouping)
     }
 }

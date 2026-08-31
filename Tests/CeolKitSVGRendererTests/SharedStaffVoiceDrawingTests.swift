@@ -12,9 +12,9 @@ import CeolKitParser
 /// fix — the merge pass (#76) had the voices in one event stream and tagged (#75), and the
 /// emitter still read the pitch.
 ///
-/// Note collisions between the two voices — unisons, seconds, displaced dots — are #79's,
-/// not this suite's.  The tunes here keep the parts an octave or more apart so nothing in
-/// the assertions depends on collision handling that does not exist yet.
+/// Note collisions between the two voices — unisons, seconds, displaced dots — are
+/// ``SharedStaffCollisionTests``' (#79), not this suite's.  The tunes here keep the parts an
+/// octave or more apart, so nothing asserted below depends on what the collision pass does.
 @Suite("Shared staff: opposed stems and offset rests")
 struct SharedStaffVoiceDrawingTests {
 

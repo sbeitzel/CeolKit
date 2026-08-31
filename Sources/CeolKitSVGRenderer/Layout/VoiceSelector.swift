@@ -9,12 +9,14 @@ import CeolKitModel
 ///
 /// **A `( … )` group is one staff.**  Its voices come back as several entries of ``voices``
 /// mapped by ``Selection/staffOfVoice`` onto a single printed staff, which the driver hands
-/// to ``SharedStaffMerger`` to lay out on a common onset grid.  A floating `*V` still gets a
-/// staff of its own at the position it was written, and says so in a
-/// `staffPlanNotFullyApplied` diagnostic: that is strictly better than ignoring the directive
-/// — the right voices print in the right order, and only the vertical placement is missing —
-/// and it keeps every voice the plan names on the page, which silently dropping the ones this
-/// pass cannot place would not.
+/// to ``SharedStaffMerger`` to lay out on a common onset grid.
+///
+/// **A floating `*V` is two voices by the time this pass is done.**  It has no staff of its
+/// own; ``FloatingVoiceSplitter`` cuts it along the split ``FloatingVoiceAssigner`` decides
+/// and hands each half to the staff on its side, as that staff's last tenant.  Everything
+/// downstream sees two ordinary voices sharing two ordinary staves.  Where the plan leaves it
+/// only one neighbour there is no split to make, and it becomes an ordinary tenant of that
+/// staff with a `staffPlanNotFullyApplied` warning to say so.
 ///
 /// **It also translates the plan's grouping into printed staff indices.**  `StaffPlanLayout`
 /// counts staves in the *plan*, and a dropped voice or a floating one means those are not the
@@ -73,15 +75,13 @@ enum VoiceSelector {
         let layout = plan.layout
         let byId = Dictionary(voices.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
 
-        var printed: [Voice] = []
-        var staffOfVoice: [Int] = []
+        // Pass one: which of the plan's voices print at all.  A floating voice's neighbours
+        // are staves of the *plan*, and a plan staff only becomes a printed one once
+        // something written on it survives — so the two numberings are resolved separately,
+        // and in that order.
+        var accepted: [(voice: Voice, placement: Placement)] = []
         var seen: Set<VoiceId> = []
-        // The printed staff each staff of the plan turned into.  Absent for a plan staff whose
-        // every voice was dropped; shared by every voice of a `( … )` group, which is what
-        // makes the group one staff.
-        var staffForPlanStaff: [Int: Int] = [:]
-        var nextStaff = 0
-        for (id, planStaff) in order(of: layout) {
+        for (id, placement) in order(of: layout) {
             guard seen.insert(id).inserted else {
                 diagnostics.append(Diagnostic(
                     severity: .warning, code: .staffPlanVoiceRepeated,
@@ -101,18 +101,73 @@ enum VoiceSelector {
             // the tune body, and this one does not appear there.  Not worth a diagnostic —
             // the plan is right and the body simply has nothing to say.
             guard !voice.isEmpty else { continue }
-            // A floating voice belongs to no staff of the plan, so it takes one of its own.
-            let staff: Int
-            if let planStaff, let existing = staffForPlanStaff[planStaff] {
-                staff = existing
-            } else {
-                staff = nextStaff
-                nextStaff += 1
-                if let planStaff { staffForPlanStaff[planStaff] = staff }
-            }
-            staffOfVoice.append(staff)
-            printed.append(voice)
+            accepted.append((voice, placement))
         }
+
+        // Pass two: the printed staff each staff of the plan turned into.  Absent for a plan
+        // staff whose every voice was dropped; shared by every voice of a `( … )` group,
+        // which is what makes the group one staff.
+        var staffForPlanStaff: [Int: Int] = [:]
+        var staffed: [[Voice]] = []
+        for (voice, placement) in accepted {
+            guard case .staff(let planStaff) = placement else { continue }
+            if let staff = staffForPlanStaff[planStaff] {
+                staffed[staff].append(voice)
+            } else {
+                staffForPlanStaff[planStaff] = staffed.count
+                staffed.append([voice])
+            }
+        }
+
+        // Pass three: each floating voice, cut in two and handed to the staves on either side
+        // of it (#80).  A half joins its staff *last*: the clef, key and name a staff draws
+        // are those of the voice written at the top of it, and a voice that floats between
+        // two staves is at the top of neither.
+        for (voice, placement) in accepted {
+            guard case .floating(let abovePlan, let belowPlan) = placement else { continue }
+            let above = abovePlan.flatMap { staffForPlanStaff[$0] }
+            let below = belowPlan.flatMap { staffForPlanStaff[$0] }
+            switch (above, below) {
+            case (let above?, let below?):
+                let split = FloatingVoiceAssigner.split(
+                    middle: voice.properties.middleNote,
+                    above: staffed[above][0].properties.clef,
+                    below: staffed[below][0].properties.clef)
+                let halves = FloatingVoiceSplitter.split(voice, at: split)
+                staffed[above].append(halves.above)
+                staffed[below].append(halves.below)
+
+            case (let only?, nil), (nil, let only?):
+                // §11.1 floats a voice *between* two groups, and this one has one neighbour:
+                // either it was written at an end of the plan, or the staff on its other side
+                // printed nothing.  There is no choice left to make, so it becomes an
+                // ordinary tenant of the staff it does have — dropping the music instead
+                // would lose what the author wrote to save a decision nobody needs.
+                diagnostics.append(Diagnostic(
+                    severity: .warning, code: .staffPlanNotFullyApplied,
+                    message: "voice \(label(voice.id)) floats, but the plan leaves it only one "
+                           + "neighbouring staff; it is printed on that staff throughout",
+                    source: plan.source))
+                staffed[only].append(voice)
+
+            case (nil, nil):
+                // No neighbour at all — `%%score {*M}`, or a plan whose other staves all
+                // dropped out.  It gets a staff of its own, at the bottom, because there is
+                // nothing left for it to be positioned relative to.
+                diagnostics.append(Diagnostic(
+                    severity: .warning, code: .staffPlanNotFullyApplied,
+                    message: "voice \(label(voice.id)) floats, but the plan gives it no "
+                           + "neighbouring staff at all; it is printed on a staff of its own",
+                    source: plan.source))
+                staffed.append([voice])
+            }
+        }
+
+        let printed = staffed.flatMap { $0 }
+        let staffOfVoice = staffed.enumerated().flatMap {
+            [Int](repeating: $0.offset, count: $0.element.count)
+        }
+
         // Printed staff indices contributed by each staff of the plan: at most one now, and
         // none where every voice of a plan staff was dropped.
         let printedByPlanStaff = layout.staves.indices.map { staffForPlanStaff[$0].map { [$0] } ?? [] }
@@ -128,28 +183,37 @@ enum VoiceSelector {
         }
 
         diagnostics += omissions(from: printable, namedBy: layout, plan: plan)
-        diagnostics += approximations(of: layout, printedBy: printed, plan: plan)
         return Selection(voices: printed, staffOfVoice: staffOfVoice,
                          grouping: grouping(of: layout, printedBy: printedByPlanStaff))
     }
 
     // MARK: - Order
 
-    /// The plan's voices, top to bottom, one entry per staff this pass will draw.
+    /// Where the plan puts one voice.
+    private enum Placement {
+        /// An index into ``StaffPlanLayout/staves``.
+        case staff(Int)
+        /// A `*V`, with the plan staves on either side of it — either `nil` where the plan
+        /// has none there.
+        case floating(above: Int?, below: Int?)
+    }
+
+    /// The plan's voices, top to bottom, in the order they were written.
     ///
-    /// A floating voice has no staff in the layout, so it is placed after the staff it floats
+    /// A floating voice has no staff in the layout, so it appears after the staff it floats
     /// below — or first, where the plan gives it nothing above.  That is where the author
-    /// wrote it, and it is the position `#80` will start from when it assigns such a voice
-    /// per note.
-    ///
-    /// The staff index is the plan's, and `nil` for a floating voice — it belongs to no
-    /// staff of the plan, so no span or joint is stated over it.
-    private static func order(of layout: StaffPlanLayout) -> [(id: VoiceId, planStaff: Int?)] {
+    /// wrote it, and it is where the reader of a diagnostic about it will look.
+    private static func order(of layout: StaffPlanLayout) -> [(id: VoiceId, placement: Placement)] {
         let floatingByStaffAbove = Dictionary(grouping: layout.floating, by: \.above)
-        var ordered = (floatingByStaffAbove[nil] ?? []).map { (id: $0.id, planStaff: Int?.none) }
+        func floats(below staff: Int?) -> [(id: VoiceId, placement: Placement)] {
+            (floatingByStaffAbove[staff] ?? []).map {
+                (id: $0.id, placement: Placement.floating(above: $0.above, below: $0.below))
+            }
+        }
+        var ordered = floats(below: nil)
         for (index, staff) in layout.staves.enumerated() {
-            ordered += staff.map { (id: $0, planStaff: Int?.some(index)) }
-            ordered += (floatingByStaffAbove[index] ?? []).map { (id: $0.id, planStaff: Int?.none) }
+            ordered += staff.map { (id: $0, placement: Placement.staff(index)) }
+            ordered += floats(below: index)
         }
         return ordered
     }
@@ -203,26 +267,6 @@ enum VoiceSelector {
                        + "the staff plan, so it is not printed",
                 source: plan.source)
         }
-    }
-
-    /// The parts of the plan this pass draws differently from what it asks for.
-    private static func approximations(
-        of layout: StaffPlanLayout,
-        printedBy printed: [Voice],
-        plan: StaffPlan
-    ) -> [Diagnostic] {
-        let ids = Set(printed.map(\.id))
-        var result: [Diagnostic] = []
-
-        for floating in layout.floating where ids.contains(floating.id) {
-            result.append(Diagnostic(
-                severity: .info, code: .staffPlanNotFullyApplied,
-                message: "voice \(label(floating.id)) floats between staves in the plan; "
-                       + "it is drawn on a staff of its own for now",
-                source: plan.source))
-        }
-
-        return result
     }
 
     // MARK: - Naming

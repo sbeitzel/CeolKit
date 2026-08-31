@@ -92,13 +92,14 @@ struct StaffSpanThreadingTests {
         #expect(grouping.spans == [StaffGrouping.Span(bracket: .bracket, staves: 0...1, depth: 0)])
     }
 
-    @Test("A join reaches through the staff a floating voice was given")
-    func joinReachesThroughAFloatingVoice() throws {
-        // `*2` has no staff in the plan, but is drawn on one of its own for now, so the
-        // join written between staves 1 and 3 spans two printed boundaries, not one.
+    @Test("A floating voice adds no staff for the brace or the join to reach over")
+    func floatingVoiceAddsNoStaff() throws {
+        // `*2` has no staff in the plan and none on the page either: it is split between the
+        // two staves on either side of it (#80).  So the brace covers two staves, and the
+        // join written after it crosses the one boundary there is.
         let grouping = try #require(selectGrouping(threeVoices("%%score {1 *2| 3}")))
-        #expect(grouping.spans == [StaffGrouping.Span(bracket: .brace, staves: 0...2, depth: 0)])
-        #expect(grouping.barlineJoins == [0, 1])
+        #expect(grouping.spans == [StaffGrouping.Span(bracket: .brace, staves: 0...1, depth: 0)])
+        #expect(grouping.barlineJoins == [0])
     }
 
     @Test("A shared staff is one staff, so the span over it covers one")

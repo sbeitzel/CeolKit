@@ -11,6 +11,23 @@ private struct StemInfo {
     let noteheadY: Double  // y of the notehead end (used by emitBeamGroup to draw stems)
 }
 
+/// Which part an open tie or slur belongs to: the staff of the system it was opened on, and
+/// the voice of that staff that opened it.
+///
+/// Both halves are needed, and for the same reason.  The pending anchors are threaded across
+/// every staff of every system of every page so that an arc spanning a system or page break
+/// is drawn dangling rather than dropped (#27) — which, undiscriminated, lets any staff
+/// resolve or re-dangle an arc opened on the staff above it, at that staff's y.  A `%%score
+/// ( … )` staff (§11.1) carries several voices whose arcs are exactly as unrelated to each
+/// other as two staves' are, so the voice tag the merge pass attached (#76) is the second
+/// half of the same key (#78).
+private struct PartKey: Hashable {
+    /// Position of the staff within its system group, top to bottom; 0 on a single staff.
+    let staff: Int
+    /// Position of the voice within that staff; 0 unless a `( … )` group shares it.
+    let voice: Int
+}
+
 /// Pending tie: records where a tied note's arc must start so the arc can be drawn
 /// when the matching end note is encountered (possibly in the next measure).
 private struct TieAnchor {
@@ -18,6 +35,7 @@ private struct TieAnchor {
     let noteY: Double   // y of the notehead
     let pitch: Pitch    // matched against the end note's pitch
     let staffPos: Int   // determines whether the arc curves above or below the note
+    let part: PartKey   // only the part that opened it may close it
     // True once this anchor has been carried across a system/page break: `x` then refers
     // to the left staff edge of the new system rather than a real notehead, so the arc
     // drawn to resolve it must not add notehead-width clearance on that side (see #27).
@@ -26,11 +44,15 @@ private struct TieAnchor {
 
 /// Pending slur: records the start position of an open slur bracket so the arc
 /// can be drawn when the matching closing `)` note is encountered.  Stored as a
-/// LIFO stack so that nested slurs resolve correctly (innermost closes first).
+/// LIFO stack *per part* so that nested slurs resolve correctly (innermost closes first)
+/// while a `)` in one voice cannot close a slur another voice opened — a slur carries
+/// neither pitch nor any other mark to match on, so without the part key two voices with
+/// interleaved slurs pair up entirely wrongly (#78).
 private struct SlurAnchor {
     let x: Double       // left-edge x of the notehead where the slur opens (or a staff edge, see below)
     let noteY: Double   // y of the notehead
     let staffPos: Int   // determines whether the arc curves above or below
+    let part: PartKey   // the stack is per part; see PartKey
     var isCarriedOver: Bool = false  // see TieAnchor.isCarriedOver
 }
 
@@ -293,16 +315,25 @@ struct SVGEmitter: Sendable {
         // Anchors still open from the previous system/page (#27) are dangling ties/slurs.
         // Re-anchor them to this system's left staff edge so the closing logic in
         // emitMeasure draws an "arriving" arc when the matching note is found.
+        //
+        // Only *this staff's* anchors: the array is threaded across every staff of the
+        // system, and an anchor left open on the staff above holds that staff's y.  Moving
+        // it here would redraw it a staff down from where its note is.
+        let staffIndex = staffIndex(of: system)
         let leftEdge = system.origin.x
         pendingTies = pendingTies.map {
-            TieAnchor(x: leftEdge, noteY: $0.noteY, pitch: $0.pitch, staffPos: $0.staffPos, isCarriedOver: true)
+            guard $0.part.staff == staffIndex else { return $0 }
+            return TieAnchor(x: leftEdge, noteY: $0.noteY, pitch: $0.pitch, staffPos: $0.staffPos,
+                             part: $0.part, isCarriedOver: true)
         }
         pendingSlurs = pendingSlurs.map {
-            SlurAnchor(x: leftEdge, noteY: $0.noteY, staffPos: $0.staffPos, isCarriedOver: true)
+            guard $0.part.staff == staffIndex else { return $0 }
+            return SlurAnchor(x: leftEdge, noteY: $0.noteY, staffPos: $0.staffPos,
+                              part: $0.part, isCarriedOver: true)
         }
 
         for measure in system.measures {
-            emitMeasure(measure, system: system,
+            emitMeasure(measure, system: system, staffIndex: staffIndex,
                         pendingTies: &pendingTies, pendingSlurs: &pendingSlurs,
                         builder: &builder)
         }
@@ -310,20 +341,29 @@ struct SVGEmitter: Sendable {
         // Anchors still open at the end of this system span into the next system/page.
         // Draw a departing dangling arc to the right staff edge; the anchor itself is left
         // in place (still holding pitch/staffPos) so the next emitSystem call can resolve
-        // or re-dangle it in turn.
+        // or re-dangle it in turn.  Again this staff's only — the staff below has not been
+        // drawn yet, and its own anchors dangle off its own right edge when it is.
         if let lastMeasure = system.measures.last {
             let rightEdge = lastMeasure.origin.x + lastMeasure.width
-            for anchor in pendingTies {
+            for anchor in pendingTies where anchor.part.staff == staffIndex {
                 emitDanglingArc(fromX: anchor.x, y: anchor.noteY, staffPos: anchor.staffPos,
                                 toEdgeX: rightEdge, isCarriedOver: anchor.isCarriedOver,
                                 kind: .tie, builder: &builder)
             }
-            for anchor in pendingSlurs {
+            for anchor in pendingSlurs where anchor.part.staff == staffIndex {
                 emitDanglingArc(fromX: anchor.x, y: anchor.noteY, staffPos: anchor.staffPos,
                                 toEdgeX: rightEdge, isCarriedOver: anchor.isCarriedOver,
                                 kind: .slur, builder: &builder)
             }
         }
+    }
+
+    /// Where `system` sits in its group, top to bottom — the staff half of a ``PartKey``.
+    ///
+    /// A system that is a staff of its own has no group and is staff 0, which is what every
+    /// single-voice tune draws and what keys every anchor it opens.
+    private func staffIndex(of system: ResolvedSystem) -> Int {
+        system.staffGroup?.index ?? 0
     }
 
     /// The voice's `V:` `name=` / `sname=`, standing in the gutter left of the system
@@ -587,7 +627,7 @@ struct SVGEmitter: Sendable {
 
     // MARK: - Measure
 
-    private func emitMeasure(_ measure: ResolvedMeasure, system: ResolvedSystem,
+    private func emitMeasure(_ measure: ResolvedMeasure, system: ResolvedSystem, staffIndex: Int,
                               pendingTies: inout [TieAnchor], pendingSlurs: inout [SlurAnchor],
                               builder: inout SVGBuilder) {
         let topY    = system.origin.y + system.staffOrigin
@@ -617,44 +657,49 @@ struct SVGEmitter: Sendable {
         // Two parts are only visibly two where both of them draw: see `inkedVoices(of:)`.
         let separateRests = inkedVoices(of: measure).count > 1
 
-        // Beam accumulator: per-note (StemInfo, beamCount) pairs for the current beam run.
-        var pendingBeam: [(stem: StemInfo, beamCount: Int)]?
-        // Grace note beam tip Y for the note that immediately follows; reset after each non-grace event.
-        var lastGraceBeamY: Double? = nil
+        // Beam accumulator: per-note (StemInfo, beamCount) pairs for the current beam run,
+        // one run per voice of the staff.  A shared staff interleaves its voices in one event
+        // stream, so a single accumulator would take a `.start` in one voice as the end of
+        // the other's open run and beam the two together (#78).
+        var pendingBeams: [Int: [(stem: StemInfo, beamCount: Int)]] = [:]
+        // Grace note beam tip Y for the note that immediately follows, per voice for the same
+        // reason; reset after each non-grace event of that voice.
+        var lastGraceBeamY: [Int: Double] = [:]
 
-        func flushBeam() {
-            guard let g = pendingBeam else { return }
+        func flushBeam(voice: Int) {
+            guard let g = pendingBeams.removeValue(forKey: voice) else { return }
             emitBeamGroup(g, builder: &builder)
-            pendingBeam = nil
         }
 
         for event in measure.events {
+            let voice = event.voiceIndex
+            let part = PartKey(staff: staffIndex, voice: voice)
             // Grace events are handled here so their stem-tip Y can be forwarded
             // to the next note for fermata clearance.
             if case .grace(let g) = event.kind {
-                lastGraceBeamY = emitGraceGroup(g, originX: event.origin.x, topStaffY: topY,
-                                                bottomStaffY: bottomY, builder: &builder)
+                lastGraceBeamY[voice] = emitGraceGroup(g, originX: event.origin.x, topStaffY: topY,
+                                                       bottomStaffY: bottomY, builder: &builder)
                 continue
             }
             let stemInfo = emitEvent(event, topStaffY: topY, bottomStaffY: bottomY,
                                      unitNoteLength: measure.unitNoteLength,
                                      separateRests: separateRests,
-                                     precedingGraceBeamY: lastGraceBeamY,
+                                     precedingGraceBeamY: lastGraceBeamY[voice],
                                      builder: &builder)
-            lastGraceBeamY = nil
+            lastGraceBeamY[voice] = nil
             if let info = stemInfo, let note = noteFrom(event) {
                 let bc = requiredBeamCount(absoluteDuration(note.duration,
                                                             unitNoteLength: measure.unitNoteLength))
                 let entry = (stem: info, beamCount: bc)
                 switch note.beam {
                 case .start:
-                    flushBeam()  // safety: shouldn't have an open group here
-                    pendingBeam = [entry]
+                    flushBeam(voice: voice)  // safety: shouldn't have an open group here
+                    pendingBeams[voice] = [entry]
                 case .middle:
-                    pendingBeam?.append(entry)
+                    pendingBeams[voice]?.append(entry)
                 case .end:
-                    pendingBeam?.append(entry)
-                    flushBeam()
+                    pendingBeams[voice]?.append(entry)
+                    flushBeam(voice: voice)
                 case .single:
                     break
                 }
@@ -668,7 +713,9 @@ struct SVGEmitter: Sendable {
                 let ny = noteY(staffPos: sp, bottomStaffY: bottomY)
 
                 if note.ties == .endsTie || note.ties == .continuesTie {
-                    if let idx = pendingTies.firstIndex(where: { $0.pitch == note.pitch }) {
+                    if let idx = pendingTies.firstIndex(where: {
+                        $0.part == part && $0.pitch == note.pitch
+                    }) {
                         let anchor = pendingTies.remove(at: idx)
                         if anchor.isCarriedOver {
                             emitArrivingTieArc(edgeX: anchor.x, staffPos: anchor.staffPos,
@@ -682,7 +729,7 @@ struct SVGEmitter: Sendable {
                 }
                 if note.ties == .startsTie || note.ties == .continuesTie {
                     pendingTies.append(TieAnchor(x: event.origin.x, noteY: ny,
-                                                 pitch: note.pitch, staffPos: sp))
+                                                 pitch: note.pitch, staffPos: sp, part: part))
                 }
             }
 
@@ -693,7 +740,8 @@ struct SVGEmitter: Sendable {
                 let ny = noteY(staffPos: sp, bottomStaffY: bottomY)
 
                 for _ in 0..<note.slurs.closes {
-                    if let anchor = pendingSlurs.popLast() {
+                    if let idx = pendingSlurs.lastIndex(where: { $0.part == part }) {
+                        let anchor = pendingSlurs.remove(at: idx)
                         if anchor.isCarriedOver {
                             emitArrivingTieArc(edgeX: anchor.x, staffPos: anchor.staffPos,
                                                toX: event.origin.x, toY: ny,
@@ -705,11 +753,14 @@ struct SVGEmitter: Sendable {
                     }
                 }
                 for _ in 0..<note.slurs.opens {
-                    pendingSlurs.append(SlurAnchor(x: event.origin.x, noteY: ny, staffPos: sp))
+                    pendingSlurs.append(SlurAnchor(x: event.origin.x, noteY: ny, staffPos: sp,
+                                                   part: part))
                 }
             }
         }
-        flushBeam()  // safety flush for malformed input
+        // Safety flush for malformed input, in voice order so that what a broken bar draws
+        // does not depend on which voice happened to open a run last.
+        for voice in pendingBeams.keys.sorted() { flushBeam(voice: voice) }
     }
 
     private func noteFrom(_ event: ResolvedEvent) -> Note? {

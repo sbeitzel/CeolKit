@@ -81,6 +81,9 @@ struct SVGEmitter: Sendable {
     /// voices share the staff.  Empty on the page-level emitter, which draws nothing itself.
     let voiceStemDirections: [StemDirection]
     let accidentalMetrics: AccidentalMetrics
+    /// Resolves the notehead, dot and accidental collisions of one column of a shared staff
+    /// (issue #79).  Consulted only where a staff carries more than one voice.
+    let collisions: NoteheadCollisions
 
     init(config: SVGRenderConfig, metadata: BravuraMetadata,
          stemDirection: StemDirection = .auto,
@@ -91,7 +94,14 @@ struct SVGEmitter: Sendable {
         self.documentStemDirection = stemDirection
         self.stemDirection = systemStemDirection ?? stemDirection
         self.voiceStemDirections = voiceStemDirections
-        self.accidentalMetrics = AccidentalMetrics(config: config, metadata: metadata)
+        let accidentalMetrics = AccidentalMetrics(config: config, metadata: metadata)
+        self.accidentalMetrics = accidentalMetrics
+        self.collisions = NoteheadCollisions(
+            noteheadWidth: metadata.glyphBBoxes["noteheadBlack"].map { $0.width * config.staffSize }
+                ?? config.staffSize * 1.2,
+            staffSize: config.staffSize,
+            accidentalMetrics: accidentalMetrics,
+            metadata: metadata)
     }
 
     // MARK: - Public entry point
@@ -215,6 +225,69 @@ struct SVGEmitter: Sendable {
         if index == 0 { return -config.staffSize }
         if index == staffVoiceCount - 1 { return config.staffSize }
         return 0
+    }
+
+    // MARK: - Notehead collisions
+
+    /// Where every notehead of `measure` is drawn once the voices sharing the staff have been
+    /// pulled apart (issue #79), keyed by event index — one placement per notehead the event
+    /// draws, in the order ``emitEvent(_:topStaffY:bottomStaffY:unitNoteLength:separateRests:precedingGraceBeamY:placements:builder:)``
+    /// draws them.
+    ///
+    /// Columns are found by x rather than by onset because x is what the merge (#76) *did*
+    /// with the onsets: every voice sounding together was right-aligned onto one sub-column,
+    /// so heads that share an x are heads that sound together, and no second opinion about
+    /// the rhythm can disagree with the spacing already on the page.
+    ///
+    /// Empty on every staff carrying one voice, which is every staff outside a `%%score
+    /// ( … )` group: nothing there can collide, and nothing there is asked.
+    private func collisionPlacements(in measure: ResolvedMeasure) -> [Int: [HeadPlacement]] {
+        guard staffVoiceCount > 1 else { return [:] }
+        var heads: [Int: [CollisionHead]] = [:]
+        for (index, event) in measure.events.enumerated() {
+            let drawn = collisionHeads(of: event, unitNoteLength: measure.unitNoteLength)
+            if !drawn.isEmpty { heads[index] = drawn }
+        }
+        guard heads.count > 1 else { return [:] }
+
+        var placements: [Int: [HeadPlacement]] = [:]
+        let columns = Dictionary(grouping: heads.keys) {
+            (measure.events[$0].origin.x * 100).rounded()
+        }
+        for (_, indices) in columns {
+            let ordered = indices.sorted()
+            let column = ordered.flatMap { heads[$0] ?? [] }
+            guard Set(column.map(\.voiceIndex)).count > 1 else { continue }
+            let resolved = collisions.resolve(column)
+            var cursor = 0
+            for index in ordered {
+                let count = heads[index]?.count ?? 0
+                placements[index] = Array(resolved[cursor..<(cursor + count)])
+                cursor += count
+            }
+        }
+        return placements
+    }
+
+    /// The noteheads `event` draws, in drawing order.  Everything that draws none — a rest,
+    /// a grace group, a tuplet the emitter still defers — contributes nothing to a column.
+    private func collisionHeads(of event: ResolvedEvent,
+                                unitNoteLength: Fraction) -> [CollisionHead] {
+        let direction = resolvedStemDirection(forVoice: event.voiceIndex)
+        func head(_ note: Note) -> CollisionHead {
+            let staffPos = self.staffPos(for: note.pitch)
+            let absDur = absoluteDuration(note.duration, unitNoteLength: unitNoteLength)
+            return CollisionHead(voiceIndex: event.voiceIndex, staffPos: staffPos,
+                                 glyph: .notehead(absoluteDuration: absDur),
+                                 isDotted: isDotted(absDur),
+                                 accidental: note.displayedAccidental,
+                                 stemUp: stemsUp(direction, staffPos: staffPos))
+        }
+        switch event.kind {
+        case .note(let n):  return [head(n)]
+        case .chord(let c): return c.notes.map(head)
+        default:            return []
+        }
     }
 
     /// Which voices draw ink in `measure` — the ones a reader can see are there.
@@ -656,6 +729,9 @@ struct SVGEmitter: Sendable {
 
         // Two parts are only visibly two where both of them draw: see `inkedVoices(of:)`.
         let separateRests = inkedVoices(of: measure).count > 1
+        // Where the voices' noteheads land on top of each other, what each of them draws and
+        // where (issue #79).  Empty everywhere but on a shared staff.
+        let placements = collisionPlacements(in: measure)
 
         // Beam accumulator: per-note (StemInfo, beamCount) pairs for the current beam run,
         // one run per voice of the staff.  A shared staff interleaves its voices in one event
@@ -671,9 +747,13 @@ struct SVGEmitter: Sendable {
             emitBeamGroup(g, builder: &builder)
         }
 
-        for event in measure.events {
+        for (index, event) in measure.events.enumerated() {
             let voice = event.voiceIndex
             let part = PartKey(staff: staffIndex, voice: voice)
+            let eventPlacements = placements[index] ?? []
+            // A note pulled aside by a collision takes its ties and slurs with it: the arc
+            // has to leave the notehead it was written on, not the place the sizer put it.
+            let anchorX = event.origin.x + (eventPlacements.first?.dx ?? 0)
             // Grace events are handled here so their stem-tip Y can be forwarded
             // to the next note for fermata clearance.
             if case .grace(let g) = event.kind {
@@ -685,6 +765,7 @@ struct SVGEmitter: Sendable {
                                      unitNoteLength: measure.unitNoteLength,
                                      separateRests: separateRests,
                                      precedingGraceBeamY: lastGraceBeamY[voice],
+                                     placements: eventPlacements,
                                      builder: &builder)
             lastGraceBeamY[voice] = nil
             if let info = stemInfo, let note = noteFrom(event) {
@@ -719,16 +800,16 @@ struct SVGEmitter: Sendable {
                         let anchor = pendingTies.remove(at: idx)
                         if anchor.isCarriedOver {
                             emitArrivingTieArc(edgeX: anchor.x, staffPos: anchor.staffPos,
-                                               toX: event.origin.x, toY: ny,
+                                               toX: anchorX, toY: ny,
                                                kind: .tie, builder: &builder)
                         } else {
                             emitTieArc(fromX: anchor.x, fromY: anchor.noteY, staffPos: anchor.staffPos,
-                                       toX: event.origin.x, toY: ny, kind: .tie, builder: &builder)
+                                       toX: anchorX, toY: ny, kind: .tie, builder: &builder)
                         }
                     }
                 }
                 if note.ties == .startsTie || note.ties == .continuesTie {
-                    pendingTies.append(TieAnchor(x: event.origin.x, noteY: ny,
+                    pendingTies.append(TieAnchor(x: anchorX, noteY: ny,
                                                  pitch: note.pitch, staffPos: sp, part: part))
                 }
             }
@@ -744,16 +825,16 @@ struct SVGEmitter: Sendable {
                         let anchor = pendingSlurs.remove(at: idx)
                         if anchor.isCarriedOver {
                             emitArrivingTieArc(edgeX: anchor.x, staffPos: anchor.staffPos,
-                                               toX: event.origin.x, toY: ny,
+                                               toX: anchorX, toY: ny,
                                                kind: .slur, builder: &builder)
                         } else {
                             emitTieArc(fromX: anchor.x, fromY: anchor.noteY, staffPos: anchor.staffPos,
-                                       toX: event.origin.x, toY: ny, kind: .slur, builder: &builder)
+                                       toX: anchorX, toY: ny, kind: .slur, builder: &builder)
                         }
                     }
                 }
                 for _ in 0..<note.slurs.opens {
-                    pendingSlurs.append(SlurAnchor(x: event.origin.x, noteY: ny, staffPos: sp,
+                    pendingSlurs.append(SlurAnchor(x: anchorX, noteY: ny, staffPos: sp,
                                                    part: part))
                 }
             }
@@ -958,10 +1039,14 @@ struct SVGEmitter: Sendable {
 
     // MARK: - Events
 
+    /// - Parameter placements: what the collision pass decided about each notehead this event
+    ///   draws, in drawing order.  Empty — the single-voice case and every event that draws
+    ///   no notehead — means every head is drawn where it was placed.
     @discardableResult
     private func emitEvent(_ event: ResolvedEvent, topStaffY: Double, bottomStaffY: Double,
                            unitNoteLength: Fraction, separateRests: Bool = false,
                            precedingGraceBeamY: Double? = nil,
+                           placements: [HeadPlacement] = [],
                            builder: inout SVGBuilder) -> StemInfo? {
         // Which voice of the staff wrote this decides which way it stems and where its
         // rests sit — the two things a shared staff has to draw differently from a staff of
@@ -973,6 +1058,7 @@ struct SVGEmitter: Sendable {
             return emitNote(n, x: event.origin.x, topStaffY: topStaffY, bottomStaffY: bottomStaffY,
                             unitNoteLength: unitNoteLength, stemDirection: stem,
                             precedingGraceBeamY: precedingGraceBeamY,
+                            placement: placements.first ?? .unmoved,
                             builder: &builder)
         case .rest(let r):
             emitRest(r, x: event.origin.x, topStaffY: topStaffY, bottomStaffY: bottomStaffY,
@@ -980,10 +1066,11 @@ struct SVGEmitter: Sendable {
                      voiceIndex: separateRests ? event.voiceIndex : nil,
                      builder: &builder)
         case .chord(let c):
-            for note in c.notes {
+            for (i, note) in c.notes.enumerated() {
                 emitNote(note, x: event.origin.x, topStaffY: topStaffY, bottomStaffY: bottomStaffY,
                          unitNoteLength: unitNoteLength, stemDirection: stem,
                          precedingGraceBeamY: precedingGraceBeamY,
+                         placement: i < placements.count ? placements[i] : .unmoved,
                          builder: &builder)
             }
         case .grace:
@@ -1003,53 +1090,75 @@ struct SVGEmitter: Sendable {
 
     // MARK: - Notes
 
+    /// - Parameter placement: where a shared staff's collision pass moved this notehead and
+    ///   the marks that belong to it (issue #79).  ``HeadPlacement/unmoved`` — every note on
+    ///   a staff of its own — draws exactly where `x` says.
     @discardableResult
     private func emitNote(_ note: Note, x: Double, topStaffY: Double, bottomStaffY: Double,
                           unitNoteLength: Fraction, stemDirection: StemDirection,
                           precedingGraceBeamY: Double? = nil,
+                          placement: HeadPlacement = .unmoved,
                           builder: inout SVGBuilder) -> StemInfo? {
         let staffPos  = self.staffPos(for: note.pitch)
         let y         = noteY(staffPos: staffPos, bottomStaffY: bottomStaffY)
         let absDur    = absoluteDuration(note.duration, unitNoteLength: unitNoteLength)
         let glyph     = noteheadGlyph(absoluteDuration: absDur)
         let fontSize  = 4.0 * config.staffSize
+        // Everything drawn from the notehead moves with it; everything measured from the
+        // column — a stacked accidental, a shared dot strip — is placed from `x`.
+        let headX     = x + placement.dx
 
-        builder.text(String(glyph.character), x: x, y: y,
-                     fontFamily: "Bravura", fontSize: fontSize)
+        // A head another voice draws is drawn once: this voice contributes its stem, which is
+        // what says two parts are sounding the note, and nothing that would be laid twice.
+        if !placement.isShared {
+            builder.text(String(glyph.character), x: headX, y: y,
+                         fontFamily: "Bravura", fontSize: fontSize)
 
-        if let acc = note.displayedAccidental {
-            emitAccidental(acc, x: x, y: y, fontSize: fontSize, builder: &builder)
+            if let acc = note.displayedAccidental {
+                emitAccidental(acc, x: headX, y: y, fontSize: fontSize,
+                               anchorX: placement.accidentalAnchorDX.map { x + $0 },
+                               builder: &builder)
+            }
+
+            if isDotted(absDur) {
+                emitAugmentationDot(x: headX, noteheadY: y, staffPos: staffPos, fontSize: fontSize,
+                                    dotX: placement.dotDX.map { x + $0 }, dotDY: placement.dotDY ?? 0,
+                                    builder: &builder)
+            }
         }
 
-        if isDotted(absDur) {
-            emitAugmentationDot(x: x, noteheadY: y, staffPos: staffPos, fontSize: fontSize,
-                                builder: &builder)
-        }
-
-        emitDecorations(note.decorations, x: x, topStaffY: topStaffY, bottomStaffY: bottomStaffY,
+        emitDecorations(note.decorations, x: headX, topStaffY: topStaffY, bottomStaffY: bottomStaffY,
                         fontSize: fontSize, precedingGraceBeamY: precedingGraceBeamY, builder: &builder)
 
         var stemInfo: StemInfo?
         if absDur < 1.0 {
-            stemInfo = emitStem(staffPos: staffPos, noteheadY: y, x: x, absDur: absDur,
+            stemInfo = emitStem(staffPos: staffPos, noteheadY: y, x: headX, absDur: absDur,
                                 beamState: note.beam, direction: stemDirection, builder: &builder)
         }
 
-        emitLedgerLines(staffPos: staffPos, x: x, bottomStaffY: bottomStaffY, builder: &builder)
+        if !placement.isShared {
+            emitLedgerLines(staffPos: staffPos, x: headX, bottomStaffY: bottomStaffY, builder: &builder)
+        }
         return stemInfo
     }
 
+    /// - Parameters:
+    ///   - dotX: where the dot goes when its column moved it out of its default place beside
+    ///     the notehead — the dots of a shared staff's column are drawn in one strip.
+    ///   - dotDY: how far the dot moves from where the notehead alone would put it, positive
+    ///     downward, where another voice's dot has taken that spot.
     private func emitAugmentationDot(x: Double, noteheadY: Double, staffPos: Int,
-                                      fontSize: Double, builder: inout SVGBuilder) {
+                                      fontSize: Double, dotX: Double? = nil, dotDY: Double = 0,
+                                      builder: inout SVGBuilder) {
         let noteW   = noteheadWidth()
         let dotGap  = noteW * 0.2
-        let dotX    = x + noteW + dotGap
 
         // If the notehead sits on a line (even staffPos), shift dot up half a space to a space.
         let dotY = staffPos.isMultiple(of: 2)
             ? noteheadY - config.staffSize / 2.0
             : noteheadY
-        builder.text(String(SMuFLGlyph.augmentationDot.character), x: dotX, y: dotY,
+        builder.text(String(SMuFLGlyph.augmentationDot.character),
+                     x: dotX ?? (x + noteW + dotGap), y: dotY + dotDY,
                      fontFamily: "Bravura", fontSize: fontSize)
     }
 
@@ -1073,12 +1182,7 @@ struct SVGEmitter: Sendable {
     private func emitStem(staffPos: Int, noteheadY: Double, x: Double, absDur: Double,
                            beamState: BeamState, direction: StemDirection,
                            builder: inout SVGBuilder) -> StemInfo {
-        let stemUp: Bool
-        switch direction {
-        case .up:   stemUp = true
-        case .down: stemUp = false
-        case .auto: stemUp = staffPos <= 4
-        }
+        let stemUp       = stemsUp(direction, staffPos: staffPos)
         let noteheadW    = noteheadWidth()
         let stemThick    = metadata.engravingDefaults.stemThickness * config.staffSize
         let stemLength   = 3.5 * config.staffSize
@@ -1126,12 +1230,17 @@ struct SVGEmitter: Sendable {
     ///
     /// The offset is the glyph's own width plus a clearance gap — a fixed offset would let
     /// the wider glyphs (a double flat is 1.644 staff spaces) run over the notehead.
+    ///
+    /// - Parameter anchorX: what to hang the glyph off, where that is not the notehead's own
+    ///   left edge: on a shared staff every accidental in a column hangs off the leftmost
+    ///   head, and one that would overlap another is pushed a further glyph to the left.
     private func emitAccidental(_ alt: Alteration, x: Double, y: Double,
                                 fontSize: Double, scale: Double = 1.0,
+                                anchorX: Double? = nil,
                                 builder: inout SVGBuilder) {
         guard let glyph = SMuFLGlyph.accidental(for: alt) else { return }
         let offset = accidentalMetrics.offset(for: alt, scale: scale)
-        builder.text(String(glyph.character), x: x - offset, y: y,
+        builder.text(String(glyph.character), x: (anchorX ?? x) - offset, y: y,
                      fontFamily: "Bravura", fontSize: fontSize)
     }
 
@@ -1416,7 +1525,7 @@ struct SVGEmitter: Sendable {
     // MARK: - Helpers
 
     private func staffPos(for pitch: Pitch) -> Int {
-        (pitch.octave - 4) * 7 + (pitch.step.rawValue - DiatonicStep.e.rawValue)
+        CollisionHead.staffPosition(of: pitch)
     }
 
     private func noteY(staffPos: Int, bottomStaffY: Double) -> Double {
@@ -1430,9 +1539,18 @@ struct SVGEmitter: Sendable {
     }
 
     private func noteheadGlyph(absoluteDuration d: Double) -> SMuFLGlyph {
-        if d >= 1.0 { return .noteheadWhole }
-        if d >= 0.5 { return .noteheadHalf  }
-        return .noteheadBlack
+        .notehead(absoluteDuration: d)
+    }
+
+    /// Which way a note stems, once its voice's direction and its own staff position have
+    /// both had their say.  ``emitStem(staffPos:noteheadY:x:absDur:beamState:direction:builder:)``
+    /// draws by this, and the collision pass reads it to decide which way a unison separates.
+    private func stemsUp(_ direction: StemDirection, staffPos: Int) -> Bool {
+        switch direction {
+        case .up:   return true
+        case .down: return false
+        case .auto: return staffPos <= 4
+        }
     }
 
     private func flagGlyph(absDur: Double, stemUp: Bool) -> SMuFLGlyph {

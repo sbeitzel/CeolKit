@@ -112,8 +112,17 @@ struct SharedStaffMerger: Sendable {
                     subWidths[sub] = max(subWidths[sub], width)
                 }
             }
+            // A column whose voices collide has a head displaced sideways out of it (#79),
+            // and a head displaced by its own width into a column sized for one is drawn over
+            // whatever stands next to it.  Room to the right goes into the principal
+            // sub-column — the last, the one every voice's note lands in; room to the left is
+            // opened by starting the whole column further along.
+            let extra = NoteheadCollisions.extraWidth(runs.flatMap(\.collisionHeads),
+                                                      noteheadWidth: metrics.noteheadWidth())
+            if subColumnCount > 0 { subWidths[subColumnCount - 1] += extra.right }
+
             var subX = [Double](repeating: 0, count: subColumnCount)
-            var cursor = x
+            var cursor = x + extra.left
             for j in 0..<subColumnCount {
                 subX[j] = cursor
                 cursor += subWidths[j]
@@ -213,6 +222,9 @@ struct SharedStaffMerger: Sendable {
         let voice: Prepared
         let slot: Prepared.Slot
         let widths: [Double]
+        /// The noteheads this voice draws at the onset — what ``NoteheadCollisions`` needs to
+        /// say whether the column has to be widened for a displaced head.
+        let collisionHeads: [CollisionHead]
         /// Positions within ``slot`` holding a grace group that is immediately followed by
         /// the note it ornaments — the pairs `Justifier.stretchOffsets` must not stretch.
         let pairedGraceOffsets: Set<Int>
@@ -244,6 +256,38 @@ struct SharedStaffMerger: Sendable {
             }
             self.widths = widths
             self.pairedGraceOffsets = paired
+            // Only the event that sounds draws a head at this onset; a grace group ahead of
+            // it is drawn clear of the column and never collides with the other voice.
+            self.collisionHeads = events.last.map {
+                Run.heads(of: $0, voice: voice, metrics: metrics)
+            } ?? []
+        }
+
+        /// The heads `event` draws, as the collision pass sees them.
+        ///
+        /// The stem direction given is the opposition a shared staff imposes (#77), which is
+        /// right for all but a voice that stated `V:` `stem=` — and wrong there only about
+        /// *which way* a unison separates, never about whether it separates at all, which is
+        /// the whole of what the sizer is asking.
+        private static func heads(of event: Event, voice: Prepared,
+                                  metrics: ColumnMetrics) -> [CollisionHead] {
+            let unl = voice.part.unitNoteLength
+            func head(_ note: Note) -> CollisionHead {
+                let duration = Double(note.duration.numerator) / Double(note.duration.denominator)
+                    * Double(unl.numerator) / Double(unl.denominator)
+                return CollisionHead(
+                    voiceIndex: voice.part.voiceIndex,
+                    staffPos: CollisionHead.staffPosition(of: note.pitch),
+                    glyph: .notehead(absoluteDuration: duration),
+                    isDotted: metrics.isDottedDuration(note.duration),
+                    accidental: note.displayedAccidental,
+                    stemUp: voice.part.voiceIndex == 0)
+            }
+            switch event {
+            case .note(let n):  return [head(n)]
+            case .chord(let c): return c.notes.map(head)
+            default:            return []
+            }
         }
     }
 }

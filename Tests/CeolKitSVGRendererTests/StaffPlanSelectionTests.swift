@@ -121,14 +121,31 @@ struct StaffPlanSelectionTests {
         #expect(codes(result.diagnostics, .staffPlanNotFullyApplied).isEmpty)
     }
 
-    @Test("A floating voice keeps the position it was written at, and says so")
-    func floatingVoiceKeepsItsPosition() {
+    @Test("A floating voice is split between the staves on either side of it")
+    func floatingVoiceIsSplitBetweenItsNeighbours() {
         let result = select(threeVoices("%%score {1 *2| 3}"))
-        #expect(result.voices == [.named("1"), .named("2"), .named("3")])
+        // Two staves, and voice 2 twice: once as the lowest part of staff 0 and once as the
+        // highest of staff 1 (#80).  Both halves keep the id, because both are voice 2.
+        #expect(result.voices == [.named("1"), .named("2"), .named("3"), .named("2")])
+        #expect(result.selection.staffOfVoice == [0, 0, 1, 1])
+        #expect(result.selection.staffCount == 2)
+        // Nothing is approximated any more: the plan is applied as written.
+        #expect(codes(result.diagnostics, .staffPlanNotFullyApplied).isEmpty)
+    }
 
-        let notes = codes(result.diagnostics, .staffPlanNotFullyApplied)
-        #expect(notes.count == 1)
-        #expect(notes.first?.message.contains("floats between staves") == true)
+    @Test("A floating voice with only one neighbour prints on it, and warns")
+    func floatingVoiceWithOneNeighbour() {
+        // `*1` is at the top of the plan, so it has a staff below it and none above.
+        let result = select(threeVoices("%%score {*1 2| 3}"))
+        // It joins staff 0 as its last tenant, so the clef and name that staff draws stay
+        // voice 2's — the voice actually written at the top of it.
+        #expect(result.voices == [.named("2"), .named("1"), .named("3")])
+        #expect(result.selection.staffOfVoice == [0, 0, 1])
+
+        let warnings = codes(result.diagnostics, .staffPlanNotFullyApplied)
+        #expect(warnings.count == 1)
+        #expect(warnings.first?.severity == .warning)
+        #expect(warnings.first?.message.contains("only one") == true)
     }
 
     @Test("A body plan takes effect from its own stave, without complaint")

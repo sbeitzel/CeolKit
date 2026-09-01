@@ -174,6 +174,28 @@ struct StaffPlanRegionTests {
         #expect(dropped.first?.message.contains("'2'") == true)
     }
 
+    @Test("A voice the source leaves out of a region resumes on its own line after it")
+    func aVoiceOmittedFromARegionKeepsItsLine() {
+        // Issue #102: the same tune as `aDroppedVoiceComesBack`, written the way an author
+        // actually writes it — voice 2 has no line in the middle line-set, because the plan
+        // there does not print it.  Its last line must be drawn in the last region, not
+        // attributed to the middle one and dropped.
+        let abc = ([
+            "X:1", "L:1/4", "%%score [1 2]",
+            "V:1", "V:2", "K:C",
+            "V:1", "CDEF|", "V:2", "GABc|",
+            "%%score [1]",
+            "V:1", "CDEF|",
+            "%%score [1 2]",
+            "V:1", "cdef|", "V:2", "GABc|"
+        ] as [String]).joined(separator: "\n")
+
+        #expect(stavesPerSystem(abc) == [2, 1, 2])
+        // Nothing to say about it: an empty stave under a plan that prints no staff for the
+        // voice is exactly what the source asked for.
+        #expect(render(abc).diagnostics.isEmpty)
+    }
+
     @Test("Only the tune's very last system is the last one, however many regions there are")
     func onlyTheFinalRegionEndsTheTune() {
         // `justifyLastSystem` is off by default, so only a system marked last is left short;

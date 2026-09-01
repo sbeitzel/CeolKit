@@ -48,6 +48,10 @@ enum VoiceAligner {
     /// tune's widest therefore gains whole padded lines at the end rather than having its
     /// music silently slide up into someone else's line.
     ///
+    /// Only the *tail* is ever short: a voice the source left out of a line-set part way
+    /// through carries an empty `Staff` at that index (#102), so what arrives here is already
+    /// in the tune's stave numbering and the padding has nothing to guess at.
+    ///
     /// - Returns: One entry per stave, in source order.  Empty when `voices` is empty.
     static func align(_ voices: [Voice], into diagnostics: inout [Diagnostic]) -> [AlignedStave] {
         guard !voices.isEmpty else { return [] }

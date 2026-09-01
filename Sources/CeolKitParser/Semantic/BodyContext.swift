@@ -178,6 +178,10 @@ struct VoiceState {
     /// closedMeasures count before the current music line, so a following `w:` knows which
     /// measures belong to the line it annotates.
     var lyricAnchor: Int = 0
+    /// Which verse the next `w:` line for this voice writes: the `w:` lines following one
+    /// music line are its verses, in source order, and `recordLyricAnchors` resets this
+    /// wherever a new music line resets the anchor they align against.
+    var lyricVerse: Int = 0
 
     /// Space tracking for post-note decoration.
     var lastElementWasSpace: Bool = false
@@ -263,6 +267,7 @@ struct VoiceState {
     /// Applies lyrics to events from the music line just before this lyric field.
     /// Uses lyricAnchor to find which closed measures belong to the preceding line.
     mutating func applyLyrics(_ tokens: [LyricToken]) {
+        defer { lyricVerse += 1 }
         // Collect all events from closedMeasures[anchor...] + currentEvents
         var allEvents: [Event] = []
         for i in lyricAnchor..<accumulator.closedMeasures.count {
@@ -270,7 +275,7 @@ struct VoiceState {
         }
         allEvents += accumulator.currentEvents
 
-        let aligned = LyricAligner.align(tokens: tokens, to: allEvents)
+        let aligned = LyricAligner.align(tokens: tokens, to: allEvents, verse: lyricVerse)
 
         // Write back: first update closedMeasures[anchor...], then currentEvents
         var offset = 0
@@ -312,7 +317,7 @@ struct VoiceState {
                     chordSymbol: n.chordSymbol,
                     annotations: n.annotations,
                     beam: n.beam,
-                    lyric: n.lyric,
+                    lyrics: n.lyrics,
                     source: n.source
                 ))
                 return true
@@ -343,7 +348,7 @@ struct VoiceState {
                     chordSymbol: n.chordSymbol,
                     annotations: n.annotations,
                     beam: n.beam,
-                    lyric: n.lyric,
+                    lyrics: n.lyrics,
                     source: n.source
                 ))
                 return true
@@ -358,7 +363,7 @@ struct VoiceState {
                     beam: c.beam,
                     ties: c.ties,
                     slurs: updated,
-                    lyric: c.lyric,
+                    lyrics: c.lyrics,
                     source: c.source
                 ))
                 return true
@@ -637,6 +642,7 @@ struct BodyContext {
         for key in Array(voices.keys) {
             let anchor = voices[key]?.accumulator.closedMeasures.count ?? 0
             voices[key]?.lyricAnchor = anchor
+            voices[key]?.lyricVerse = 0
         }
     }
 
@@ -851,7 +857,7 @@ private func applyTupletFactor(q: Int, p: Int, to event: Event) -> Event {
             chordSymbol: n.chordSymbol,
             annotations: n.annotations,
             beam: n.beam,
-            lyric: n.lyric,
+            lyrics: n.lyrics,
             source: n.source
         ))
     case .chord(let c):
@@ -868,7 +874,7 @@ private func applyTupletFactor(q: Int, p: Int, to event: Event) -> Event {
             beam: c.beam,
             ties: c.ties,
             slurs: c.slurs,
-            lyric: c.lyric,
+            lyrics: c.lyrics,
             source: c.source
         ))
     default:

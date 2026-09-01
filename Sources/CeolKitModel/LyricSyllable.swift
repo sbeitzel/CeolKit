@@ -28,3 +28,16 @@ public enum LyricConnection: Hashable, Sendable {
     case wordEnd    // syllable ends a word; no connector
     case hyphen     // mid-word; renderer draws a hyphen to the next syllable
 }
+
+public extension LyricSyllable {
+    /// Normalises a verse list: a trailing verse that reaches a note with nothing to say
+    /// carries no information, so it is dropped, and a note no verse reaches ends up with
+    /// an empty array rather than a run of `nil`s.
+    ///
+    /// Interior `nil`s stay — verse 2 can print under a note verse 1 never reached.
+    static func trimmingVerses(_ verses: [LyricSyllable?]) -> [LyricSyllable?] {
+        var verses = verses
+        while verses.last == .some(nil) { verses.removeLast() }
+        return verses
+    }
+}

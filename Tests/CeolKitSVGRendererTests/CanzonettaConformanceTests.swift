@@ -20,8 +20,8 @@ import CeolKitSVGGeometry
 /// layout engine's own beliefs, so a system that *thinks* it is aligned and one that is
 /// drawn aligned are told apart.
 ///
-/// The tune carries `w:` lyric lines that CeolKit does not draw yet (issue #82), so
-/// nothing here asserts on lyrics — only on the staves, their bar lines and their bracket.
+/// The tune carries two `w:` verses per stave, one of them continued across a `\\` line
+/// break, so it is also the fixture that says whether lyrics are engraved (issue #82).
 @Suite("§14.4 Canzonetta.abc — rendering")
 struct CanzonettaConformanceTests {
 
@@ -151,6 +151,66 @@ struct CanzonettaConformanceTests {
             let lines = page.systems.compactMap(\.abcLine)
             #expect(lines.count == page.systems.count, "Some system carries no anchor")
             #expect(lines == lines.sorted(), "Anchors out of order: \(lines)")
+        }
+    }
+
+    // MARK: - Lyrics (§4.18)
+
+    @Test("Both verses are drawn, the second under the first")
+    func bothVersesAreDrawn() throws {
+        let (svg, staves) = try textRender()
+        let words = lyricRuns(in: svg)
+        // "Son" opens verse 1 and "Que-sti" verse 2, on the tune's very first stave.
+        guard let son = words.first(where: { $0.content == "Son" }),
+              let questi = words.first(where: { $0.content == "Que" }) else {
+            Issue.record("Expected both verses on the page"); return
+        }
+        #expect(questi.y > son.y, "The second verse is not below the first")
+        #expect(abs(questi.x - son.x) < 1e-6, "Both verses open under the same note")
+        // Both stand below the staff they belong to — the first system's top one, since
+        // that is where the tune's first sung note is.
+        guard let staff = staves.first else { Issue.record("Nothing was drawn"); return }
+        #expect(son.y > staff.bottomY, "The first verse was drawn on the staff")
+    }
+
+    @Test("A tilde is set as the space it stands for")
+    func tildeBecomesASpace() throws {
+        let words = lyricRuns(in: try textRender().svg).map(\.content)
+        #expect(words.contains("sti i"), "`que-sti~i` should print as two words on one note")
+        #expect(!words.contains(where: { $0.contains("~") }))
+    }
+
+    @Test("The w: continued across the line break is one verse, not two")
+    func continuedLyricIsOneVerse() throws {
+        let words = lyricRuns(in: try textRender().svg)
+        // §14.4 writes `w: … che que-sto\\` and continues it with `w: sol de-si-o_.` after
+        // the continued music line.  Joined, "que-sto" and "sol" share one baseline.
+        guard let questo = words.first(where: { $0.content == "sto" && $0.x > 0 }),
+              let sol = words.first(where: { $0.content == "sol" }) else {
+            Issue.record("Expected both halves of the continued verse"); return
+        }
+        #expect(words.allSatisfy { !$0.content.contains("\\") }, "A continuation mark was printed")
+        #expect(abs(sol.y - questo.y) < 1e-6 || sol.x > questo.x)
+    }
+
+    /// The same page, drawn as `<text>` rather than outlines, so the words can be read back
+    /// out of it.  Placement is identical either way — only the form the runs take differs.
+    private func textRender() throws -> (svg: String, staves: [SystemGeometry]) {
+        let result = CeolKitParser().parse(canzonettaABC, options: .default)
+        var diagnostics = result.score.diagnostics
+        let pages = try textProbeRenderer(config).render(result.score, diagnostics: &diagnostics)
+        return (pages.joined(), try SVGGeometry.pages(from: pages).flatMap(\.systems))
+    }
+
+    /// The words on the page: `<text>` runs in the text face, which is everything but the
+    /// music itself.  The title block is set in it too and is filtered out by the callers,
+    /// which ask only about what stands below a staff.
+    private func lyricRuns(in svg: String) -> [(x: Double, y: Double, content: String)] {
+        svg.matches(
+            of: /<text x="([-0-9.]+)" y="([-0-9.]+)" font-family="Libertinus Serif"[^>]*>([^<]*)<\/text>/
+        ).compactMap { match in
+            guard let x = Double(match.1), let y = Double(match.2) else { return nil }
+            return (x: x, y: y, content: String(match.3))
         }
     }
 

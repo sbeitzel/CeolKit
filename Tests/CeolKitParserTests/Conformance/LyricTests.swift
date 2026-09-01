@@ -140,6 +140,125 @@ struct LyricTests {
         #expect(!notes.isEmpty)
     }
 
+    // MARK: Verses
+
+    @Test("A second w: line is a second verse, not a replacement for the first")
+    func secondLineIsASecondVerse() {
+        let abc = """
+        X:1
+        T:Test
+        M:4/4
+        L:1/4
+        K:C
+        CDEF|
+        w: do re mi fa
+        w: un deux trois quatre
+        """
+        let notes = parse(abc).score.firstTune?.singleVoiceMeasures.first?.noteEvents ?? []
+        guard notes.count == 4 else { Issue.record("Parser prerequisite not met"); return }
+        let first = notes[0].lyrics
+        #expect(first.count == 2)
+        if case .text(let t, _) = first.first ?? nil { #expect(t.value == "do") }
+        if case .text(let t, _) = first.count > 1 ? first[1] : nil { #expect(t.value == "un") }
+        // `lyric` still answers for the first verse, which is what most callers want.
+        if case .text(let t, _) = notes[3].lyric { #expect(t.value == "fa") }
+    }
+
+    @Test("A verse that runs out leaves nil where it did not reach")
+    func shorterVerseLeavesNil() {
+        let abc = """
+        X:1
+        T:Test
+        M:4/4
+        L:1/4
+        K:C
+        CDEF|
+        w: do
+        w: un deux trois quatre
+        """
+        let notes = parse(abc).score.firstTune?.singleVoiceMeasures.first?.noteEvents ?? []
+        guard notes.count == 4 else { Issue.record("Parser prerequisite not met"); return }
+        let second = notes[1].lyrics
+        #expect(second.count == 2)
+        #expect(second.first ?? nil == nil, "Verse 1 ran out and should say nothing here")
+        if case .text(let t, _) = second.count > 1 ? second[1] : nil { #expect(t.value == "deux") }
+    }
+
+    @Test("A new music line starts the verse count over")
+    func versesResetAtTheNextMusicLine() {
+        let abc = """
+        X:1
+        T:Test
+        M:4/4
+        L:1/4
+        K:C
+        CDEF|
+        w: do re mi fa
+        w: un deux trois quatre
+        GABc|
+        w: sol la si do
+        """
+        let measures = parse(abc).score.firstTune?.singleVoiceMeasures ?? []
+        guard measures.count >= 2 else { Issue.record("Parser prerequisite not met"); return }
+        let second = measures[1].noteEvents
+        guard let note = second.first else { Issue.record("Parser prerequisite not met"); return }
+        #expect(note.lyrics.count == 1, "The second line's w: is its own first verse")
+        if case .text(let t, _) = note.lyric { #expect(t.value == "sol") }
+    }
+
+    // MARK: Line continuation (§2.2)
+
+    /// The backslashes are escaped for Swift, whose multi-line literals take a trailing
+    /// one as a line continuation of their own: the ABC lines end `|\` and `re\`.
+    @Test("A w: line ending in a backslash continues onto the next w: line")
+    func continuedLyricLineIsOneVerse() {
+        // The music line is continued too, so both halves are one line with one verse
+        // under it — §14.4's Canzonetta is written exactly this way.
+        let abc = """
+        X:1
+        T:Test
+        M:4/4
+        L:1/4
+        K:C
+        CD|\\
+        w: do re\\
+        EF|
+        w: mi fa
+        """
+        let measures = parse(abc).score.firstTune?.singleVoiceMeasures ?? []
+        let notes = measures.flatMap(\.noteEvents)
+        guard notes.count == 4 else { Issue.record("Parser prerequisite not met"); return }
+        for (note, syllable) in zip(notes, ["do", "re", "mi", "fa"]) {
+            #expect(note.lyrics.count == 1, "The continuation is not a second verse")
+            if case .text(let t, _) = note.lyric {
+                #expect(t.value == syllable)
+            } else {
+                Issue.record("Note expected lyric '\(syllable)', got \(String(describing: note.lyric))")
+            }
+        }
+    }
+
+    @Test("The continuation backslash is not part of the syllable")
+    func continuationMarkIsNotPrinted() {
+        let abc = """
+        X:1
+        T:Test
+        M:4/4
+        L:1/4
+        K:C
+        CD|
+        w: do re\\
+        w: mi
+        """
+        let notes = parse(abc).score.firstTune?.singleVoiceMeasures.first?.noteEvents ?? []
+        guard notes.count == 2 else { Issue.record("Parser prerequisite not met"); return }
+        if case .text(let t, _) = notes[1].lyric {
+            #expect(t.value == "re")
+        } else {
+            Issue.record("Expected 're', got \(String(describing: notes[1].lyric))")
+        }
+    }
+
     // MARK: W: trailing words (not aligned)
 
     @Test("W: field stores trailing words (not per-note)")

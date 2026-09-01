@@ -120,7 +120,7 @@ struct BeamResolver {
                 chordSymbol: n.chordSymbol,
                 annotations: n.annotations,
                 beam: beam,
-                lyric: n.lyric,
+                lyrics: n.lyrics,
                 source: n.source
             ))
         case .chord(let c):
@@ -133,7 +133,7 @@ struct BeamResolver {
                 beam: beam,
                 ties: c.ties,
                 slurs: c.slurs,
-                lyric: c.lyric,
+                lyrics: c.lyrics,
                 source: c.source
             ))
         default:

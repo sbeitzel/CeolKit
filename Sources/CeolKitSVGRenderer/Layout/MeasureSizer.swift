@@ -50,12 +50,15 @@ public struct MeasureSizer: Sendable {
                 graceEventIndices.insert(offsets.count)  // record before appending
                 offsets.append(x)                        // grace event
                 offsets.append(x + graceW + gap)         // paired note/chord/rest
-                x += graceW + gap + metrics.columnWidth(for: measure.events[i + 1],
-                                                        quarterInUnits: quarterInUnits)
+                x += graceW + gap + metrics.columnWidth(
+                    for: measure.events[i + 1], quarterInUnits: quarterInUnits,
+                    followedBy: nextSpacingEvent(after: i + 1, in: measure.events))
                 i += 2
             } else {
                 offsets.append(x)
-                x += metrics.columnWidth(for: event, quarterInUnits: quarterInUnits)
+                x += metrics.columnWidth(
+                    for: event, quarterInUnits: quarterInUnits,
+                    followedBy: nextSpacingEvent(after: i, in: measure.events))
                 i += 1
             }
         }
@@ -68,6 +71,12 @@ public struct MeasureSizer: Sendable {
         return SizedMeasure(measure: measure, naturalWidth: naturalWidth, eventOffsets: offsets,
                             unitNoteLength: unitNoteLength, graceEventIndices: graceEventIndices,
                             eventVoiceIndices: Array(repeating: voiceIndex, count: offsets.count))
+    }
+
+    /// The next event of the bar that a column runs to.  A column is spaced for the syllable
+    /// at each of its ends (§4.18), and this is the far one.
+    private func nextSpacingEvent(after index: Int, in events: [Event]) -> Event? {
+        events[(index + 1)...].first { metrics.isSpacingEvent($0) }
     }
 
     /// Sizes one bar of a staff several voices share (§11.1 `( … )`), merging them onto a

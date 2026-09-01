@@ -410,6 +410,7 @@ struct SVGEmitter: Sendable {
                         pendingTies: &pendingTies, pendingSlurs: &pendingSlurs,
                         builder: &builder)
         }
+        emitLyrics(system, builder: &builder)
 
         // Anchors still open at the end of this system span into the next system/page.
         // Draw a departing dangling arc to the right staff edge; the anchor itself is left
@@ -461,6 +462,136 @@ struct SVGEmitter: Sendable {
             fontSize: VoiceLabelGutter.fontSize(staffSize: config.staffSize),
             textAnchor: "end"
         )
+    }
+
+    // MARK: - Lyrics
+
+    /// The verses printed under this staff (ABC v2.2 §4.18: `w:`), one line per `w:` line
+    /// the source wrote against the music this system carries.
+    ///
+    /// Drawn per system rather than per measure because a word is not a measure's business:
+    /// a hyphen joins two syllables that a bar line may stand between, and a melisma's
+    /// extender runs from a syllable to the last note that holds it, wherever that falls.
+    ///
+    /// Set through the same `builder.text` path as the title block, so the syllables take
+    /// whichever of `<text>` and outlines the document is in — a bare `<text>` would vanish
+    /// in every non-browser rasteriser, which is the default here.
+    private func emitLyrics(_ system: ResolvedSystem, builder: inout SVGBuilder) {
+        let verses = LyricBand.verseCount(of: system)
+        guard verses > 0 else { return }
+        let staffSize = config.staffSize
+        // The band is the foot of the system: the layout engine put it below everything else
+        // the staff reaches down to, so it is found by measuring back up from the bottom.
+        let bandTop = system.origin.y + system.totalHeight
+            - LyricBand.height(verses: verses, staffSize: staffSize)
+        let anchors = lyricAnchors(in: system)
+        let font = OutlineFontSet.textFace()
+        for verse in 0..<verses {
+            emitVerse(verse, anchors: anchors, font: font,
+                      baselineY: bandTop + LyricBand.baselineOffset(verse: verse,
+                                                                    staffSize: staffSize),
+                      builder: &builder)
+        }
+    }
+
+    /// Every syllable-carrying event of `system`, left to right, at the centre of its
+    /// notehead — which is what a syllable is centred under.
+    private func lyricAnchors(in system: ResolvedSystem) -> [(x: Double, lyrics: [LyricSyllable?])] {
+        let centre = noteheadWidth() / 2
+        var anchors: [(x: Double, lyrics: [LyricSyllable?])] = []
+        for measure in system.measures {
+            for event in measure.events {
+                let lyrics: [LyricSyllable?]
+                switch event.kind {
+                case .note(let n):  lyrics = n.lyrics
+                case .chord(let c): lyrics = c.lyrics
+                default:            continue
+                }
+                guard !lyrics.isEmpty else { continue }
+                anchors.append((x: event.origin.x + centre, lyrics: lyrics))
+            }
+        }
+        return anchors
+    }
+
+    /// One verse: its syllables, the hyphens that join the halves of a divided word, and the
+    /// extender lines under its melismas (§4.18).
+    private func emitVerse(_ verse: Int,
+                           anchors: [(x: Double, lyrics: [LyricSyllable?])],
+                           font: OpenTypeFont?,
+                           baselineY: Double,
+                           builder: inout SVGBuilder) {
+        let staffSize = config.staffSize
+        let fontSize = LyricBand.fontSize(staffSize: staffSize)
+        // Clear of the syllable at either end, so an extender or hyphen never touches a
+        // letterform.
+        let clearance = staffSize * 0.5
+
+        // Right edge of the syllable a melisma extends, and the note the run has reached so
+        // far.  Held open across events because `_` can be written on any number of notes.
+        var melismaFrom: Double?
+        var melismaTo: Double?
+        // Right edge of a syllable that ended in `-`, waiting for the one it joins to.
+        var hyphenFrom: Double?
+
+        /// Draws the extender the open melisma run has reached, stopping clear of `limit` —
+        /// the left edge of the syllable that ends the run, where one follows on this system.
+        func flushMelisma(before limit: Double = .infinity) {
+            defer { melismaTo = nil }
+            guard let from = melismaFrom, let to = melismaTo else { return }
+            let end = min(to, limit - clearance)
+            guard end > from else { return }
+            builder.line(x1: from, y1: baselineY, x2: end, y2: baselineY,
+                         strokeWidth: LyricBand.extenderThickness(staffSize: staffSize))
+        }
+
+        for anchor in anchors {
+            let syllable = verse < anchor.lyrics.count ? anchor.lyrics[verse] : nil
+            switch syllable {
+            case .text(let text, let connection):
+                let content = LyricBand.displayText(text.value)
+                let halfWidth = LyricBand.width(of: content, font: font, fontSize: fontSize) / 2
+                flushMelisma(before: anchor.x - halfWidth)
+                if let from = hyphenFrom {
+                    emitLyricHyphen(from: from, to: anchor.x - halfWidth, baselineY: baselineY,
+                                    font: font, fontSize: fontSize, builder: &builder)
+                }
+                builder.text(content, x: anchor.x, y: baselineY,
+                             fontFamily: "Libertinus Serif", fontSize: fontSize,
+                             textAnchor: "middle")
+                melismaFrom = anchor.x + halfWidth + clearance
+                hyphenFrom = connection == .hyphen ? anchor.x + halfWidth : nil
+
+            case .melisma:
+                // `_` holds the syllable before it over this note: the extender reaches the
+                // far side of the notehead the singer is still on.
+                melismaTo = anchor.x + noteheadWidth() / 2
+
+            case .skip, .none:
+                // Nothing sung here, and nothing held over it either.
+                flushMelisma()
+                melismaFrom = nil
+            }
+        }
+        flushMelisma()
+        // A word divided across a system break keeps its hyphen: it hangs off the last
+        // syllable, since the one it joins to is on the next system.
+        if let from = hyphenFrom {
+            emitLyricHyphen(from: from, to: from + 2 * clearance, baselineY: baselineY,
+                            font: font, fontSize: fontSize, builder: &builder)
+        }
+    }
+
+    /// The hyphen joining two syllables of one word, centred in the gap between them.
+    /// Dropped where the gap is too narrow to hold it — the syllables then read as adjacent,
+    /// which is what an engraver does rather than crowd a hyphen between them.
+    private func emitLyricHyphen(from: Double, to: Double, baselineY: Double,
+                                 font: OpenTypeFont?, fontSize: Double,
+                                 builder: inout SVGBuilder) {
+        let width = LyricBand.width(of: "-", font: font, fontSize: fontSize)
+        guard to - from > width else { return }
+        builder.text("-", x: (from + to) / 2, y: baselineY,
+                     fontFamily: "Libertinus Serif", fontSize: fontSize, textAnchor: "middle")
     }
 
     private func emitStaffLines(_ system: ResolvedSystem, builder: inout SVGBuilder) {

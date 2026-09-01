@@ -43,9 +43,15 @@ public struct VerticalLayoutEngine: Sendable {
         var isFirstPage = true
         var y = config.margins.top + titleBlockHeight
         var previousAbcLine: Int?
+        // A staff of its own is a group of one, so the same walk that carries an ending over
+        // a system break in a multi-voice tune serves here too.
+        let endingRuns = EndingBracketBand.runs(
+            in: systems.map { JustifiedSystemGroup(staves: [$0]) })
 
-        for jsystem in systems {
-            let (extraAbove, extraBelow) = verticalExtent(of: jsystem, staffSize: config.staffSize)
+        for (index, jsystem) in systems.enumerated() {
+            let runs = endingRuns[index][0]
+            let (extraAbove, extraBelow) = verticalExtent(of: jsystem, staffSize: config.staffSize,
+                                                          hasEndingBracket: !runs.isEmpty)
             let totalHeight = extraAbove + staffHeight + extraBelow
 
             if !pageSystems.isEmpty && y + totalHeight > config.pageSize.height - config.margins.bottom {
@@ -80,7 +86,10 @@ public struct VerticalLayoutEngine: Sendable {
                 clef: jsystem.clef,
                 keySignature: jsystem.keySignature,
                 meter: jsystem.meter,
-                abcLine: abcLine
+                abcLine: abcLine,
+                endingBrackets: EndingBracketBand.place(
+                    runs, over: measures, bandTopY: systemOrigin.y,
+                    staffSize: config.staffSize, metadata: metadata)
             ))
 
             y += totalHeight + config.systemGap
@@ -113,6 +122,11 @@ public struct VerticalLayoutEngine: Sendable {
 
         for block in tuneBlocks {
             let groups = block.systemGroups
+            // Worked out once for the whole tune: an ending can run past a line break, so
+            // which measures a bracket covers is not something one system can answer alone.
+            // The same table is read by the fits-on-this-page pre-pass below and by the
+            // placement that follows it, so the space reserved is the space drawn into.
+            let endingRuns = EndingBracketBand.runs(in: groups)
             // %%ceolkit:scale sizes this tune's music (and the gaps derived from staffSize)
             // relative to the renderer default. Page size and margins stay absolute.
             let tuneConfig  = config.scaled(by: block.scale)
@@ -126,7 +140,7 @@ public struct VerticalLayoutEngine: Sendable {
             // are taller than a full page are still forced to a fresh page here; the
             // inner system loop below handles the mid-tune page breaks they require.
             if !pageSystems.isEmpty {
-                let tuneH = totalHeight(of: block)
+                let tuneH = totalHeight(of: block, endingRuns: endingRuns)
                 if y + tuneH > config.pageSize.height - config.margins.bottom {
                     pages.append(ResolvedPage(systems: pageSystems, titleRows: pageTitleRows))
                     pageSystems = []
@@ -146,7 +160,8 @@ public struct VerticalLayoutEngine: Sendable {
             y += block.titleBlockHeight
 
             for (gi, group) in groups.enumerated() {
-                let metrics = groupMetrics(of: group, config: tuneConfig)
+                let metrics = groupMetrics(of: group, config: tuneConfig,
+                                           endingRuns: endingRuns[gi])
 
                 // A group breaks to the next page whole: splitting it would separate staves
                 // that only mean anything read together.
@@ -164,7 +179,8 @@ public struct VerticalLayoutEngine: Sendable {
                 pageSystems.append(contentsOf: resolveGroup(
                     group, metrics: metrics, topY: y, staffSize: staffSize,
                     staffHeight: staffHeight,
-                    graceNoteSpacing: block.graceNoteSpacing, abcLine: abcLine))
+                    graceNoteSpacing: block.graceNoteSpacing, abcLine: abcLine,
+                    endingRuns: endingRuns[gi]))
 
                 let isLastInBlock = gi == groups.count - 1
                 y += metrics.totalHeight + (isLastInBlock ? tuneGap : systemGap)
@@ -205,7 +221,10 @@ public struct VerticalLayoutEngine: Sendable {
     }
 
     private func groupMetrics(of group: JustifiedSystemGroup,
-                              config: SVGRenderConfig) -> GroupMetrics {
+                              config: SVGRenderConfig,
+                              endingRuns: [[EndingBracketBand.Run]]) -> GroupMetrics {
+        // Parallel to `group.staves` by construction: `EndingBracketBand.runs(in:)` walks
+        // the very groups this is being called for, one entry per staff of each.
         let staffSize = config.staffSize
         let staffHeight = 4.0 * staffSize
         let columns = BracketColumns(grouping: group.grouping, staffCount: group.staves.count,
@@ -215,7 +234,9 @@ public struct VerticalLayoutEngine: Sendable {
         var offset = 0.0
         var startWidth = 0.0
         for (i, staff) in group.staves.enumerated() {
-            let (extraAbove, extraBelow) = verticalExtent(of: staff, staffSize: staffSize)
+            let (extraAbove, extraBelow) = verticalExtent(
+                of: staff, staffSize: staffSize,
+                hasEndingBracket: !endingRuns[i].isEmpty)
             staves.append((extraAbove, extraBelow, offset + extraAbove))
             offset += extraAbove + staffHeight + extraBelow
             if i < group.staves.count - 1 {
@@ -233,7 +254,8 @@ public struct VerticalLayoutEngine: Sendable {
     private func resolveGroup(_ group: JustifiedSystemGroup, metrics: GroupMetrics,
                               topY: Double, staffSize: Double, staffHeight: Double,
                               graceNoteSpacing: Double,
-                              abcLine: Int) -> [ResolvedSystem] {
+                              abcLine: Int,
+                              endingRuns: [[EndingBracketBand.Run]]) -> [ResolvedSystem] {
         // A group of one is an ordinary system: no membership, no group furniture, and the
         // same output the renderer produced before staff groups existed.
         let isGrouped = group.staves.count > 1
@@ -309,7 +331,10 @@ public struct VerticalLayoutEngine: Sendable {
                 abcLine: abcLine,
                 staffGroup: membership,
                 voiceLabel: staff.voiceLabel.map { VoiceLabel(text: $0, x: labelRightX) },
-                voiceStemDirections: staff.voiceStemDirections
+                voiceStemDirections: staff.voiceStemDirections,
+                endingBrackets: EndingBracketBand.place(
+                    endingRuns[i], over: measures, bandTopY: systemOrigin.y,
+                    staffSize: staffSize, metadata: metadata)
             )
         }
     }
@@ -319,11 +344,13 @@ public struct VerticalLayoutEngine: Sendable {
     /// Returns the total vertical space required to render `block` on a single page,
     /// including its title block, all systems, and inter-system gaps (but not the
     /// trailing gap that follows the last system).
-    private func totalHeight(of block: TuneBlock) -> Double {
+    private func totalHeight(of block: TuneBlock,
+                            endingRuns: [[[EndingBracketBand.Run]]]) -> Double {
         let tuneConfig = config.scaled(by: block.scale)
         var h = block.titleBlockHeight
         for (i, group) in block.systemGroups.enumerated() {
-            h += groupMetrics(of: group, config: tuneConfig).totalHeight
+            h += groupMetrics(of: group, config: tuneConfig,
+                              endingRuns: endingRuns[i]).totalHeight
             if i < block.systemGroups.count - 1 { h += tuneConfig.systemGap }
         }
         return h
@@ -367,8 +394,14 @@ public struct VerticalLayoutEngine: Sendable {
 
     // MARK: - Vertical extent
 
+    /// - Parameter hasEndingBracket: whether a variant-ending bracket is drawn over this
+    ///   staff-system.  Its band is added on top of everything else the staff reaches up to,
+    ///   rather than maxed against it: the bracket stands above the ledger lines and the
+    ///   chord symbols, not among them.
     private func verticalExtent(of system: JustifiedSystem,
-                                staffSize: Double) -> (extraAbove: Double, extraBelow: Double) {
+                                staffSize: Double,
+                                hasEndingBracket: Bool
+    ) -> (extraAbove: Double, extraBelow: Double) {
         var maxLedgerAbove = 0
         var maxLedgerBelow = 0
         var hasChordSymbolsOrAnnotations = false
@@ -398,7 +431,8 @@ public struct VerticalLayoutEngine: Sendable {
         let hasTempoChanges = system.measures.contains { jm in
             jm.source.measure.events.contains { if case .tempoChange = $0 { return true }; return false }
         }
-        let extraAbove = hasTempoChanges ? max(baseAbove, s * 3) : baseAbove
+        var extraAbove = hasTempoChanges ? max(baseAbove, s * 3) : baseAbove
+        if hasEndingBracket { extraAbove += EndingBracketBand.height(staffSize: s) }
         // The verses hang below the ledger lines, so the two are added rather than maxed:
         // a low note and the syllable under it need the space each of them asked for.
         let extraBelow = Double(maxLedgerBelow) * s + LyricBand.height(verses: verses, staffSize: s)

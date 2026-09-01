@@ -454,6 +454,43 @@ public struct VoiceLabel: Sendable {
     }
 }
 
+/// One variant-ending bracket, placed on the page: the rule that runs above the staff over
+/// the measures of one pass through a repeat, the hooks that turn down from its ends, and the
+/// number(s) that say which pass it belongs to (ABC v2.2 §4.19: `|1`, `[2`, `|1,2`, `|1-3`).
+///
+/// Standing at the top of the staff's `extraAbove` band, above the ledger lines and
+/// annotations the rest of it was reserved for — see ``EndingBracketBand``, which both
+/// reserves the space and works out which measures each bracket covers.
+public struct EndingBracket: Sendable {
+    /// The number(s) printed inside the bracket's left hook, or `nil` where this is the
+    /// continuation of an ending that opened on an earlier system: the label is printed
+    /// once, where the ending begins.
+    public let label: String?
+    /// Absolute x of the bracket's left end — the bar line the ending opens at.
+    public let startX: Double
+    /// Absolute x of its right end — the bar line the ending closes at, or the right edge of
+    /// the system where it runs on into the next one.
+    public let endX: Double
+    /// Absolute y of the *centre* of the horizontal rule.
+    public let ruleY: Double
+    /// Whether the rule turns down at its left end.  False exactly where the ending was
+    /// carried over a system break.
+    public let hasStartHook: Bool
+    /// Whether it turns down at its right end: it does at the repeat bar that sends the
+    /// player back, and does not where the music runs on.
+    public let hasEndHook: Bool
+
+    public init(label: String?, startX: Double, endX: Double, ruleY: Double,
+                hasStartHook: Bool, hasEndHook: Bool) {
+        self.label = label
+        self.startX = startX
+        self.endX = endX
+        self.ruleY = ruleY
+        self.hasStartHook = hasStartHook
+        self.hasEndHook = hasEndHook
+    }
+}
+
 public struct ResolvedSystem: Sendable {
     public let origin: Point
     public let measures: [ResolvedMeasure]
@@ -496,6 +533,9 @@ public struct ResolvedSystem: Sendable {
     /// `%%ceolkit:pipeformat`; `.auto` leaves the choice to the voice's position on the
     /// staff, then the document, then the note's own staff position.
     public let voiceStemDirections: [StemDirection]
+    /// The variant-ending brackets drawn above this staff, left to right.  Empty on every
+    /// staff of every tune that writes none, which reserves no space for them either.
+    public let endingBrackets: [EndingBracket]
 
     /// What the staff's first voice asked for; see ``System/stemDirection``.
     public var stemDirection: StemDirection { voiceStemDirections.first ?? .auto }
@@ -516,7 +556,8 @@ public struct ResolvedSystem: Sendable {
         abcLine: Int = 1,
         staffGroup: StaffGroup? = nil,
         voiceLabel: VoiceLabel? = nil,
-        voiceStemDirections: [StemDirection] = []
+        voiceStemDirections: [StemDirection] = [],
+        endingBrackets: [EndingBracket] = []
     ) {
         self.origin = origin
         self.measures = measures
@@ -534,6 +575,7 @@ public struct ResolvedSystem: Sendable {
         self.staffGroup = staffGroup
         self.voiceLabel = voiceLabel
         self.voiceStemDirections = voiceStemDirections
+        self.endingBrackets = endingBrackets
     }
 }
 

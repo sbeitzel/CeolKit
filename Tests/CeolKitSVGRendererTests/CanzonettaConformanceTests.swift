@@ -154,6 +154,30 @@ struct CanzonettaConformanceTests {
         }
     }
 
+    // MARK: - Variant endings (§4.19)
+
+    @Test("The last system carries the |1 and |2 brackets on all three staves")
+    func variantEndingsAreDrawnOnEveryStaff() throws {
+        let (svg, staves) = try textRender()
+        // The tune's last stave ends `|1F2z2:|2F8|]` in every voice, so its three staves —
+        // the last three drawn — each carry a `1` bracket and a `2` bracket.
+        let lastSystem = staves.suffix(3)
+        #expect(lastSystem.count == 3)
+
+        for (index, staff) in lastSystem.enumerated() {
+            let ruleY = staff.topY - EndingBracketBand.height(staffSize: staff.staffLineGap)
+                + EndingBracketBand.thickness(metadata: try BravuraMetadata.load(),
+                                              staffSize: staff.staffLineGap) / 2
+            let baselineY = ruleY + EndingBracketBand.labelBaselineOffset(
+                staffSize: staff.staffLineGap)
+            let labels = lyricRuns(in: svg)
+                .filter { abs($0.y - baselineY) < 1e-6 }
+                .sorted { $0.x < $1.x }
+                .map(\.content)
+            #expect(labels == ["1", "2"], "Staff \(index) of the last system carries \(labels)")
+        }
+    }
+
     // MARK: - Lyrics (§4.18)
 
     @Test("Both verses are drawn, the second under the first")

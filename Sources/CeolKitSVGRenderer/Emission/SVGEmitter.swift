@@ -376,6 +376,7 @@ struct SVGEmitter: Sendable {
                              builder: inout SVGBuilder) {
         emitStaffLines(system, builder: &builder)
         emitStaffGroupConnector(system, builder: &builder)
+        emitEndingBrackets(system, builder: &builder)
         emitVoiceLabel(system, builder: &builder)
         emitClef(system, builder: &builder)
         if let keySig = system.keySignature {
@@ -462,6 +463,60 @@ struct SVGEmitter: Sendable {
             fontSize: VoiceLabelGutter.fontSize(staffSize: config.staffSize),
             textAnchor: "end"
         )
+    }
+
+    // MARK: - Variant endings
+
+    /// The brackets over this staff's variant endings (ABC v2.2 §4.19: `|1`, `[2`, `|1,2`),
+    /// already placed by ``EndingBracketBand`` in the band reserved for them at the top of
+    /// the staff's `extraAbove`.
+    ///
+    /// A rule above the staff, hooked down at the end or ends where the ending is closed,
+    /// with the pass number(s) standing inside the left hook — so a reader coming to the
+    /// repeat bar can see which bar belongs to which time through.
+    ///
+    /// The label goes through the same `builder.text` path as the title block, so it takes
+    /// whichever of `<text>` and outlines the document is in.  A bare `<text>` would vanish
+    /// in every non-browser rasteriser, which is the default here.
+    ///
+    /// Drawn once per staff, as abcm2ps draws it: every voice of a system carries the same
+    /// endings, and a player reading one part off a score should not have to look up to
+    /// another part's staff to find out which pass they are on.
+    private func emitEndingBrackets(_ system: ResolvedSystem, builder: inout SVGBuilder) {
+        guard !system.endingBrackets.isEmpty else { return }
+        let s = config.staffSize
+        let thickness = EndingBracketBand.thickness(metadata: metadata, staffSize: s)
+        let hookDepth = EndingBracketBand.hookDepth(staffSize: s)
+
+        for bracket in system.endingBrackets {
+            builder.line(x1: bracket.startX, y1: bracket.ruleY,
+                         x2: bracket.endX, y2: bracket.ruleY,
+                         stroke: "black", strokeWidth: thickness)
+            // Half a thickness in from each end, so the hook's outer edge lines up with the
+            // end of the rule and the corner reads as a corner rather than an overhang.
+            if bracket.hasStartHook {
+                emitEndingHook(x: bracket.startX + thickness / 2, ruleY: bracket.ruleY,
+                               depth: hookDepth, thickness: thickness, builder: &builder)
+            }
+            if bracket.hasEndHook {
+                emitEndingHook(x: bracket.endX - thickness / 2, ruleY: bracket.ruleY,
+                               depth: hookDepth, thickness: thickness, builder: &builder)
+            }
+            guard let label = bracket.label else { continue }
+            builder.text(
+                label,
+                x: bracket.startX + EndingBracketBand.labelInset(staffSize: s),
+                y: bracket.ruleY + EndingBracketBand.labelBaselineOffset(staffSize: s),
+                fontFamily: "Libertinus Serif",
+                fontSize: EndingBracketBand.fontSize(staffSize: s)
+            )
+        }
+    }
+
+    private func emitEndingHook(x: Double, ruleY: Double, depth: Double, thickness: Double,
+                                builder: inout SVGBuilder) {
+        builder.line(x1: x, y1: ruleY, x2: x, y2: ruleY + depth,
+                     stroke: "black", strokeWidth: thickness)
     }
 
     // MARK: - Lyrics

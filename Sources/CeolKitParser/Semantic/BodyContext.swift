@@ -9,13 +9,27 @@ struct VoiceAccumulator {
     var currentEvents: [Event] = []
     var lastBarLine: BarLine? = nil
     var measureSource: SourceRange
+    /// The unit note length the voice's *first* measure is written against — what
+    /// `Voice.unitNoteLength` reports and what the beam resolver starts from.  Moves only
+    /// while the voice has no music; an `L:` after that is a change, not an opening.
+    var openingUnitNoteLength: Fraction
+    /// The unit note length in force now.  Seeds an `&` layer opened from here, and is what
+    /// a further `L:` is measured against.
     var unitNoteLength: Fraction
     // Set by VoiceState after a barline when the tune's meter has moved on since this voice
     // last reported it; consumed by the next closeWith to tag that measure for renderers.
     var pendingMeter: Meter? = nil
+    /// An `L:` that moved the unit note length part way through the voice, paired with the
+    /// number of musical events the measure then being written already held.
+    ///
+    /// Consumed by the close of the measure the first note after the change falls in — this
+    /// one where music follows in the bar, the next where the field was written against the
+    /// bar line, which is where ABC habitually puts a mid-tune field (#85).
+    var pendingUnitNoteLength: (length: Fraction, after: Int)? = nil
 
     init(source: SourceRange, unitNoteLength: Fraction) {
         self.measureSource = source
+        self.openingUnitNoteLength = unitNoteLength
         self.unitNoteLength = unitNoteLength
     }
 
@@ -57,6 +71,20 @@ struct VoiceAccumulator {
         }
     }
 
+    /// How much music the measure now being written holds.  Spacers are not music: they
+    /// separate beam groups, and one sits either side of an inline field.
+    var musicalEventCount: Int {
+        currentEvents.reduce(into: 0) { count, event in
+            if case .spacer = event { return }
+            count += 1
+        }
+    }
+
+    /// Records an `L:` met here, to be carried by whichever measure the next note lands in.
+    mutating func markUnitNoteLengthChange(_ length: Fraction) {
+        pendingUnitNoteLength = (length, musicalEventCount)
+    }
+
     /// Appends a bar with no music in it, to keep an `&` overlay's measures aligned with the
     /// stave's own.  It draws nothing: the voice underneath owns the staff's furniture.
     mutating func appendEmptyMeasure(source: SourceRange) {
@@ -86,6 +114,9 @@ struct VoiceAccumulator {
         guard hasMusicalContent || endingNumber != nil else {
             currentEvents = []
             lastBarLine = barLine
+            // Nothing was written, so nothing can have followed the change: it still belongs
+            // to the measure the next note falls in, counted from that measure's start.
+            pendingUnitNoteLength?.after = 0
             return
         }
         let src = measureSourceSpan(
@@ -96,13 +127,23 @@ struct VoiceAccumulator {
         )
         let meterTag = pendingMeter
         pendingMeter = nil
+        var unitTag: Fraction? = nil
+        if let change = pendingUnitNoteLength {
+            if musicalEventCount > change.after {
+                unitTag = change.length
+                pendingUnitNoteLength = nil
+            } else {
+                pendingUnitNoteLength = (change.length, 0)
+            }
+        }
         let measure = Measure(
             openingBar: lastBarLine,
             events: currentEvents,
             closingBar: barLine,
             endingNumber: endingNumber,
             source: src,
-            meter: meterTag
+            meter: meterTag,
+            unitNoteLength: unitTag
         )
         closedMeasures.append(measure)
         currentEvents = []
@@ -159,7 +200,9 @@ struct VoiceState {
     var openingKey: KeySignature?
 
     /// The `L:` this voice stated before any of its music, or `nil` while the tune's stands.
-    /// Mirrored into `accumulator.unitNoteLength`, which the beams are grouped against.
+    /// Mirrored into `accumulator.openingUnitNoteLength`, which the first measure's beams are
+    /// grouped against.  A later `L:` is a change rather than an opening: it lands on the
+    /// measure it falls in and leaves this alone, exactly as a later `K:` leaves `openingKey`.
     var openingUnitNoteLength: Fraction?
 
     // Pending attachments for this voice's next note/chord
@@ -219,6 +262,24 @@ struct VoiceState {
 
     mutating func emitSpaceBreak(source: SourceRange) {
         emit(.spacer(Spacer(width: 0, source: source)))
+    }
+
+    /// Moves this voice's unit note length.
+    ///
+    /// Before any music it is what the voice opens in; after, it is a change, and it takes
+    /// effect at the measure being written when the `L:` was met.  A change part way through
+    /// a bar starts one note or two early — `Event.duration` is counted in unit note lengths
+    /// and a measure carries one divisor, so there is nowhere finer for it to land — which is
+    /// the case ABC itself gives no meaning to, since the durations either side of it would
+    /// then be written in different units with nothing marking the seam.
+    mutating func setUnitNoteLength(_ length: Fraction) {
+        accumulator.unitNoteLength = length
+        if accumulator.hasMusic {
+            accumulator.markUnitNoteLengthChange(length)
+        } else {
+            openingUnitNoteLength = length
+            accumulator.openingUnitNoteLength = length
+        }
     }
 
     mutating func closeMeasure(barLine: BarLine, currentMeter: Meter, generation: Int) {
@@ -289,7 +350,8 @@ struct VoiceState {
                 closingBar: m.closingBar,
                 endingNumber: m.endingNumber,
                 source: m.source,
-                meter: m.meter
+                meter: m.meter,
+                unitNoteLength: m.unitNoteLength
             )
             offset += count
         }
@@ -444,6 +506,10 @@ struct BodyContext {
     /// an `L:` in the body belongs to the voice that carries it (§7.3).
     let unitNoteLength: Fraction
     private(set) var meter: Meter
+    /// The meter the tune opened in — every voice's first measure is in it, whatever `meter`
+    /// has moved on to by the time the body has been walked.  What the beam resolver starts
+    /// from, with `Measure.meter` moving it on from there.
+    let openingMeter: Meter
     /// Bumped by every `[M:]`, so each voice can tag its own next measure exactly once.
     private(set) var meterGeneration: Int = 0
     /// The tune's `K:`, governing every voice that does not state one of its own.  Like
@@ -498,6 +564,7 @@ struct BodyContext {
         self.declaredVoices = Set(headerVoiceOrder)
         self.unitNoteLength = unitNoteLength
         self.meter = meter
+        self.openingMeter = meter
         self.key = key
         self.keySignatureAlterations = keyAlterations(for: key)
         self.userSymbols = userSymbols
@@ -585,9 +652,21 @@ struct BodyContext {
     // MARK: Meter
 
     /// The only way to move the meter.  Every voice tags its own next measure exactly once.
-    mutating func setMeter(_ newMeter: Meter) {
+    ///
+    /// A meter change takes effect at a bar line, so for most voices "next" means the measure
+    /// after the one they are in — which is what the generation counter gives them when they
+    /// next cross one.  The voice the field was *written* in is the exception: it is standing
+    /// at the point of change, so where its current measure has not begun yet — `| [M:3/4] …`,
+    /// the field just past a bar line — the change is that measure's, not the one after it.
+    mutating func setMeter(_ newMeter: Meter, in voice: VoiceKey) {
         meter = newMeter
         meterGeneration += 1
+        // Only a voice that already exists: a `M:` before any music is the tune's own, and
+        // materialising a voice for it would print a staff nothing was written to.
+        guard var state = voices[voice], !state.accumulator.hasOpenMeasure else { return }
+        state.accumulator.pendingMeter = newMeter
+        state.lastTaggedMeterGeneration = meterGeneration
+        voices[voice] = state
     }
 
     // MARK: Key and unit note length
@@ -604,15 +683,10 @@ struct BodyContext {
         }
     }
 
-    /// Moves the unit note length for one voice, likewise — but only where it opens the
-    /// voice.  A change part way through has nowhere to land: one length sizes the whole
-    /// voice, in the beam resolver here and in the renderer's sizer alike.  Issue #85.
+    /// Moves the unit note length for one voice, likewise — at its head as the length the
+    /// voice opens in, and part way through as a change carried on the measure it falls in.
     mutating func setUnitNoteLength(_ length: Fraction, in voice: VoiceKey, source: SourceRange) {
-        withVoice(voice, source: source) {
-            guard !$0.accumulator.hasMusic else { return }
-            $0.openingUnitNoteLength = length
-            $0.accumulator.unitNoteLength = length
-        }
+        withVoice(voice, source: source) { $0.setUnitNoteLength(length) }
     }
 
     // MARK: Accidentals

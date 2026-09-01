@@ -112,6 +112,11 @@ private struct ParseContext {
         case .space:
             advance(); return .space(source: source)
 
+        // §7.4: not a reserved character and not an error — the semantic pass winds the
+        // clock back a bar line and opens a temporary voice for whatever follows.
+        case .voiceOverlay:
+            advance(); return .voiceOverlay(source: source)
+
         case .brokenRight: return parseBrokenRhythm(direction: .right)
         case .brokenLeft:  return parseBrokenRhythm(direction: .left)
 
@@ -341,6 +346,7 @@ private struct ParseContext {
         case .restFullMeasure:          return "Z"
         case .restFullMeasureInvisible: return "X"
         case .backslash:                return "\\"
+        case .voiceOverlay:             return "&"
         default:                        return ""
         }
     }

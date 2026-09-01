@@ -42,6 +42,15 @@ public enum DiagnosticCode: String, Codable, Sendable {
     /// so the staves of a system cannot be aligned from the source alone.  The renderer
     /// pads the short voice with invisible full-measure rests and carries on.
     case voiceLengthMismatch
+    /// An `&` overlay (§7.4) supplied more bars than the `&`s before it wound the clock
+    /// back over, so its last bars overlay nothing.  They are printed, and the voice under
+    /// them gains the empty bars they need — the alternative is dropping music the author
+    /// wrote.
+    case voiceOverlayTooLong
+    /// An `&` was written where there is no bar to wind back to — at the very start of a
+    /// voice, or further back than its first bar line.  The overlay starts at the first bar
+    /// instead.
+    case voiceOverlayWithoutBar
     // Fields
     case unknownField
     case malformedFieldPayload

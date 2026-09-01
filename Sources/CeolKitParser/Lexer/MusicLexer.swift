@@ -122,6 +122,7 @@ struct MusicLexer {
         case ":": return scanColon()
         case " ", "\t": return scanSpace()
         case "\\": return .backslash
+        case "&": return .voiceOverlay
         default: return .unknown(ch)
         }
     }

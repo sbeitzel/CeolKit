@@ -294,32 +294,81 @@ struct SemanticPass {
         // The one cursor in the pass, threaded from here down.  It is a parameter rather than
         // a field on BodyContext so nothing can read "the current voice" implicitly.
         var voice = ctx.initialVoice
+        // Whether the line just walked asked for the system to break after it.  Held rather
+        // than acted on, because the *next* line gets to cancel it: §7.4 writes an overlay
+        // under the music it overlays, and a line beginning `&` is a continuation of the one
+        // above, not a stave of its own.
+        var breakPending = false
         for line in body {
             // Check if this is a single-field lyric line
             if line.count == 1, case .inlineField(let f, _) = line[0], case .lyric(let tokens, _) = f {
-                ctx.applyLyrics(tokens, in: voice)
+                // §7.4: "disregarding any overlay in the accompanying music code" — the
+                // syllables belong to the voice, not to whichever `&` layer the line above
+                // left the cursor standing in.
+                ctx.applyLyrics(tokens, in: voice.primary)
                 continue
             }
-            // Record lyric anchors before processing this music line
-            ctx.recordLyricAnchors()
+            if continuesOverlay(line) {
+                // A line beginning `&` overlays the line above it, so it takes neither a
+                // stave of its own nor a lyric anchor of its own: §7.4 matches `w:` to the
+                // notes "disregarding any overlay in the accompanying music code", and the
+                // notes it means are the ones above.  The cursor stays where that line left
+                // it too, so this line's leading `&` opens the *next* layer over the same
+                // music: three parts written as three lines and three parts written on one
+                // line with two `&`s are the same tune.
+                breakPending = false
+            } else {
+                if breakPending { ctx.splitStave(in: voice.primary) }
+                ctx.recordLyricAnchors()
+                // An ordinary line opens in the voice itself: an `&` layer lives to the end
+                // of the line that opened it, and the next line's first `&` reopens layer one.
+                voice = voice.primary
+            }
             walkLine(line, voice: &voice, ctx: &ctx, diagnostics: &diagnostics)
-            if ctx.linebreakOnEOL {
-                ctx.splitStave(in: voice)
+            breakPending = ctx.linebreakOnEOL
+        }
+        if breakPending { ctx.splitStave(in: voice.primary) }
+    }
+
+    /// Whether `line` is the continuation of the one before it — an `&` overlay written on
+    /// its own source line, which shares a stave and a lyric anchor with what it overlays.
+    private func continuesOverlay(_ line: [MusicElement]) -> Bool {
+        for element in line {
+            switch element {
+            case .space: continue
+            case .voiceOverlay: return true
+            default: return false
             }
         }
+        return false
     }
 
     private func walkLine(
         _ elements: [MusicElement],
-        voice: inout String,
+        voice: inout VoiceKey,
         ctx: inout BodyContext,
         diagnostics: inout [Diagnostic]
     ) {
         // Pre-pass: resolve broken rhythms so note durations are correct
         let resolved = resolveBrokenRhythms(elements)
 
-        for elem in resolved {
-            walkElement(elem, voice: &voice, ctx: &ctx, diagnostics: &diagnostics)
+        var index = resolved.startIndex
+        while index < resolved.endIndex {
+            // §7.4: each `&` sets the time point back by one bar line, so a run of them winds
+            // back that many — `&&` under a two-bar line overlays both of its bars.  Read here
+            // rather than in the parser: the count is an interpretation of the syntax, and the
+            // AST keeps one node per character the source wrote.
+            guard case .voiceOverlay(let src) = resolved[index] else {
+                walkElement(resolved[index], voice: &voice, ctx: &ctx, diagnostics: &diagnostics)
+                index += 1
+                continue
+            }
+            var bars = 1
+            while index + bars < resolved.endIndex,
+                  case .voiceOverlay = resolved[index + bars] { bars += 1 }
+            openOverlay(rewinding: bars, source: src, voice: &voice, ctx: &ctx,
+                        diagnostics: &diagnostics)
+            index += bars
         }
         // Finish any open grace group (malformed; just close it)
         if ctx.isInGrace(voice) {
@@ -327,9 +376,43 @@ struct SemanticPass {
         }
     }
 
+    /// Moves the cursor into the temporary voice a run of `bars` `&`s opens (§7.4).
+    ///
+    /// The clock is wound back over `bars` bar lines: back to the head of the bar now being
+    /// written, and then one whole bar further for each `&` after the first.  A `&` written
+    /// where no bar has begun — at the head of a line, or of the tune — winds back from the
+    /// last bar line instead, which is what makes the standard's own `&&` example overlay the
+    /// two bars of the line above rather than the two after them.
+    private func openOverlay(
+        rewinding bars: Int,
+        source: SourceRange,
+        voice: inout VoiceKey,
+        ctx: inout BodyContext,
+        diagnostics: inout [Diagnostic]
+    ) {
+        // Whatever the layer being left holds open is finished before the clock moves.
+        if ctx.isInGrace(voice) { ctx.flushGrace(source: source, in: voice) }
+
+        let primary = ctx.voice(voice.primary)?.accumulator
+        let closed = primary?.closedMeasures.count ?? 0
+        let openBar = primary?.hasOpenMeasure ?? false
+        let start = closed - (bars - 1) - (openBar ? 0 : 1)
+        if start < 0 {
+            diagnostics.append(Diagnostic(
+                severity: .warning, code: .voiceOverlayWithoutBar,
+                message: "\(bars == 1 ? "an &" : "\(bars) &s") here would set the time point "
+                       + "back before the first bar of this voice; the overlay starts at that bar",
+                source: source,
+                hint: "each & sets the time point back by one bar line (§7.4), so there must be "
+                    + "at least that many bars of music before it."))
+        }
+        voice = voice.nextOverlay
+        ctx.openOverlay(voice, startingAt: max(0, start), source: source)
+    }
+
     private func walkElement(
         _ elem: MusicElement,
-        voice: inout String,
+        voice: inout VoiceKey,
         ctx: inout BodyContext,
         diagnostics: inout [Diagnostic]
     ) {
@@ -352,8 +435,9 @@ struct SemanticPass {
             ctx.emit(.rest(rest), in: voice)
 
         case .barLine(let kind, let src):
-            ctx.closeMeasure(barLine: BarLine(kind: kind, source: src), in: voice)
-            ctx.resetBarAccidentals(in: voice)
+            // Closes this bar for every `&` layer standing in it, not just the current one:
+            // the bar line is the staff's, and §7.4 overlays share the bar it ends.
+            ctx.closeBar(barLine: BarLine(kind: kind, source: src), in: voice)
 
         case .inlineField(let field, let src):
             applyInlineField(field, source: src, voice: &voice, ctx: &ctx, diagnostics: &diagnostics)
@@ -407,12 +491,15 @@ struct SemanticPass {
             ctx.emitSpaceBreak(source: src, in: voice)
             ctx.setLastElementWasSpace(true, in: voice)
 
+        case .voiceOverlay:
+            break  // read as a run by `walkLine`, which never hands one down here
+
         case .brokenRhythm:
             break  // already handled in resolveBrokenRhythms pre-pass
 
         case .unknown(let ch, let src):
             if ctx.linebreakChars.contains(ch) {
-                ctx.splitStave(in: voice)
+                ctx.splitStave(in: voice.primary)
             } else {
                 let severity: Diagnostic.Severity = options.strictRecovery ? .error : .warning
                 diagnostics.append(Diagnostic(
@@ -426,7 +513,7 @@ struct SemanticPass {
 
     // MARK: - Note / chord building
 
-    private func buildNoteEvent(_ tok: NoteToken, voice: String, ctx: inout BodyContext) -> Event {
+    private func buildNoteEvent(_ tok: NoteToken, voice: VoiceKey, ctx: inout BodyContext) -> Event {
         let step = diatonicStep(from: tok.pitchLetter)
         // ABC octave convention: uppercase C..B = octave 4 (middle C = C4), lowercase c..b = octave 5
         let baseOctave = tok.pitchLetter.isUppercase ? 4 : 5
@@ -479,7 +566,7 @@ struct SemanticPass {
     private func buildChordEvent(
         _ notes: [NoteToken],
         source: SourceRange,
-        voice: String,
+        voice: VoiceKey,
         ctx: inout BodyContext
     ) -> Event {
         let resolvedNotes: [Note] = notes.map { tok in
@@ -543,7 +630,7 @@ struct SemanticPass {
     private func applyInlineField(
         _ field: InformationField,
         source: SourceRange,
-        voice: inout String,
+        voice: inout VoiceKey,
         ctx: inout BodyContext,
         diagnostics: inout [Diagnostic]
     ) {
@@ -558,9 +645,13 @@ struct SemanticPass {
             ctx.emit(.tempoChange(t), in: voice)
         case .voice(let id, let props, _):
             ctx.registerVoice(id: id, properties: props)
-            voice = id          // the one place the cursor moves
+            // The one place the cursor moves between voices.  It lands on the voice itself,
+            // never on one of its `&` layers: those belong to the line that opened them.
+            voice = VoiceKey(id)
         case .lyric(let tokens, _):
-            ctx.applyLyrics(tokens, in: voice)
+            // §7.4: syllables match the notes "disregarding any overlay in the accompanying
+            // music code", so they land on the voice even when an `&` layer is being written.
+            ctx.applyLyrics(tokens, in: voice.primary)
         case .userSymbol(let ch, let dec, _):
             ctx.userSymbols[ch] = dec
         case .instruction(let t)
@@ -578,7 +669,7 @@ struct SemanticPass {
             let dirPayload = parts.count > 1 ? String(parts[1]) : ""
             applyBodyDirective(
                 name: dirName, payload: dirPayload, source: src,
-                voice: voice, ctx: &ctx, diagnostics: &diagnostics
+                voice: voice.base, ctx: &ctx, diagnostics: &diagnostics
             )
         default:
             break
@@ -1022,21 +1113,43 @@ struct SemanticPass {
             var staves: [Staff] = []
             if let state {
                 let accumulator = state.accumulator
-                let (measures, voiceDiags) = finaliseAccumulator(accumulator, meter: bodyCtx.meter)
+                var (measures, voiceDiags) = finaliseAccumulator(accumulator, meter: bodyCtx.meter)
                 diagnostics += voiceDiags
 
+                // §7.4: each `&` layer of this voice, finished the same way and then squared
+                // off against it, so a stave and its overlays hold the same bars.
+                var layers: [(source: SourceRange, measures: [Measure])] = []
+                for overlay in bodyCtx.overlays(of: voiceId) {
+                    let (overlayMeasures, overlayDiags) =
+                        finaliseAccumulator(overlay.state.accumulator, meter: bodyCtx.meter)
+                    diagnostics += overlayDiags
+                    layers.append((overlay.source, overlayMeasures))
+                }
+                let barsWritten = measures.count
+                diagnostics += reconcileOverlays(&measures, with: &layers, voiceId: voiceId)
+                // An overlay that overran gives the voice bars past the end of its last line.
+                // They are that line's — the source wrote them there — so the boundary
+                // recorded at what used to be the end is no longer a boundary at all.
+                let breaks = measures.count > barsWritten
+                    ? accumulator.staveBreakIndices.filter { $0 < barsWritten }
+                    : accumulator.staveBreakIndices
+
                 var start = 0
-                for breakIdx in accumulator.staveBreakIndices where breakIdx <= measures.count {
-                    let slice = Array(measures[start..<breakIdx])
-                    if !slice.isEmpty {
-                        staves.append(Staff(measures: slice, overlays: []))
-                    }
+                func appendStaff(through end: Int) {
+                    let slice = Array(measures[start..<end])
+                    guard !slice.isEmpty || (staves.isEmpty && end == measures.count) else { return }
+                    staves.append(Staff(
+                        measures: slice,
+                        overlays: layers.map {
+                            VoiceOverlay(measures: Array($0.measures[start..<end]),
+                                         source: $0.source)
+                        }))
+                }
+                for breakIdx in breaks where breakIdx <= measures.count {
+                    appendStaff(through: breakIdx)
                     start = breakIdx
                 }
-                let tail = Array(measures[start...])
-                if !tail.isEmpty || staves.isEmpty {
-                    staves.append(Staff(measures: tail, overlays: []))
-                }
+                appendStaff(through: measures.count)
             } else {
                 staves = [Staff(measures: [], overlays: [])]
             }
@@ -1068,12 +1181,65 @@ struct SemanticPass {
         return (voices, diagnostics)
     }
 
+    /// Squares a voice's `&` layers off against the voice itself, so every layer holds
+    /// exactly one measure per measure of the voice (§7.4, and see ``VoiceOverlay``).
+    ///
+    /// A layer that says nothing in a bar gets an empty measure there; the merge draws
+    /// nothing from it and the voice underneath keeps the bar's furniture.  A layer that runs
+    /// *past* the voice is the standard's "one complete bar's worth of music for each `&`"
+    /// broken: the voice is given the bars it is missing and a warning says so, because the
+    /// alternative is dropping bars the author wrote.
+    private func reconcileOverlays(
+        _ measures: inout [Measure],
+        with layers: inout [(source: SourceRange, measures: [Measure])],
+        voiceId: String
+    ) -> [Diagnostic] {
+        guard !layers.isEmpty else { return [] }
+        var diagnostics: [Diagnostic] = []
+
+        for layer in layers where layer.measures.count > measures.count {
+            diagnostics.append(Diagnostic(
+                severity: .warning, code: .voiceOverlayTooLong,
+                message: "the & overlay in voice \(voiceId) has \(layer.measures.count) bars "
+                       + "where the music it overlays has \(measures.count); §7.4 allows one "
+                       + "bar for each &. The extra bars are printed, and the voice under them "
+                       + "is left empty.",
+                source: layer.source,
+                hint: "write one & for each bar the overlay covers, or close the overlay with "
+                    + "a bar line before the extra music."))
+        }
+
+        let width = max(measures.count, layers.map(\.measures.count).max() ?? 0)
+        let tail = measures.last
+        measures += (measures.count..<width).map { _ in emptyMeasure(after: tail) }
+        for index in layers.indices {
+            let source = layers[index].source
+            layers[index].measures += (layers[index].measures.count..<width).map { _ in
+                emptyMeasure(after: nil, at: source)
+            }
+        }
+        return diagnostics
+    }
+
+    /// A bar with no music in it, for a voice or an overlay that has nothing to say here.
+    private func emptyMeasure(after previous: Measure?, at source: SourceRange? = nil) -> Measure {
+        let src = source ?? previous?.source ?? .emptySourceRange
+        return Measure(openingBar: previous?.closingBar,
+                       events: [],
+                       closingBar: BarLine(kind: .single, source: src),
+                       endingNumber: nil,
+                       source: src,
+                       meter: nil)
+    }
+
     private func finaliseAccumulator(_ acc: VoiceAccumulator, meter: Meter) -> ([Measure], [Diagnostic]) {
         var measures = acc.closedMeasures
         var diagnostics: [Diagnostic] = []
 
-        // Close the final open measure if it has events
-        if !acc.currentEvents.isEmpty {
+        // Close the final open measure if it holds music.  Spacer-only content is not music
+        // and not a measure — `closeWith` says the same at every bar line, and the leading
+        // whitespace of an `&` continuation line would otherwise close a bar of nothing.
+        if acc.hasOpenMeasure {
             let finalBar = BarLine(
                 kind: .final,
                 source: acc.currentEvents.reversed().lazy

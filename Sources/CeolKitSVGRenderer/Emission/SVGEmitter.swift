@@ -768,7 +768,10 @@ struct SVGEmitter: Sendable {
         switch system.clef.clef {
         case .none:                 return
         case .treble:               y = bottomStaffY - s
-        case .bass, .baritone:      y = bottomStaffY - 3 * s
+        case .bass:                 y = bottomStaffY - 3 * s
+        // The same F clef glyph as `.bass`, anchored a line lower: bass3 names F3 on the
+        // third line, not the fourth.
+        case .baritone:             y = bottomStaffY - 2 * s
         case .alto:                 y = bottomStaffY - 2 * s
         case .tenor:                y = bottomStaffY - 3 * s
         case .soprano:              y = bottomStaffY

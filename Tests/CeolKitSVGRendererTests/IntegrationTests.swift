@@ -29,7 +29,7 @@ private func makeNote(step: DiatonicStep, octave: Int, duration: Fraction,
 
 private func makeMeasure(events: [Event], closing: BarLine = singleBar) -> Measure {
     Measure(openingBar: nil, events: events, closingBar: closing,
-            endingNumber: nil, source: dummyRange)
+            endingNumber: nil, source: dummyRange, unitNoteLength: Fraction(numerator: 1, denominator: 8))
 }
 
 private func makeVoice(id: String, measures: [Measure]) -> Voice {

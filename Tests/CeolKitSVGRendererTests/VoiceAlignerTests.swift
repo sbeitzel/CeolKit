@@ -9,7 +9,8 @@ private let dummyBar   = BarLine(kind: .single, source: dummyRange)
 
 private func measure(line: Int) -> Measure {
     Measure(openingBar: nil, events: [], closingBar: dummyBar, endingNumber: nil,
-            source: SourceRange(file: nil, byteOffset: 0, length: 0, line: line, column: 0))
+            source: SourceRange(file: nil, byteOffset: 0, length: 0, line: line, column: 0),
+            unitNoteLength: Fraction(numerator: 1, denominator: 8))
 }
 
 /// A voice whose staves are given as measure counts — one stave per source line.

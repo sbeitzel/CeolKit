@@ -28,8 +28,7 @@ struct EventVoiceTagTests {
     func sizerTagsEveryEvent() {
         let measure = parseMeasure("X:1\nL:1/8\nK:C\nCDEF GABc|\n")
         let sizer   = MeasureSizer(config: config, metadata: metadata)
-        let sized   = sizer.size(measure, unitNoteLength: Fraction(numerator: 1, denominator: 8),
-                                 voiceIndex: 3)
+        let sized   = sizer.size(measure, voiceIndex: 3)
 
         #expect(sized.eventVoiceIndices.count == sized.eventOffsets.count)
         #expect(sized.eventVoiceIndices.allSatisfy { $0 == 3 })
@@ -39,14 +38,15 @@ struct EventVoiceTagTests {
     func sizerDefaultsToVoiceZero() {
         let measure = parseMeasure("X:1\nL:1/8\nK:C\nCDEF|\n")
         let sized   = MeasureSizer(config: config, metadata: metadata)
-            .size(measure, unitNoteLength: Fraction(numerator: 1, denominator: 8))
+            .size(measure)
         #expect(sized.eventVoiceIndices == [0, 0, 0, 0])
     }
 
     @Test("A hand-built SizedMeasure gets a table parallel to its offsets")
     func handBuiltMeasureIsStillParallel() {
         let sized = SizedMeasure(measure: Measure(openingBar: nil, events: [], closingBar: dummyBar,
-                                                  endingNumber: nil, source: dummyRange),
+                                                  endingNumber: nil, source: dummyRange,
+                                                  unitNoteLength: Fraction(numerator: 1, denominator: 8)),
                                  naturalWidth: 100, eventOffsets: [0, 10, 20])
         #expect(sized.eventVoiceIndices == [0, 0, 0])
     }
@@ -61,7 +61,7 @@ struct EventVoiceTagTests {
     func justificationPreservesTags() {
         let measure = parseMeasure("X:1\nL:1/8\nK:C\n{g}A B {ge}c d|\n")
         let sized   = MeasureSizer(config: config, metadata: metadata)
-            .size(measure, unitNoteLength: Fraction(numerator: 1, denominator: 8), voiceIndex: 1)
+            .size(measure, voiceIndex: 1)
         #expect(!sized.graceEventIndices.isEmpty)
 
         let system = System(measures: [sized], isLastSystem: false, sourceForced: false)
@@ -80,7 +80,7 @@ struct EventVoiceTagTests {
     func resolvedEventsCarryTheTag() {
         let measure = parseMeasure("X:1\nL:1/8\nK:C\nCDEF GABc|\n")
         let sized   = MeasureSizer(config: config, metadata: metadata)
-            .size(measure, unitNoteLength: Fraction(numerator: 1, denominator: 8), voiceIndex: 2)
+            .size(measure, voiceIndex: 2)
         let jm = JustifiedMeasure(source: sized, finalWidth: sized.naturalWidth,
                                   eventOffsets: sized.eventOffsets)
         let system = JustifiedSystem(measures: [jm], isLastSystem: true, sourceForced: false)
@@ -122,9 +122,7 @@ struct EventVoiceTagTests {
                 breaks.append(nil)
                 for v in voices.indices {
                     columnsPerVoice[v].append(
-                        sizer.size(stave.measures[v][column],
-                                   unitNoteLength: tune.effectiveUnitNoteLength(for: voices[v]),
-                                   voiceIndex: v))
+                        sizer.size(stave.measures[v][column], voiceIndex: v))
                 }
             }
         }

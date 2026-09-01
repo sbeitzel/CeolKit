@@ -12,7 +12,8 @@ private let metadata   = try! BravuraMetadata.load()
 
 private func emptyMeasure(line: Int = 0) -> Measure {
     Measure(openingBar: nil, events: [], closingBar: dummyBar, endingNumber: nil,
-            source: SourceRange(file: nil, byteOffset: 0, length: 0, line: line, column: 0))
+            source: SourceRange(file: nil, byteOffset: 0, length: 0, line: line, column: 0),
+            unitNoteLength: Fraction(numerator: 1, denominator: 8))
 }
 
 private func sizedMeasure(width: Double = 100) -> SizedMeasure {

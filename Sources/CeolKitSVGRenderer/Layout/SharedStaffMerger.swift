@@ -47,9 +47,9 @@ struct SharedStaffMerger: Sendable {
 
     /// One voice's contribution to one bar of a shared staff.
     struct VoicePart {
+        /// The bar this voice contributes.  Its ``Measure/unitNoteLength`` is the voice's own
+        /// `L:` here, which its co-tenants need not share (§7.3).
         let measure: Measure
-        /// The voice's own `L:`, which its co-tenants need not share (§7.3).
-        let unitNoteLength: Fraction
         /// The voice's position within the staff, top to bottom.  This is what
         /// ``SizedMeasure/eventVoiceIndices`` carries.
         let voiceIndex: Int
@@ -78,6 +78,7 @@ struct SharedStaffMerger: Sendable {
         guard let primary = sounding.first ?? parts.first else {
             return SizedMeasure(measure: emptyMeasure(), naturalWidth: 0, eventOffsets: [])
         }
+        let unitNoteLength = primary.measure.unitNoteLength
         let voices = sounding.map { Prepared(part: $0, metrics: metrics) }
 
         // The bar's clock runs as far as its longest voice.  The last column is spaced for
@@ -152,10 +153,10 @@ struct SharedStaffMerger: Sendable {
                              closingBar: primary.measure.closingBar,
                              endingNumber: primary.measure.endingNumber,
                              source: primary.measure.source, meter: primary.measure.meter,
-                             unitNoteLength: primary.measure.unitNoteLength),
+                             unitNoteLength: unitNoteLength),
             naturalWidth: naturalWidth,
             eventOffsets: offsets,
-            unitNoteLength: primary.unitNoteLength,
+            unitNoteLength: unitNoteLength,
             graceEventIndices: graceEventIndices,
             eventVoiceIndices: voiceTags)
     }
@@ -164,7 +165,8 @@ struct SharedStaffMerger: Sendable {
     private func emptyMeasure() -> Measure {
         let bar = BarLine(kind: .single, source: .emptySourceRange)
         return Measure(openingBar: nil, events: [], closingBar: bar, endingNumber: nil,
-                       source: .emptySourceRange)
+                       source: .emptySourceRange,
+                       unitNoteLength: Fraction(numerator: 1, denominator: 8))
     }
 
     // MARK: - One voice, cut into onsets
@@ -188,14 +190,15 @@ struct SharedStaffMerger: Sendable {
 
         init(part: VoicePart, metrics: ColumnMetrics) {
             self.part = part
-            let unl = Double(part.unitNoteLength.numerator) / Double(part.unitNoteLength.denominator)
+            let unitNoteLength = part.measure.unitNoteLength
+            let unl = Double(unitNoteLength.numerator) / Double(unitNoteLength.denominator)
             self.quarterInUnits = 0.25 / unl
 
             var slots: [Slot] = []
             var pending: [Int] = []
             var onset = Rational.zero
             for (index, event) in part.measure.events.enumerated() {
-                let duration = Rational.quarters(of: event, unitNoteLength: part.unitNoteLength)
+                let duration = Rational.quarters(of: event, unitNoteLength: unitNoteLength)
                 guard duration > .zero else {
                     // Grace groups, spacers, directive anchors, tempo changes: they take
                     // width but no time, so they belong to the onset they lead up to.
@@ -272,7 +275,7 @@ struct SharedStaffMerger: Sendable {
         /// the whole of what the sizer is asking.
         private static func heads(of event: Event, voice: Prepared,
                                   metrics: ColumnMetrics) -> [CollisionHead] {
-            let unl = voice.part.unitNoteLength
+            let unl = voice.part.measure.unitNoteLength
             func head(_ note: Note) -> CollisionHead {
                 let duration = Double(note.duration.numerator) / Double(note.duration.denominator)
                     * Double(unl.numerator) / Double(unl.denominator)

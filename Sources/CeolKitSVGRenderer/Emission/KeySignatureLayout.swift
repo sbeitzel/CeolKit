@@ -40,6 +40,64 @@ func keyAccidentals(for key: KeySignature, clef: ClefSpec) -> [KeyAccidental] {
     return []
 }
 
+/// A key change engraved part way through a staff — a `K:` in the tune body (§3.1.14,
+/// §7.3, issue #129).
+///
+/// It carries the key being left behind as well as the one arriving, because the two
+/// together decide what is drawn: an accidental the outgoing signature had and the incoming
+/// one does not is cancelled with a natural. The clef comes with them for the same reason
+/// the header signature reads one (#98) — it is what places every glyph on the staff.
+public struct KeyChange: Sendable {
+    /// The key in force before this point, or `nil` where nothing was in force.
+    public let from: KeySignature?
+    /// The key from this point on.
+    public let to: KeySignature
+    /// The clef the staff carries where the change happens.
+    public let clef: ClefSpec
+
+    public init(from: KeySignature?, to: KeySignature, clef: ClefSpec) {
+        self.from = from
+        self.to = to
+        self.clef = clef
+    }
+}
+
+/// The glyphs a mid-staff key change draws, left to right: the naturals that cancel the
+/// outgoing signature, then the incoming signature's own accidentals.
+///
+/// An accidental is cancelled when the incoming signature writes nothing on its staff
+/// position — a position names a letter, so a letter the new key alters differently (B♯ to
+/// B♭) is simply respelled and takes no natural. `K:none` cancels everything and writes
+/// nothing, which is what says the key signature has gone away.
+///
+/// Empty for a clef that carries no signature at all (`percussion`, `none`): `keyAccidentals`
+/// returns nothing for either key there, so there is nothing to cancel and nothing to draw.
+func keyChangeAccidentals(for change: KeyChange) -> [KeyAccidental] {
+    let incoming = keyAccidentals(for: change.to, clef: change.clef)
+    let outgoing = change.from.map { keyAccidentals(for: $0, clef: change.clef) } ?? []
+    let replaced = Set(incoming.map(\.staffPosition))
+    let cancellations = outgoing
+        .filter { !replaced.contains($0.staffPosition) }
+        .map { KeyAccidental(glyph: .accidentalNatural, staffPosition: $0.staffPosition) }
+    return cancellations + incoming
+}
+
+/// Total horizontal space (in points) reserved for a mid-staff key change, or 0 where it
+/// draws nothing.
+func keyChangeWidth(for change: KeyChange, metadata: BravuraMetadata,
+                    staffSize: Double, trailingGap: Double? = nil) -> Double {
+    accidentalRunWidth(count: keyChangeAccidentals(for: change).count, metadata: metadata,
+                       staffSize: staffSize, trailingGap: trailingGap)
+}
+
+/// The step from one signature accidental to the next: glyph width plus the gap between
+/// them. The emitter places its glyphs by this same measurement.
+func keyAccidentalAdvance(metadata: BravuraMetadata, staffSize: Double) -> Double {
+    let glyphW = metadata.glyphBBoxes["accidentalSharp"].map { $0.width * staffSize }
+        ?? staffSize * 0.75
+    return glyphW + staffSize * 0.1
+}
+
 /// Total horizontal space (in points) reserved for a key signature header segment.
 ///
 /// - Parameter trailingGap: Space to reserve after the last accidental glyph.
@@ -47,12 +105,17 @@ func keyAccidentals(for key: KeySignature, clef: ClefSpec) -> [KeyAccidental] {
 ///   follows, so the gap to the first bar line equals one note head.
 func keySignatureWidth(for key: KeySignature, clef: ClefSpec, metadata: BravuraMetadata,
                         staffSize: Double, trailingGap: Double? = nil) -> Double {
-    let accs = keyAccidentals(for: key, clef: clef)
-    guard !accs.isEmpty else { return 0 }
-    let glyphW    = metadata.glyphBBoxes["accidentalSharp"].map { $0.width * staffSize } ?? staffSize * 0.75
-    let interGap  = staffSize * 0.1
-    let trailing  = trailingGap ?? staffSize * 0.5
-    return Double(accs.count) * (glyphW + interGap) + trailing
+    accidentalRunWidth(count: keyAccidentals(for: key, clef: clef).count, metadata: metadata,
+                       staffSize: staffSize, trailingGap: trailingGap)
+}
+
+/// The space a run of `count` signature accidentals occupies, plus the gap after the last
+/// one. Zero for an empty run, which reserves no space and no trailing gap either.
+private func accidentalRunWidth(count: Int, metadata: BravuraMetadata,
+                                staffSize: Double, trailingGap: Double?) -> Double {
+    guard count > 0 else { return 0 }
+    let advance = keyAccidentalAdvance(metadata: metadata, staffSize: staffSize)
+    return Double(count) * advance + (trailingGap ?? staffSize * 0.5)
 }
 
 // MARK: - Private

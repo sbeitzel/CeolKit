@@ -57,7 +57,7 @@ enum OverlayExpander {
     private static func silent(like measure: Measure) -> Measure {
         Measure(openingBar: measure.openingBar, events: [], closingBar: measure.closingBar,
                 endingNumber: nil, source: measure.source, meter: measure.meter,
-                unitNoteLength: measure.unitNoteLength)
+                key: measure.key, unitNoteLength: measure.unitNoteLength)
     }
 
     private static func rebuilt(_ voice: Voice, staves: [Staff]) -> Voice {

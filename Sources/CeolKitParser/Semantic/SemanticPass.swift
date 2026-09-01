@@ -1396,6 +1396,12 @@ struct SemanticPass {
             if let change = acc.pendingUnitNoteLength, acc.musicalEventCount > change.after {
                 finalUnit = change.length
             }
+            // A `K:` still pending lands here on the same terms, so a key stated in the last
+            // bar of a voice is still engraved where it happens.
+            var finalKey: KeySignature? = nil
+            if let change = acc.pendingKey, acc.musicalEventCount > change.after {
+                finalKey = change.key
+            }
             let finalMeasure = Measure(
                 openingBar: acc.lastBarLine,
                 events: acc.currentEvents,
@@ -1403,6 +1409,7 @@ struct SemanticPass {
                 endingNumber: nil,
                 source: src,
                 meter: acc.pendingMeter,
+                key: finalKey,
                 unitNoteLength: finalUnit
             )
             measures.append(finalMeasure)
@@ -1448,6 +1455,7 @@ struct SemanticPass {
                 endingNumber: m.endingNumber,
                 source: m.source,
                 meter: m.meter,
+                key: m.key,
                 unitNoteLength: m.unitNoteLength
             ))
         }
@@ -1474,6 +1482,7 @@ struct SemanticPass {
                 endingNumber: m.endingNumber,
                 source: m.source,
                 meter: m.meter,
+                key: m.key,
                 unitNoteLength: m.unitNoteLength
             ))
         }

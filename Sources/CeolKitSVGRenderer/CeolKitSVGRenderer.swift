@@ -132,18 +132,32 @@ public struct SVGRenderer: CeolKitRenderer {
                 let voicesByStaff = selection.voicesByStaff
                 var breaks: [ScoreLineBreak?] = []
                 var columnsPerStaff = [[SizedMeasure]](repeating: [], count: voicesByStaff.count)
+                // The key each staff is standing in, so a `K:` part way through the tune is
+                // drawn as the change it is — the naturals cancelling the signature being
+                // left behind, then the new one (#129).  It starts at what the staff's head
+                // draws, which is its lead voice's key, and moves with that voice's own
+                // `K:`: one staff carries one signature, and the lead is the voice whose
+                // clef and key the head already reads (§7.3).
+                var staffKeys: [KeySignature?] = voicesByStaff.map { voiceKeys[$0[0]] }
                 for (si, stave) in alignedStaves.enumerated() {
                     let isLastStave = si == alignedStaves.count - 1
                     for column in 0..<stave.measureCount {
                         breaks.append(!isLastStave && column == stave.measureCount - 1 ? .hard : nil)
                         for (staffIndex, members) in voicesByStaff.enumerated() {
+                            let lead = members[0]
+                            var keyChange: KeyChange? = nil
+                            if let newKey = stave.measures[lead][column].key {
+                                keyChange = KeyChange(from: staffKeys[staffIndex], to: newKey,
+                                                      clef: printedVoices[lead].properties.clef)
+                                staffKeys[staffIndex] = newKey
+                            }
                             columnsPerStaff[staffIndex].append(
                                 sizer.size(sharedStaff: members.enumerated().map { position, voice in
                                     MeasureSizer.SharedVoice(
                                         measure: stave.measures[voice][column],
                                         voiceIndex: position,
                                         isPadding: stave.isPadding(voice: voice, column: column))
-                                }))
+                                }, keyChange: keyChange))
                         }
                     }
                 }

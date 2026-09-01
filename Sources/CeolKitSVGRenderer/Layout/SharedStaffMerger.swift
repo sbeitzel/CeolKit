@@ -71,12 +71,13 @@ struct SharedStaffMerger: Sendable {
     ///
     /// Callers with fewer than two sounding voices should size with ``MeasureSizer`` instead;
     /// this handles the case anyway, and identically, but the sizer says what it means.
-    func merge(_ parts: [VoicePart]) -> SizedMeasure {
+    func merge(_ parts: [VoicePart], keyChange: KeyChange? = nil) -> SizedMeasure {
         let sounding = parts.filter { !$0.isPadding }
         // Every voice padded: the bar is furniture only.  Its bar lines still draw, so it
         // keeps its width, and it contributes not one column of music.
         guard let primary = sounding.first ?? parts.first else {
-            return SizedMeasure(measure: emptyMeasure(), naturalWidth: 0, eventOffsets: [])
+            return SizedMeasure(measure: emptyMeasure(), naturalWidth: 0, eventOffsets: [],
+                                keyChange: keyChange)
         }
         let unitNoteLength = primary.measure.unitNoteLength
         let voices = sounding.map { Prepared(part: $0, metrics: metrics) }
@@ -91,8 +92,8 @@ struct SharedStaffMerger: Sendable {
         var voiceTags: [Int] = []
         var graceEventIndices: Set<Int> = []
 
-        var x = voices.map { metrics.leftMargin(for: $0.part.measure) }.max()
-            ?? metrics.leftMargin(for: primary.measure)
+        var x = voices.map { metrics.leftMargin(for: $0.part.measure, keyChange: keyChange) }.max()
+            ?? metrics.leftMargin(for: primary.measure, keyChange: keyChange)
 
         for (index, onset) in onsets.enumerated() {
             let next = index + 1 < onsets.count ? onsets[index + 1] : end
@@ -153,12 +154,14 @@ struct SharedStaffMerger: Sendable {
                              closingBar: primary.measure.closingBar,
                              endingNumber: primary.measure.endingNumber,
                              source: primary.measure.source, meter: primary.measure.meter,
+                             key: primary.measure.key,
                              unitNoteLength: unitNoteLength),
             naturalWidth: naturalWidth,
             eventOffsets: offsets,
             unitNoteLength: unitNoteLength,
             graceEventIndices: graceEventIndices,
-            eventVoiceIndices: voiceTags)
+            eventVoiceIndices: voiceTags,
+            keyChange: keyChange)
     }
 
     /// The measure a fully padded bar keeps: its own furniture, and no music at all.

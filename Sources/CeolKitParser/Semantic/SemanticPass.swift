@@ -294,40 +294,98 @@ struct SemanticPass {
         // The one cursor in the pass, threaded from here down.  It is a parameter rather than
         // a field on BodyContext so nothing can read "the current voice" implicitly.
         var voice = ctx.initialVoice
-        // Whether the line just walked asked for the system to break after it.  Held rather
-        // than acted on, because the *next* line gets to cancel it: §7.4 writes an overlay
-        // under the music it overlays, and a line beginning `&` is a continuation of the one
-        // above, not a stave of its own.
-        var breakPending = false
-        for line in body {
+        // Where each line-set ends, worked out ahead of the walk because it takes the *next*
+        // line to know: a system ends where the source starts writing a voice it has already
+        // written here.  Under `I:linebreak <none>` or `$` alone the end of a line is not a
+        // break at all, and only an explicit `$`/`!` splits a stave.
+        let lineSetEnds = ctx.linebreakOnEOL
+            ? lineSetBoundaries(body, initialVoice: ctx.initialVoice)
+            : []
+        for (index, line) in body.enumerated() {
             // Check if this is a single-field lyric line
-            if line.count == 1, case .inlineField(let f, _) = line[0], case .lyric(let tokens, _) = f {
+            if isLyricLine(line), case .inlineField(let f, _) = line[0], case .lyric(let tokens, _) = f {
                 // §7.4: "disregarding any overlay in the accompanying music code" — the
                 // syllables belong to the voice, not to whichever `&` layer the line above
                 // left the cursor standing in.
                 ctx.applyLyrics(tokens, in: voice.primary)
                 continue
             }
-            if continuesOverlay(line) {
-                // A line beginning `&` overlays the line above it, so it takes neither a
-                // stave of its own nor a lyric anchor of its own: §7.4 matches `w:` to the
-                // notes "disregarding any overlay in the accompanying music code", and the
-                // notes it means are the ones above.  The cursor stays where that line left
-                // it too, so this line's leading `&` opens the *next* layer over the same
-                // music: three parts written as three lines and three parts written on one
-                // line with two `&`s are the same tune.
-                breakPending = false
-            } else {
-                if breakPending { ctx.splitStave(in: voice.primary) }
+            // A line beginning `&` overlays the line above it, so it takes neither a stave of
+            // its own nor a lyric anchor of its own: §7.4 matches `w:` to the notes
+            // "disregarding any overlay in the accompanying music code", and the notes it
+            // means are the ones above.  The cursor stays where that line left it too, so
+            // this line's leading `&` opens the *next* layer over the same music: three parts
+            // written as three lines and three parts written on one line with two `&`s are
+            // the same tune.
+            if !continuesOverlay(line) {
                 ctx.recordLyricAnchors()
                 // An ordinary line opens in the voice itself: an `&` layer lives to the end
                 // of the line that opened it, and the next line's first `&` reopens layer one.
                 voice = voice.primary
             }
             walkLine(line, voice: &voice, ctx: &ctx, diagnostics: &diagnostics)
-            breakPending = ctx.linebreakOnEOL
+            if lineSetEnds.contains(index) { ctx.closeLineSet() }
         }
-        if breakPending { ctx.splitStave(in: voice.primary) }
+    }
+
+    /// The body lines each line-set ends at.
+    ///
+    /// A line-set is what the source lays out as one system, and the parser is handed a flat
+    /// stream of lines with no marker between them.  What identifies one is the voices: a run
+    /// of lines in which each voice appears once, ending as soon as a line writes to a voice
+    /// the run already holds.  A source that writes each voice as a whole block instead falls
+    /// out of the same rule — every one of its lines is a line-set of its own, which is what
+    /// keeps each voice counting its own staves from zero.
+    ///
+    /// The boundary is reported against the last line that *wrote* something, not the line
+    /// that begins the next set, so the `V:` and `%%score` lines introducing a system are
+    /// walked on its far side — a plan written there governs from the stave it stands above.
+    private func lineSetBoundaries(_ body: [[MusicElement]], initialVoice: VoiceKey) -> Set<Int> {
+        var boundaries: Set<Int> = []
+        var current = initialVoice.base
+        var written: Set<String> = []
+        var lastContentLine: Int? = nil
+
+        for (index, line) in body.enumerated() {
+            if isLyricLine(line) { continue }
+            // An `&` continuation belongs to the line above it, so it neither opens a set nor
+            // may be cut away from the music it overlays.
+            if continuesOverlay(line) {
+                lastContentLine = index
+                continue
+            }
+            var voicesWritten: Set<String> = []
+            for element in line {
+                switch element {
+                case .inlineField(let field, _):
+                    if case .voice(let id, _, _) = field { current = id }
+                case .space, .voiceOverlay, .unknown:
+                    continue
+                default:
+                    voicesWritten.insert(current)
+                }
+            }
+            guard !voicesWritten.isEmpty else { continue }
+            if !voicesWritten.isDisjoint(with: written), let end = lastContentLine {
+                boundaries.insert(end)
+                written = []
+            }
+            written.formUnion(voicesWritten)
+            lastContentLine = index
+        }
+        // The body ends the line-set it is in, at the last line that wrote anything: a
+        // `%%score` trailing the music governs from the stave after it, not from the last one
+        // written.
+        if let end = lastContentLine { boundaries.insert(end) }
+        return boundaries
+    }
+
+    /// Whether `line` is a lyric line — a `w:` on its own, which belongs to the music above
+    /// it and is neither music nor a line-set of its own.
+    private func isLyricLine(_ line: [MusicElement]) -> Bool {
+        guard line.count == 1, case .inlineField(let field, _) = line[0],
+              case .lyric = field else { return false }
+        return true
     }
 
     /// Whether `line` is the continuation of the one before it — an `&` overlay written on
@@ -1166,13 +1224,14 @@ struct SemanticPass {
                 // They are that line's — the source wrote them there — so the boundary
                 // recorded at what used to be the end is no longer a boundary at all.
                 let breaks = measures.count > barsWritten
-                    ? accumulator.staveBreakIndices.filter { $0 < barsWritten }
-                    : accumulator.staveBreakIndices
+                    ? accumulator.staveBreaks.filter { $0.measureIndex < barsWritten }
+                    : accumulator.staveBreaks
 
                 var start = 0
-                func appendStaff(through end: Int) {
+                func appendStaff(through end: Int, evenIfEmpty: Bool = false) {
                     let slice = Array(measures[start..<end])
-                    guard !slice.isEmpty || (staves.isEmpty && end == measures.count) else { return }
+                    guard evenIfEmpty || !slice.isEmpty || (staves.isEmpty && end == measures.count)
+                    else { return }
                     staves.append(Staff(
                         measures: slice,
                         overlays: layers.map {
@@ -1180,9 +1239,12 @@ struct SemanticPass {
                                          source: $0.source)
                         }))
                 }
-                for breakIdx in breaks where breakIdx <= measures.count {
-                    appendStaff(through: breakIdx)
-                    start = breakIdx
+                // An empty stave is kept, where an ordinary break that closed no measures is
+                // not: it is a line-set the source wrote no line for in this voice, and
+                // dropping it would shift every stave after it up one (#102).
+                for brk in breaks where brk.measureIndex <= measures.count {
+                    appendStaff(through: brk.measureIndex, evenIfEmpty: brk.isEmptyStave)
+                    start = brk.measureIndex
                 }
                 appendStaff(through: measures.count)
             } else {

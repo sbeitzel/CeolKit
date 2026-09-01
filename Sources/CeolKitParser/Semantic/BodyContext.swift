@@ -3,9 +3,20 @@ import CeolKitModel
 
 // MARK: - VoiceAccumulator
 
+/// Where one of a voice's staves ends, as a position in its `closedMeasures`.
+struct StaveBreak {
+    /// The measure the stave this break closes stops before.
+    var measureIndex: Int
+    /// True when the stave this break closes is one the voice wrote nothing in — a line-set
+    /// the source left it out of.  Kept so the voice's later staves stay in step with the
+    /// tune's stave numbering (#102); an ordinary break that happens to close no measures is
+    /// not one of these, and still collapses away when the staves are sliced.
+    var isEmptyStave = false
+}
+
 struct VoiceAccumulator {
     var closedMeasures: [Measure] = []
-    var staveBreakIndices: [Int] = []
+    var staveBreaks: [StaveBreak] = []
     var currentEvents: [Event] = []
     var lastBarLine: BarLine? = nil
     var measureSource: SourceRange
@@ -42,9 +53,19 @@ struct VoiceAccumulator {
     }
 
     /// How many staves of this voice are finished — the index of the stave now being
-    /// written.  Boundaries that close no measures are dropped when the staves are sliced
-    /// (a lone `V:` line before any music makes one), so they are not counted here either.
+    /// written.  A boundary that closes no measures is dropped when the staves are sliced, so
+    /// it is not counted here either; the one exception is the empty stave of a line-set the
+    /// voice was left out of, which is a stave and is counted once it is written out.
     var completedStaveCount = 0
+
+    /// Line-set boundaries this voice met with nothing to write — the systems the source
+    /// simply left it out of (#102).
+    ///
+    /// Remembered rather than recorded, because whether they are staves at all depends on
+    /// what comes after: a voice that plays again writes them out as empty staves, so its
+    /// later music keeps its own line, while one that has finished ends where it stops
+    /// rather than growing empty staves to the end of the tune.
+    var pendingEmptyStaves = 0
 
     /// True once any musical content has landed in this voice — a closed measure, or a
     /// non-spacer event in the measure now being written.
@@ -61,7 +82,7 @@ struct VoiceAccumulator {
     /// True when measures or events have accumulated since the last boundary, so the stave
     /// now being written already holds music.
     var hasStaveInProgress: Bool {
-        if closedMeasures.count > staveBreakIndices.last ?? 0 { return true }
+        if closedMeasures.count > staveBreaks.last?.measureIndex ?? 0 { return true }
         return currentEvents.contains {
             if case .spacer = $0 { return false }
             return true
@@ -109,9 +130,33 @@ struct VoiceAccumulator {
 
     mutating func markStaveBoundary() {
         let idx = closedMeasures.count
-        guard idx != staveBreakIndices.last else { return }  // no new measures since last split
-        if idx > staveBreakIndices.last ?? 0 { completedStaveCount += 1 }
-        staveBreakIndices.append(idx)
+        guard idx != staveBreaks.last?.measureIndex else { return }  // no new measures since last split
+        // Any line-set this voice sat out is a stave after all: it played again, so the
+        // music that follows belongs to a later line than the music before it (#102).  They
+        // close where the voice left off, which is where it still is — nothing was written
+        // in between, so that is the last break's own index.
+        let resume = staveBreaks.last?.measureIndex ?? 0
+        for _ in 0..<pendingEmptyStaves {
+            staveBreaks.append(StaveBreak(measureIndex: resume, isEmptyStave: true))
+            completedStaveCount += 1
+        }
+        pendingEmptyStaves = 0
+        if idx > resume { completedStaveCount += 1 }
+        staveBreaks.append(StaveBreak(measureIndex: idx))
+    }
+
+    /// Records the end of a line-set — one system of the source — for this voice.
+    ///
+    /// A voice with music standing in it finishes that stave.  A voice the line-set passed
+    /// over remembers an empty one; a voice that has not started yet gets nothing, because a
+    /// source that writes each voice as a block rather than line for line is not skipping
+    /// anything — its second voice simply begins at its own first stave.
+    mutating func markLineSetBoundary() {
+        if hasStaveInProgress {
+            markStaveBoundary()
+        } else if hasMusic {
+            pendingEmptyStaves += 1
+        }
     }
 
     mutating func closeWith(barLine: BarLine, endingNumber: [Int]?) {
@@ -783,6 +828,22 @@ struct BodyContext {
 
     mutating func splitStave(in voice: VoiceKey) {
         voices[voice]?.accumulator.markStaveBoundary()
+    }
+
+    /// Ends the line-set every voice is writing.
+    ///
+    /// Stave index is the unit the two layout passes align on — stave *k* of one voice is
+    /// stave *k* of every other — so the boundary has to reach every voice, not just the one
+    /// the source happened to leave the cursor in.  A voice the line-set holds no line for
+    /// is exactly what makes this necessary: without a stave marked here its later music
+    /// shifts up a line and nothing downstream can tell (#102).
+    ///
+    /// `&` layers are left alone: a layer is sliced with the staves of the voice it overlays,
+    /// so a break of its own would cut it somewhere that voice does not break.
+    mutating func closeLineSet() {
+        for key in voices.keys where !key.isOverlay {
+            voices[key]?.accumulator.markLineSetBoundary()
+        }
     }
 
     /// The index of the stave now being written, for the tune as a whole.

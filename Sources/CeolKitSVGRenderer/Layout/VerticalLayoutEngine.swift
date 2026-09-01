@@ -372,7 +372,7 @@ public struct VerticalLayoutEngine: Sendable {
         var maxLedgerAbove = 0
         var maxLedgerBelow = 0
         var hasChordSymbolsOrAnnotations = false
-        var hasLyrics = false
+        var verses = 0
         var hasGraceGroups = false
 
         for jm in system.measures {
@@ -382,7 +382,7 @@ public struct VerticalLayoutEngine: Sendable {
                     maxLedgerAbove: &maxLedgerAbove,
                     maxLedgerBelow: &maxLedgerBelow,
                     hasChordSymbolsOrAnnotations: &hasChordSymbolsOrAnnotations,
-                    hasLyrics: &hasLyrics,
+                    verses: &verses,
                     hasGraceGroups: &hasGraceGroups
                 )
             }
@@ -399,7 +399,9 @@ public struct VerticalLayoutEngine: Sendable {
             jm.source.measure.events.contains { if case .tempoChange = $0 { return true }; return false }
         }
         let extraAbove = hasTempoChanges ? max(baseAbove, s * 3) : baseAbove
-        let extraBelow = Double(maxLedgerBelow) * s + (hasLyrics ? s * 2.0 : 0)
+        // The verses hang below the ledger lines, so the two are added rather than maxed:
+        // a low note and the syllable under it need the space each of them asked for.
+        let extraBelow = Double(maxLedgerBelow) * s + LyricBand.height(verses: verses, staffSize: s)
         return (extraAbove, extraBelow)
     }
 
@@ -408,25 +410,25 @@ public struct VerticalLayoutEngine: Sendable {
         maxLedgerAbove: inout Int,
         maxLedgerBelow: inout Int,
         hasChordSymbolsOrAnnotations: inout Bool,
-        hasLyrics: inout Bool,
+        verses: inout Int,
         hasGraceGroups: inout Bool
     ) {
         switch event {
         case .note(let n):
             accumulate(pitch: n.pitch, above: &maxLedgerAbove, below: &maxLedgerBelow)
             if n.chordSymbol != nil || !n.annotations.isEmpty { hasChordSymbolsOrAnnotations = true }
-            if n.lyric != nil { hasLyrics = true }
+            verses = max(verses, n.lyrics.count)
         case .chord(let c):
             for n in c.notes { accumulate(pitch: n.pitch, above: &maxLedgerAbove, below: &maxLedgerBelow) }
             if c.chordSymbol != nil || !c.annotations.isEmpty { hasChordSymbolsOrAnnotations = true }
-            if c.lyric != nil { hasLyrics = true }
+            verses = max(verses, c.lyrics.count)
         case .tuplet(let t):
             for e in t.events {
                 scan(e,
                      maxLedgerAbove: &maxLedgerAbove,
                      maxLedgerBelow: &maxLedgerBelow,
                      hasChordSymbolsOrAnnotations: &hasChordSymbolsOrAnnotations,
-                     hasLyrics: &hasLyrics,
+                     verses: &verses,
                      hasGraceGroups: &hasGraceGroups)
             }
         case .grace(let g):

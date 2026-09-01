@@ -99,7 +99,7 @@ struct TieResolver {
                 chordSymbol: n.chordSymbol,
                 annotations: n.annotations,
                 beam: n.beam,
-                lyric: n.lyric,
+                lyrics: n.lyrics,
                 source: n.source
             ))
         case .chord(let c):
@@ -112,7 +112,7 @@ struct TieResolver {
                 beam: c.beam,
                 ties: tie,
                 slurs: c.slurs,
-                lyric: c.lyric,
+                lyrics: c.lyrics,
                 source: c.source
             ))
         default:

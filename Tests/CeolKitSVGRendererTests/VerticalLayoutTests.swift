@@ -40,6 +40,10 @@ private func justifiedSystem(measures: [Measure] = [], isLast: Bool = false) -> 
 }
 
 private func noteEvent(step: DiatonicStep, octave: Int, lyric: LyricSyllable? = nil) -> Event {
+    noteEvent(step: step, octave: octave, lyrics: lyric.map { [$0] } ?? [])
+}
+
+private func noteEvent(step: DiatonicStep, octave: Int, lyrics: [LyricSyllable?]) -> Event {
     let pitch = Pitch(step: step, alteration: .natural, octave: octave)
     let note = Note(
         pitch: pitch,
@@ -52,7 +56,7 @@ private func noteEvent(step: DiatonicStep, octave: Int, lyric: LyricSyllable? = 
         chordSymbol: nil,
         annotations: [],
         beam: .single,
-        lyric: lyric,
+        lyrics: lyrics,
         source: dummyRange
     )
     return .note(note)
@@ -86,7 +90,7 @@ private let metadata      = try! BravuraMetadata.load()
         #expect(s.extraAbove >= 3 * defaultConfig.staffSize)
     }
 
-    // A note with a lyric → extraBelow ≥ 2 × staffSize.
+    // A note with a lyric → one verse's worth of space below the staff (issue #82).
     @Test func noteWithLyricProducesExtraBelow() {
         let lyric = LyricSyllable.text(TextString(value: "la", source: dummyRange), connection: .wordEnd)
         let event = noteEvent(step: .c, octave: 5, lyric: lyric)
@@ -94,7 +98,24 @@ private let metadata      = try! BravuraMetadata.load()
         let system = justifiedSystem(measures: [m], isLast: true)
         let layout = engine.layout([system])
         let s = layout.pages[0].systems[0]
-        #expect(s.extraBelow >= 2 * defaultConfig.staffSize)
+        #expect(s.extraBelow == LyricBand.height(verses: 1, staffSize: defaultConfig.staffSize))
+    }
+
+    // Each further verse adds one line to the band below the staff (issue #82).
+    @Test func eachVerseAddsOneLineBelow() {
+        let la = LyricSyllable.text(TextString(value: "la", source: dummyRange), connection: .wordEnd)
+        let event = noteEvent(step: .c, octave: 5, lyrics: [la, la, la])
+        let system = justifiedSystem(measures: [measureWith(events: [event])], isLast: true)
+        let s = engine.layout([system]).pages[0].systems[0]
+        #expect(s.extraBelow == LyricBand.height(verses: 3, staffSize: defaultConfig.staffSize))
+    }
+
+    // A note no `w:` line reaches reserves nothing, so a tune without lyrics is laid out
+    // exactly as it was before they were drawn.
+    @Test func noteWithoutLyricReservesNothingBelow() {
+        let system = justifiedSystem(measures: [measureWith(events: [noteEvent(step: .c, octave: 5)])],
+                                     isLast: true)
+        #expect(engine.layout([system]).pages[0].systems[0].extraBelow == 0)
     }
 
     // Two consecutive systems: second system's origin.y > first system's bottom edge.

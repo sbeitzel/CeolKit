@@ -80,7 +80,78 @@ struct LineClassifier {
             result += cont.deferred
         }
 
+        return joiningContinuedLyrics(result)
+    }
+
+    /// Joins a `w:` line that ends in `\\` to the one after it (§2.2).
+    ///
+    /// A continued music line takes its lyrics with it: the source writes one `w:` for the
+    /// half of the line before the break and another for the half after, and the two are one
+    /// verse of the one music line the classifier has just joined.  Left apart they would
+    /// each be aligned from the start of that line, and the second would print as a spurious
+    /// second verse under the first.
+    ///
+    /// The join is done here rather than in ``LyricParser`` because the continuation is a
+    /// property of the *line*, exactly as it is for the music above it, and by the time the
+    /// payload is tokenised the line it came from is gone.
+    private func joiningContinuedLyrics(_ lines: [LogicalLine]) -> [LogicalLine] {
+        // Nothing to do for the overwhelming majority of sources, which continue no lyric.
+        guard lines.contains(where: { Self.continuedLyricPayload(of: $0) != nil }) else {
+            return lines
+        }
+        var result: [LogicalLine] = []
+        result.reserveCapacity(lines.count)
+        // The head of a continued run: its payload so far, and where it began.
+        var pending: (payload: String, source: SourceRange)?
+
+        for line in lines {
+            if var open = pending, case .informationField(let code, let payload, _) = line,
+               code == "w" {
+                // The line the run was waiting for.  It may itself be continued, in which
+                // case the run stays open and gathers the one after that as well.
+                open.payload += " " + payload
+                if let more = Self.dropContinuation(open.payload) {
+                    pending = (payload: more, source: open.source)
+                } else {
+                    pending = nil
+                    result.append(.informationField(code: "w", payload: open.payload,
+                                                    source: open.source))
+                }
+                continue
+            }
+            if let open = pending {
+                // Nothing joined it: the source ended, or wrote something else next.  The
+                // half-line still stands on its own, without its continuation mark.
+                result.append(.informationField(code: "w", payload: open.payload,
+                                                source: open.source))
+                pending = nil
+            }
+            if let payload = Self.continuedLyricPayload(of: line) {
+                pending = (payload: payload, source: line.source)
+                continue
+            }
+            result.append(line)
+        }
+        if let open = pending {
+            result.append(.informationField(code: "w", payload: open.payload, source: open.source))
+        }
         return result
+    }
+
+    /// The payload of a `w:` line that ends in `\\`, without the backslash; `nil` for
+    /// anything else.
+    private static func continuedLyricPayload(of line: LogicalLine) -> String? {
+        guard case .informationField(let code, let payload, _) = line, code == "w" else {
+            return nil
+        }
+        return dropContinuation(payload)
+    }
+
+    private static func dropContinuation(_ payload: String) -> String? {
+        let trimmed = payload.hasSuffix(" ") ? String(payload.reversed().drop { $0 == " " }.reversed())
+                                             : payload
+        guard trimmed.hasSuffix("\\") else { return nil }
+        return String(trimmed.dropLast())
     }
 
     private enum ParserMode {

@@ -16,12 +16,16 @@ struct ColumnMetrics: Sendable {
     let metadata: BravuraMetadata
     let graceMetrics: GraceMetrics
     let accidentalMetrics: AccidentalMetrics
+    /// The face syllables are measured in, read once here rather than per column.  `nil`
+    /// where the bundled resource could not be read; see ``LyricBand/width(of:font:fontSize:)``.
+    let lyricFont: OpenTypeFont?
 
     init(config: SVGRenderConfig, metadata: BravuraMetadata) {
         self.config = config
         self.metadata = metadata
         self.graceMetrics = GraceMetrics(config: config, metadata: metadata)
         self.accidentalMetrics = AccidentalMetrics(config: config, metadata: metadata)
+        self.lyricFont = OutlineFontSet.textFace()
     }
 
     // MARK: - Column width
@@ -36,8 +40,11 @@ struct ColumnMetrics: Sendable {
     ///     means the event's own duration.  Everything that is a property of the event
     ///     rather than of the column — accidental reservation, the dotted-note minimum —
     ///     is unaffected by it.
+    ///   - next: the event this column runs to, where the caller knows it.  Only the
+    ///     syllables under it are read, and only to keep them clear of this column's own
+    ///     (§4.18); `nil` spaces the column for its own syllables alone.
     func columnWidth(for event: Event, durationUnits: Double? = nil,
-                     quarterInUnits: Double) -> Double {
+                     quarterInUnits: Double, followedBy next: Event? = nil) -> Double {
         let s = config.staffSize
         let minCol = s * 1.2
         let base   = s * 2.0
@@ -56,7 +63,11 @@ struct ColumnMetrics: Sendable {
             if isDottedDuration(n.duration) {
                 col = max(col, noteheadWidth() * 1.4 + augmentationDotWidth())
             }
-            return col + accWidth + breathingRoom
+            // A syllable under this note may be wider than the music asks for; the column
+            // is then spaced to hold the text instead (§4.18).  Notes no `w:` line reaches
+            // reserve nothing and are spaced exactly as they always were.
+            return max(col + accWidth + breathingRoom,
+                       lyricReservation(n.lyrics, next: next))
 
         case .rest(let r):
             return max(minCol, base * durationFactor(durationUnits ?? rawDuration(r.duration),
@@ -69,7 +80,7 @@ struct ColumnMetrics: Sendable {
             let accWidth = c.notes
                 .map { accidentalMetrics.reservation(for: $0.displayedAccidental) }
                 .max() ?? 0
-            return col + accWidth
+            return max(col + accWidth, lyricReservation(c.lyrics, next: next))
 
         case .tuplet(let t):
             let df = durationFactor(durationUnits ?? tupletDuration(t),
@@ -89,6 +100,28 @@ struct ColumnMetrics: Sendable {
 
         case .tempoChange:
             return s * 6
+        }
+    }
+
+    /// How much room the syllables at the two ends of one column need; see
+    /// ``LyricBand/columnReservation(own:next:staffSize:)``.
+    private func lyricReservation(_ lyrics: [LyricSyllable?], next: Event?) -> Double {
+        let nextLyrics = next.map(Self.lyrics(of:)) ?? []
+        guard !lyrics.isEmpty || !nextLyrics.isEmpty else { return 0 }
+        let s = config.staffSize
+        return LyricBand.columnReservation(
+            own:  LyricBand.widestSyllable(in: lyrics, staffSize: s, font: lyricFont),
+            next: LyricBand.widestSyllable(in: nextLyrics, staffSize: s, font: lyricFont),
+            hyphenated: LyricBand.isHyphenated(lyrics),
+            staffSize: s, font: lyricFont)
+    }
+
+    /// The verses `event` carries, empty for everything that cannot be sung.
+    private static func lyrics(of event: Event) -> [LyricSyllable?] {
+        switch event {
+        case .note(let n):  return n.lyrics
+        case .chord(let c): return c.lyrics
+        default:            return []
         }
     }
 

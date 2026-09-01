@@ -572,3 +572,99 @@ V:M middle=e
 ```
 
 which puts the split at E5 and sends the same four notes downstairs.
+
+---
+
+## Voice overlay — where an `&` winds back to
+
+**Applies to:** the `&` operator in the tune body (ABC v2.2 §7.4)
+
+### What the standard says, and does not say
+
+§7.4:
+
+> The `&` operator may be used to temporarily overlay several voices within one measure. Each
+> `&` operator sets the time point of the music back by one bar line, and the notes which
+> follow it form a temporary voice in parallel with the preceding one. This may only be used
+> to add one complete bar's worth of music for each `&`.
+
+Two of its terms have to be pinned down before an implementation can exist, and the standard
+pins neither. CeolKit reads them as follows; the readings are ours, and they are what its own
+two examples need in order to work.
+
+### The rule
+
+**"Back by one bar line" means back to the last bar line crossed.** Where music has already
+been written in the bar now open, that is the head of *this* bar. Where none has — an `&` at
+the head of a line, or straight after a bar line — it is the head of the bar *before*. A run
+of `&`s winds back one further bar for each, so `&&` written at the head of a line overlays
+the two bars of the line above it, which is what the standard's own second example asks for.
+
+**An `&` layer lives for the rest of its source line.** A bar line does not close it: `&& (d8
+| c6) c2|` is one temporary voice across two bars, again per the second example. What ends it
+is the end of the line, and the first `&` of the next line reopens *the same* temporary
+voice — one `&` on each of two lines is two bars of one part, not two parts of one bar each.
+
+**A line that opens with `&` is a continuation of the line above.** It shares that line's
+stave — the overlay is printed on the same system as the music it overlays, not on the next
+one — and it leaves the lyric anchor alone, so a `w:` after it still matches the notes above.
+That is §7.4's own "disregarding any overlay in the accompanying music code", which CeolKit
+applies to `s:` lines equally.
+
+**A bar line closes the bar for every layer standing in it.** The bar line belongs to the
+staff, not to whichever layer was current when it was typed.
+
+**An overlay is a voice.** Its accidentals are scoped to its own bar (§4.2 scopes them to the
+voice that wrote them), its notes beam among themselves, and its ties and slurs pair only
+with its own. It is written in the key and against the unit note length of the voice it
+overlays, because it *is* that voice's music.
+
+### Recovery
+
+An overlay that supplies more bars than its `&`s wound back over breaks the standard's "one
+complete bar's worth of music for each `&`". CeolKit warns (`voiceOverlayTooLong`) and prints
+the extra bars anyway, giving the voice beneath them the empty bars it now needs: dropping
+music the author wrote to enforce a counting rule would be the worse failure.
+
+An `&` written where there is no bar to wind back to — at the very start of a voice — warns
+(`voiceOverlayWithoutBar`) and starts the overlay at the first bar.
+
+### What this looks like on the page
+
+Each layer joins its voice's staff as an ordinary extra voice, directly beneath it, so
+everything a `( … )` shared staff already does applies to it: the layers are merged onto a
+common onset grid, the outer two have their stems opposed, simultaneous rests are moved off
+centre, and unisons between them are pulled apart. A tune written with `&` and the same tune
+written as a `%%score ( … )` group of the same parts draw the same noteheads in the same
+places.
+
+The staff's clef, key and name stay those of the voice itself. An overlay never supplies
+them, and no `%%score` can name, place or leave one out: it belongs to its voice and goes
+wherever the plan sends that voice.
+
+### Example
+
+```abc
+X:1
+T:Voice overlay
+M:6/8
+L:1/8
+K:C
+A2 | cdefga &\
+     AAAAAA &\
+     FEDCB,A, |]
+```
+
+Three parts on one staff for the second bar, and one for the first. Written on separate
+lines instead, with the `&`s leading, it means the same thing:
+
+```abc
+X:1
+T:Voice overlay
+M:6/8
+L:1/8
+K:C
+A2 | cdefga |]
+   & AAAAAA |]
+   & FEDCB,A, |]
+```

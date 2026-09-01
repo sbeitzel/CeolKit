@@ -46,6 +46,30 @@ struct VoiceAccumulator {
         }
     }
 
+    /// True when the measure now being written holds music, so the last bar line the voice
+    /// crossed is behind it rather than immediately before it.  What an `&` needs in order to
+    /// know whether winding back one bar line means "the start of this bar" or "the start of
+    /// the one before it" (§7.4).
+    var hasOpenMeasure: Bool {
+        currentEvents.contains {
+            if case .spacer = $0 { return false }
+            return true
+        }
+    }
+
+    /// Appends a bar with no music in it, to keep an `&` overlay's measures aligned with the
+    /// stave's own.  It draws nothing: the voice underneath owns the staff's furniture.
+    mutating func appendEmptyMeasure(source: SourceRange) {
+        closedMeasures.append(Measure(
+            openingBar: lastBarLine,
+            events: [],
+            closingBar: BarLine(kind: .single, source: source),
+            endingNumber: nil,
+            source: source,
+            meter: nil
+        ))
+    }
+
     mutating func markStaveBoundary() {
         let idx = closedMeasures.count
         guard idx != staveBreakIndices.last else { return }  // no new measures since last split
@@ -368,6 +392,40 @@ struct VoiceState {
     }
 }
 
+// MARK: - VoiceKey
+
+/// Which accumulating voice a piece of music belongs to.
+///
+/// Usually a voice a `V:` field named.  An `&` (§7.4) opens a *temporary* voice alongside it,
+/// and that one has no `V:`, no properties and no place in the print order — it is drawn as a
+/// second tenant of its base voice's staff.  Both kinds accumulate identically, so both are
+/// keyed the same way and the walker threads one type.
+struct VoiceKey: Hashable {
+    /// The id a `V:` gave, which is what the model calls the voice.
+    let base: String
+    /// `0` for the voice itself; *n* for the music after its *n*th `&`.
+    let overlay: Int
+
+    init(_ base: String, overlay: Int = 0) {
+        self.base = base
+        self.overlay = overlay
+    }
+
+    var isOverlay: Bool { overlay > 0 }
+
+    /// The voice this one overlays — itself, when it overlays nothing.
+    var primary: VoiceKey { VoiceKey(base) }
+
+    /// The layer an `&` written while standing in this one opens.
+    ///
+    /// The walker resets the cursor to the voice at the head of every line that does not
+    /// itself open with `&`, so the first `&` of an ordinary line reopens layer 1 and its
+    /// music joins what earlier lines put there — one `&` on each of two lines is one
+    /// temporary voice, not two — while a line that *begins* with `&` keeps the cursor and
+    /// so stacks a further layer over the same music.
+    var nextOverlay: VoiceKey { VoiceKey(base, overlay: overlay + 1) }
+}
+
 // MARK: - BodyContext
 
 /// Tune-wide state threaded through music body processing.
@@ -393,7 +451,7 @@ struct BodyContext {
     // Voice table — created on first musical content, never eagerly, so a voice that was
     // declared and never written to has no entry here.  `declaredVoices` is what keeps it
     // from being lost: a `V:` field is a declaration whether or not any note follows it.
-    private(set) var voices: [String: VoiceState] = [:]
+    private(set) var voices: [VoiceKey: VoiceState] = [:]
 
     /// Every voice this tune knows about, in print order: the header's `V:` declarations
     /// first, then any the body introduced, in the order each was first seen.
@@ -413,6 +471,9 @@ struct BodyContext {
     /// stave it governs from.
     var bodyStaffPlans: [StaffPlanChange] = []
     var hasExplicitVoice: Bool = false
+    /// The `&` that opened each temporary voice (§7.4).  Its presence is also what says a
+    /// layer exists at all: the states themselves live in `voices`, keyed by `VoiceKey`.
+    private(set) var overlaySources: [VoiceKey: SourceRange] = [:]
 
     // I:linebreak settings — ABC 2.2 §9.2 — default is I:linebreak <EOL> $
     let linebreakChars: Set<Character>  // $ and/or !
@@ -444,7 +505,7 @@ struct BodyContext {
 
     /// Mutating access to one voice, creating its state on first musical content.
     mutating func withVoice<R>(
-        _ id: String,
+        _ key: VoiceKey,
         source: @autoclosure () -> SourceRange,
         _ body: (inout VoiceState) -> R
     ) -> R {
@@ -457,8 +518,10 @@ struct BodyContext {
         // order.  Belt and braces — the walker's cursor only ever holds an id that is already
         // in `voiceOrder` — but it makes "has music" imply "is printed" true by construction
         // rather than by inspection of every path that can move the cursor.
-        if voices[id] == nil, !voiceOrder.contains(id) { voiceOrder.append(id) }
-        return body(&voices[id, default: VoiceState(
+        if voices[key] == nil, !key.isOverlay, !voiceOrder.contains(key.base) {
+            voiceOrder.append(key.base)
+        }
+        return body(&voices[key, default: VoiceState(
             accumulator: VoiceAccumulator(source: source(), unitNoteLength: unitLen),
             accidentals: AccidentalScope(keyAlterations: alterations)
         )])
@@ -467,10 +530,10 @@ struct BodyContext {
     /// The voice the walker starts in: the first the header declared, or the implicit `"1"`
     /// when it declared none.  Music written before the tune's first inline `[V:]` belongs to
     /// the first voice on the page, not to a voice the header never mentioned.
-    var initialVoice: String { voiceOrder.first ?? "1" }
+    var initialVoice: VoiceKey { VoiceKey(voiceOrder.first ?? "1") }
 
     /// Read-only access.  Never allocates, so a voice that writes nothing costs nothing.
-    func voice(_ id: String) -> VoiceState? { voices[id] }
+    func voice(_ key: VoiceKey) -> VoiceState? { voices[key] }
 
     /// Every voice of the tune in print order, paired with its state.
     ///
@@ -480,7 +543,7 @@ struct BodyContext {
     /// one declared and nothing wrote to.
     func orderedVoices() -> [(String, VoiceState?)] {
         voiceOrder.compactMap { id in
-            guard let state = voices[id] else {
+            guard let state = voices[VoiceKey(id)] else {
                 return declaredVoices.contains(id) ? (id, nil) : nil
             }
             return (id, state)
@@ -528,7 +591,7 @@ struct BodyContext {
     /// memory; every other voice keeps both, because a `K:` in the body belongs to the voice
     /// that carries it — §7.3 asks for such a field to be repeated in every voice it should
     /// affect, which is only meaningful if one voice's does not reach the rest.
-    mutating func setKey(_ newKey: KeySignature, in voice: String, source: SourceRange) {
+    mutating func setKey(_ newKey: KeySignature, in voice: VoiceKey, source: SourceRange) {
         let alterations = keyAlterations(for: newKey)
         withVoice(voice, source: source) {
             if !$0.accumulator.hasMusic { $0.openingKey = newKey }
@@ -539,7 +602,7 @@ struct BodyContext {
     /// Moves the unit note length for one voice, likewise — but only where it opens the
     /// voice.  A change part way through has nowhere to land: one length sizes the whole
     /// voice, in the beam resolver here and in the renderer's sizer alike.  Issue #85.
-    mutating func setUnitNoteLength(_ length: Fraction, in voice: String, source: SourceRange) {
+    mutating func setUnitNoteLength(_ length: Fraction, in voice: VoiceKey, source: SourceRange) {
         withVoice(voice, source: source) {
             guard !$0.accumulator.hasMusic else { return }
             $0.openingUnitNoteLength = length
@@ -552,7 +615,7 @@ struct BodyContext {
     /// The effective alteration for a pitch in `voice`: that voice's bar memory first, then the
     /// key signature.  A voice with no state yet has no bar memory, so it resolves straight to
     /// the key — no need to materialise anything here.
-    func resolveAccidental(step: DiatonicStep, octave: Int, in voice: String) -> Alteration {
+    func resolveAccidental(step: DiatonicStep, octave: Int, in voice: VoiceKey) -> Alteration {
         voices[voice]?.accidentals.resolve(step: step, octave: octave)
             ?? keySignatureAlterations[step]
             ?? .natural
@@ -560,27 +623,20 @@ struct BodyContext {
 
     mutating func recordAccidental(
         step: DiatonicStep, octave: Int, alteration: Alteration,
-        in voice: String, source: SourceRange
+        in voice: VoiceKey, source: SourceRange
     ) {
         withVoice(voice, source: source) {
             $0.accidentals.record(step: step, octave: octave, alteration: alteration)
         }
     }
 
-    /// Clears one voice's bar memory at a bar line.  Other voices keep theirs: they reach their
-    /// own bar lines on their own lines, and in a shared bar two voices do not necessarily
-    /// cross the bar at the same point in the source.
-    mutating func resetBarAccidentals(in voice: String) {
-        voices[voice]?.accidentals.resetBar()
-    }
-
     // MARK: Lyric anchors
 
     /// Marks, for every voice that exists, where the music line about to be walked begins.
     mutating func recordLyricAnchors() {
-        for id in Array(voices.keys) {
-            let anchor = voices[id]?.accumulator.closedMeasures.count ?? 0
-            voices[id]?.lyricAnchor = anchor
+        for key in Array(voices.keys) {
+            let anchor = voices[key]?.accumulator.closedMeasures.count ?? 0
+            voices[key]?.lyricAnchor = anchor
         }
     }
 
@@ -590,15 +646,15 @@ struct BodyContext {
     // caller.  They exist so the walker reads as `ctx.emit(event, in: voice)` rather than
     // spelling out a closure at every site.
 
-    mutating func emit(_ event: Event, in voice: String) {
+    mutating func emit(_ event: Event, in voice: VoiceKey) {
         withVoice(voice, source: eventSourceRange(event) ?? .emptySourceRange) { $0.emit(event) }
     }
 
-    mutating func emitSpaceBreak(source: SourceRange, in voice: String) {
+    mutating func emitSpaceBreak(source: SourceRange, in voice: VoiceKey) {
         withVoice(voice, source: source) { $0.emitSpaceBreak(source: source) }
     }
 
-    mutating func closeMeasure(barLine: BarLine, in voice: String) {
+    mutating func closeMeasure(barLine: BarLine, in voice: VoiceKey) {
         let currentMeter = meter
         let generation = meterGeneration
         withVoice(voice, source: barLine.source) {
@@ -606,7 +662,7 @@ struct BodyContext {
         }
     }
 
-    mutating func splitStave(in voice: String) {
+    mutating func splitStave(in voice: VoiceKey) {
         voices[voice]?.accumulator.markStaveBoundary()
     }
 
@@ -625,88 +681,153 @@ struct BodyContext {
         voices.values.contains(where: \.accumulator.hasStaveInProgress)
     }
 
-    func isInGrace(_ voice: String) -> Bool { voices[voice]?.isInGrace ?? false }
+    func isInGrace(_ voice: VoiceKey) -> Bool { voices[voice]?.isInGrace ?? false }
 
-    mutating func startGrace(acciaccatura: Bool, source: SourceRange, in voice: String) {
+    mutating func startGrace(acciaccatura: Bool, source: SourceRange, in voice: VoiceKey) {
         withVoice(voice, source: source) { $0.startGrace(acciaccatura: acciaccatura, source: source) }
     }
 
-    mutating func flushGrace(source: SourceRange? = nil, in voice: String) {
+    mutating func flushGrace(source: SourceRange? = nil, in voice: VoiceKey) {
         voices[voice]?.flushGrace(source: source)
     }
 
-    mutating func appendGraceNote(_ note: Note, in voice: String) {
+    mutating func appendGraceNote(_ note: Note, in voice: VoiceKey) {
         voices[voice]?.appendGraceNote(note)
     }
 
-    mutating func startTuplet(p: Int, q: Int, r: Int, source: SourceRange, in voice: String) {
+    mutating func startTuplet(p: Int, q: Int, r: Int, source: SourceRange, in voice: VoiceKey) {
         withVoice(voice, source: source) { $0.startTuplet(p: p, q: q, r: r, source: source) }
     }
 
-    func isInTuplet(_ voice: String) -> Bool { voices[voice]?.tuplet != nil }
+    func isInTuplet(_ voice: VoiceKey) -> Bool { voices[voice]?.tuplet != nil }
 
-    mutating func applyLyrics(_ tokens: [LyricToken], in voice: String) {
+    mutating func applyLyrics(_ tokens: [LyricToken], in voice: VoiceKey) {
         // No state means no music line to align against — nothing to do.
         voices[voice]?.applyLyrics(tokens)
     }
 
-    mutating func applyDecorationToLastNote(_ decoration: Decoration, in voice: String) -> Bool {
+    mutating func applyDecorationToLastNote(_ decoration: Decoration, in voice: VoiceKey) -> Bool {
         guard voices[voice] != nil else { return false }
         return voices[voice]!.applyDecorationToLastNote(decoration)
     }
 
-    mutating func addSlurCloseToLastNote(in voice: String) -> Bool {
+    mutating func addSlurCloseToLastNote(in voice: VoiceKey) -> Bool {
         guard voices[voice] != nil else { return false }
         return voices[voice]!.addSlurCloseToLastNote()
     }
 
-    mutating func addPendingDecoration(_ decoration: Decoration, in voice: String, source: SourceRange) {
+    mutating func addPendingDecoration(_ decoration: Decoration, in voice: VoiceKey, source: SourceRange) {
         withVoice(voice, source: source) { $0.pendingDecorations.append(decoration) }
     }
 
-    mutating func addPendingAnnotation(_ annotation: Annotation, in voice: String) {
+    mutating func addPendingAnnotation(_ annotation: Annotation, in voice: VoiceKey) {
         withVoice(voice, source: annotation.source) { $0.pendingAnnotations.append(annotation) }
     }
 
-    mutating func setPendingChordSymbol(_ symbol: ChordSymbol?, in voice: String, source: SourceRange) {
+    mutating func setPendingChordSymbol(_ symbol: ChordSymbol?, in voice: VoiceKey, source: SourceRange) {
         withVoice(voice, source: source) { $0.pendingChordSymbol = symbol }
     }
 
-    mutating func setPendingEndingNumber(_ nums: [Int], in voice: String, source: SourceRange) {
+    mutating func setPendingEndingNumber(_ nums: [Int], in voice: VoiceKey, source: SourceRange) {
         withVoice(voice, source: source) { $0.pendingEndingNumber = nums }
     }
 
-    mutating func openSlur(in voice: String, source: SourceRange) {
+    mutating func openSlur(in voice: VoiceKey, source: SourceRange) {
         withVoice(voice, source: source) { $0.openSlurs += 1 }
     }
 
-    mutating func carrySlurClose(in voice: String, source: SourceRange) {
+    mutating func carrySlurClose(in voice: VoiceKey, source: SourceRange) {
         withVoice(voice, source: source) { $0.closeSlurs += 1 }
     }
 
-    mutating func consumeSlurs(in voice: String, source: SourceRange) -> (opens: Int, closes: Int) {
+    mutating func consumeSlurs(in voice: VoiceKey, source: SourceRange) -> (opens: Int, closes: Int) {
         withVoice(voice, source: source) { $0.consumeSlurs() }
     }
 
-    mutating func flushDecorations(in voice: String, source: SourceRange) -> [Decoration] {
+    mutating func flushDecorations(in voice: VoiceKey, source: SourceRange) -> [Decoration] {
         withVoice(voice, source: source) { $0.flushDecorations() }
     }
 
-    mutating func flushAnnotations(in voice: String, source: SourceRange) -> [Annotation] {
+    mutating func flushAnnotations(in voice: VoiceKey, source: SourceRange) -> [Annotation] {
         withVoice(voice, source: source) { $0.flushAnnotations() }
     }
 
-    mutating func flushChordSymbol(in voice: String, source: SourceRange) -> ChordSymbol? {
+    mutating func flushChordSymbol(in voice: VoiceKey, source: SourceRange) -> ChordSymbol? {
         withVoice(voice, source: source) { $0.flushChordSymbol() }
     }
 
-    func lastElementWasSpace(in voice: String) -> Bool {
+    func lastElementWasSpace(in voice: VoiceKey) -> Bool {
         voices[voice]?.lastElementWasSpace ?? false
     }
 
-    mutating func setLastElementWasSpace(_ value: Bool, in voice: String) {
+    mutating func setLastElementWasSpace(_ value: Bool, in voice: VoiceKey) {
         // Only meaningful once the voice exists; a voice with no state has nothing to decorate.
         voices[voice]?.lastElementWasSpace = value
+    }
+
+    // MARK: Voice overlay (§7.4)
+
+    /// Closes the bar `cursor` is writing, and with it the same bar of every `&` layer of the
+    /// same voice that is standing in it.
+    ///
+    /// A bar line belongs to the staff, not to the layer that happened to be current when it
+    /// was written: `c d e f & A A A A |` ends that bar for the voice and for its overlay
+    /// alike, and closing only one of them would leave the other's bar hanging open until the
+    /// end of the tune.  What decides is the bar each layer is *in*: an overlay written under
+    /// an earlier line — the standard's own `&&` example — has wound the clock back behind
+    /// the voice, and its bar lines are its own.
+    mutating func closeBar(barLine: BarLine, in cursor: VoiceKey) {
+        let bar = voices[cursor]?.accumulator.closedMeasures.count ?? 0
+        // The cursor first, and by name rather than by lookup: a bar line can be the very
+        // first thing in a voice, and that voice has no state to find yet.
+        let together = [cursor] + voices.keys.filter {
+            $0 != cursor && $0.base == cursor.base
+                && voices[$0]?.accumulator.closedMeasures.count == bar
+        }
+        for key in together {
+            closeMeasure(barLine: barLine, in: key)
+            voices[key]?.accidentals.resetBar()
+        }
+    }
+
+    /// Opens the temporary voice an `&` starts, with its first bar at `startMeasure` of the
+    /// voice underneath.
+    ///
+    /// A layer that already exists — because an earlier line wound back into it — is brought
+    /// forward to `startMeasure` rather than created again: two `&`s on two lines are the
+    /// same temporary voice, and drawing them as two would put a third part on the staff that
+    /// nobody wrote.  Where it has already written past `startMeasure` it stays where it is;
+    /// the overrun is caught once, when the staves are built.
+    mutating func openOverlay(_ key: VoiceKey, startingAt startMeasure: Int, source: SourceRange) {
+        precondition(key.isOverlay, "openOverlay is for `&` layers, not for a voice itself")
+        // The voice underneath exists from here on even if it never gets a note of its own:
+        // the overlay is *its* music, and a voice with no state is a voice the model drops.
+        withVoice(key.primary, source: source) { _ in }
+        // A temporary voice is written in the same key and against the same unit as the
+        // voice it overlays: it is that voice's own music, sounding at the same time.
+        let unitLen = voices[key.primary]?.accumulator.unitNoteLength ?? unitNoteLength
+        let alterations = voices[key.primary]?.accidentals.keyAlterations ?? keySignatureAlterations
+        if voices[key] == nil {
+            overlaySources[key] = source
+            voices[key] = VoiceState(
+                accumulator: VoiceAccumulator(source: source, unitNoteLength: unitLen),
+                accidentals: AccidentalScope(keyAlterations: alterations)
+            )
+        }
+        while voices[key]!.accumulator.closedMeasures.count < startMeasure {
+            voices[key]!.accumulator.appendEmptyMeasure(source: source)
+        }
+        // §4.2 scopes an accidental to the bar in the voice that wrote it, and winding the
+        // clock back starts a new bar in a new voice.
+        voices[key]!.accidentals.resetBar()
+    }
+
+    /// Every `&` layer of one voice, outermost first, each with the `&` that opened it.
+    func overlays(of base: String) -> [(source: SourceRange, state: VoiceState)] {
+        overlaySources.keys
+            .filter { $0.base == base }
+            .sorted { $0.overlay < $1.overlay }
+            .compactMap { key in voices[key].map { (overlaySources[key]!, $0) } }
     }
 }
 

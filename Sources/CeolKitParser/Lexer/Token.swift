@@ -52,6 +52,7 @@ enum Token {
     // Structural
     case space                    // whitespace run
     case backslash                // \
+    case voiceOverlay             // &  (§7.4)
 
     // Chord/annotation
     case quotedString(String)     // "..."

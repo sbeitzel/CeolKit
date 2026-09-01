@@ -18,6 +18,12 @@ import CeolKitModel
 /// only one neighbour there is no split to make, and it becomes an ordinary tenant of that
 /// staff with a `staffPlanNotFullyApplied` warning to say so.
 ///
+/// **An `&` overlay is a voice too, by the time this pass is done.**  ``OverlayExpander``
+/// gives every `&` layer (§7.4) a place on the staff of the voice that wrote it, directly
+/// under it, so a staff with overlays is a shared staff like any other.  This is the last
+/// pass that adds a voice to a staff, and it does it after the plan has been resolved: an
+/// overlay is not something a `%%score` can name, place or leave out.
+///
 /// **It also translates the plan's grouping into printed staff indices.**  `StaffPlanLayout`
 /// counts staves in the *plan*, and a dropped voice or a floating one means those are not the
 /// staves that reach the page.  This is the only pass that sees both numberings at once, so
@@ -44,12 +50,6 @@ enum VoiceSelector {
             (0..<staffCount).map { staff in voices.indices.filter { staffOfVoice[$0] == staff } }
         }
 
-        /// One staff per voice, in the order given — the shape every tune without a `( … )`
-        /// group has.
-        init(voices: [Voice], grouping: StaffGrouping?) {
-            self.init(voices: voices, staffOfVoice: Array(voices.indices), grouping: grouping)
-        }
-
         init(voices: [Voice], staffOfVoice: [Int], grouping: StaffGrouping?) {
             self.voices = voices
             self.staffOfVoice = staffOfVoice
@@ -70,7 +70,7 @@ enum VoiceSelector {
         into diagnostics: inout [Diagnostic]
     ) -> Selection {
         let printable = voices.filter { !$0.isEmpty }
-        guard let plan else { return Selection(voices: printable, grouping: nil) }
+        guard let plan else { return selection(of: printable.map { [$0] }, grouping: nil) }
 
         let layout = plan.layout
         let byId = Dictionary(voices.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
@@ -163,28 +163,34 @@ enum VoiceSelector {
             }
         }
 
-        let printed = staffed.flatMap { $0 }
-        let staffOfVoice = staffed.enumerated().flatMap {
-            [Int](repeating: $0.offset, count: $0.element.count)
-        }
-
         // Printed staff indices contributed by each staff of the plan: at most one now, and
         // none where every voice of a plan staff was dropped.
         let printedByPlanStaff = layout.staves.indices.map { staffForPlanStaff[$0].map { [$0] } ?? [] }
 
-        guard !printed.isEmpty else {
+        guard !staffed.isEmpty else {
             // Reporting each voice as unprinted would be a lie: the fallback prints them all.
             diagnostics.append(Diagnostic(
                 severity: .warning, code: .staffPlanEmpty,
                 message: "staff plan selects none of this tune's voices; "
                        + "laying the tune out as though it had no plan",
                 source: plan.source))
-            return Selection(voices: printable, grouping: nil)
+            return selection(of: printable.map { [$0] }, grouping: nil)
         }
 
         diagnostics += omissions(from: printable, namedBy: layout, plan: plan)
-        return Selection(voices: printed, staffOfVoice: staffOfVoice,
-                         grouping: grouping(of: layout, printedBy: printedByPlanStaff))
+        return selection(of: staffed, grouping: grouping(of: layout, printedBy: printedByPlanStaff))
+    }
+
+    /// The selection the staves add up to, with each voice's `&` overlays given their place
+    /// on the staff beneath it (§7.4).
+    private static func selection(of staffed: [[Voice]], grouping: StaffGrouping?) -> Selection {
+        let expanded = staffed.map(OverlayExpander.expand)
+        return Selection(
+            voices: expanded.flatMap { $0 },
+            staffOfVoice: expanded.enumerated().flatMap {
+                [Int](repeating: $0.offset, count: $0.element.count)
+            },
+            grouping: grouping)
     }
 
     // MARK: - Order

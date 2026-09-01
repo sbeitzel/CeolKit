@@ -55,6 +55,48 @@ struct LineContinuationTests {
         #expect(staves.first?.measures.count == 2)
     }
 
+    /// §6.1.1: "any information fields and stylesheet directives are processed (and comments
+    /// are removed) at the point where the physical line-break occurs.  Hence the backslash
+    /// is commonly used to include meter or key changes halfway through a line of music."
+    ///
+    /// A field written between the two halves therefore governs the second half, not the
+    /// line after the joined one, and the standard gives the equivalence itself: it is the
+    /// inline `[M:9/8]` written at the break.
+    @Test("A meter change between the halves governs the second half")
+    func meterChangeAtTheBreakGovernsSecondHalf() {
+        // §6.1.1's own example.
+        let result = parse("X:1\nT:Test\nM:4/4\nL:1/8\nK:C\nabc cab|\\\n%%setbarnb 10\nM:9/8\n%comment\nabc cba abc|\n")
+        let measures = result.score.firstTune?.firstVoice?.staves.first?.measures ?? []
+        #expect(measures.count == 2)
+        #expect(measures.first?.meter == nil, "the first half stays in the header's 4/4")
+        if case .fraction(let num, let den) = measures.last?.meter {
+            #expect((num, den) == (9, 8))
+        } else {
+            Issue.record("second half is not in 9/8: \(String(describing: measures.last?.meter))")
+        }
+    }
+
+    @Test("A key change between the halves governs the second half")
+    func keyChangeAtTheBreakGovernsSecondHalf() {
+        // In C the f is natural; from the break on, G major sharpens it.
+        let result = parse(contTune("CDEF|\\\nK:G\nFGAB|"))
+        let notes = (result.score.firstTune?.firstVoice?.staves.first?.measures ?? [])
+            .map { $0.noteEvents.first?.pitch.alteration }
+        #expect(notes == [.natural, .sharp])
+    }
+
+    @Test("A field with no inline form is still applied after the joined line")
+    func fieldWithoutInlineFormStaysDeferred() {
+        // `w:` has no inline form (§4.19), so it keeps the deferral that puts it on the
+        // joined line as a whole rather than being spliced into the middle of it.
+        let result = parse(contTune("CDEF|\\\nw: la la la la\nGABC|"))
+        let notes = (result.score.firstTune?.firstVoice?.staves.first?.measures ?? [])
+            .flatMap(\.noteEvents)
+        #expect(notes.count == 8)
+        #expect(notes.prefix(4).allSatisfy { $0.lyric != nil })
+        #expect(notes.dropFirst(4).allSatisfy { $0.lyric == nil })
+    }
+
     @Test("A backslash before an empty line still yields its music")
     func danglingBackslashBeforeEmptyLine() {
         // Illegal per §6.1.1, so this is the recovery path: the half-line already written

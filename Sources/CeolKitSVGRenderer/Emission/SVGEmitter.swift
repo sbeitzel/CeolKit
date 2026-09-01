@@ -785,18 +785,25 @@ struct SVGEmitter: Sendable {
 
     private func emitKeySignature(_ keySig: KeySignature, system: ResolvedSystem,
                                   builder: inout SVGBuilder) {
-        let accs = keyAccidentals(for: keySig, clef: system.clef)
+        emitKeyAccidentals(keyAccidentals(for: keySig, clef: system.clef),
+                           atX: system.origin.x + clefWidth(for: system.clef),
+                           system: system, builder: &builder)
+    }
+
+    /// Draws a run of signature accidentals left to right from `startX`, stepping by the same
+    /// advance `keySignatureWidth` and `keyChangeWidth` reserve space with.  Shared by the
+    /// signature at a staff head and the one a mid-staff `K:` draws (#129).
+    private func emitKeyAccidentals(_ accs: [KeyAccidental], atX startX: Double,
+                                    system: ResolvedSystem, builder: inout SVGBuilder) {
         guard !accs.isEmpty else { return }
 
         let s            = config.staffSize
         let fontSize     = 4.0 * s
         let bottomStaffY = system.origin.y + system.staffOrigin + system.staffHeight
-        let glyphW       = metadata.glyphBBoxes["accidentalSharp"].map { $0.width * s } ?? s * 0.75
-        let gap          = s * 0.1
-        let startX       = system.origin.x + clefWidth(for: system.clef)
+        let advance      = keyAccidentalAdvance(metadata: metadata, staffSize: s)
 
         for (i, acc) in accs.enumerated() {
-            let x = startX + Double(i) * (glyphW + gap)
+            let x = startX + Double(i) * advance
             let y = noteY(staffPos: acc.staffPosition, bottomStaffY: bottomStaffY)
             builder.text(String(acc.glyph.character), x: x, y: y,
                          fontFamily: "Bravura", fontSize: fontSize)
@@ -895,10 +902,21 @@ struct SVGEmitter: Sendable {
         emitBarLine(measure.closingBar, topY: topY, bottomY: bottomY,
                     lineBottomY: lineBottomY, builder: &builder)
 
-        if let meter = measure.meter {
+        // A key or time signature changing here is drawn at the head of the bar, in the
+        // space `ColumnMetrics.leftMargin` kept ahead of the first note — key first, which is
+        // the order they are engraved in and the order that margin was measured in.
+        if measure.keyChange != nil || measure.meter != nil {
             let thin = metadata.engravingDefaults.thinBarlineThickness * config.staffSize
-            emitTimeSignatureGlyph(meter, atX: measure.origin.x + 2.0 * thin,
+            var signatureX = measure.origin.x + 2.0 * thin
+            if let change = measure.keyChange {
+                emitKeyAccidentals(keyChangeAccidentals(for: change), atX: signatureX,
                                    system: system, builder: &builder)
+                signatureX += keyChangeWidth(for: change, metadata: metadata,
+                                             staffSize: config.staffSize)
+            }
+            if let meter = measure.meter {
+                emitTimeSignatureGlyph(meter, atX: signatureX, system: system, builder: &builder)
+            }
         }
 
         // Two parts are only visibly two where both of them draw: see `inkedVoices(of:)`.

@@ -191,13 +191,19 @@ struct ColumnMetrics: Sendable {
     /// For measures that begin with a start-repeat bar line the dots occupy
     /// the space immediately after the bar complex, so the first note is
     /// pushed past them before the standard one-notehead gap is added.
-    /// A mid-line time-signature change adds its glyph width before the note gap.
-    func leftMargin(for measure: Measure) -> Double {
+    /// A mid-line key or time-signature change adds its glyph width before the note gap,
+    /// key first — the order they are engraved in, and the order the emitter draws them.
+    func leftMargin(for measure: Measure, keyChange: KeyChange? = nil) -> Double {
         let nhw = noteheadWidth()
         let thin = metadata.engravingDefaults.thinBarlineThickness * config.staffSize
-        let meterGap = measure.meter != nil ? 2.0 * thin : 0
+        let keySigW = keyChange.map {
+            keyChangeWidth(for: $0, metadata: metadata, staffSize: config.staffSize)
+        } ?? 0
         let timeSigW = measure.meter.map { timeSignatureWidth(for: $0, metadata: metadata, staffSize: config.staffSize) } ?? 0
-        guard let opening = measure.openingBar else { return meterGap + timeSigW + nhw }
+        // One gap clear of the bar line, for whichever of the two is drawn first.
+        let signatureGap = keySigW > 0 || measure.meter != nil ? 2.0 * thin : 0
+        let signatures = signatureGap + keySigW + timeSigW
+        guard let opening = measure.openingBar else { return signatures + nhw }
         switch opening.kind {
         case .repeatStart, .sectionRepeatStart, .repeatBoth:
             let wideSep = metadata.engravingDefaults.barlineSeparation * config.staffSize * 2.0
@@ -205,9 +211,9 @@ struct ColumnMetrics: Sendable {
             let dotSep  = metadata.engravingDefaults.repeatBarlineDotSeparation * config.staffSize
             let dotW    = metadata.glyphBBoxes["repeatDot"].map { $0.width * config.staffSize }
                           ?? config.staffSize * 0.25
-            return wideSep + dotSep + dotW + meterGap + timeSigW + nhw
+            return wideSep + dotSep + dotW + signatures + nhw
         default:
-            return meterGap + timeSigW + nhw
+            return signatures + nhw
         }
     }
 

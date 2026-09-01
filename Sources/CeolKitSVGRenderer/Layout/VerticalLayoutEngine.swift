@@ -555,7 +555,8 @@ public struct VerticalLayoutEngine: Sendable {
                 openingBar: openingBar,
                 closingBar: closingBar,
                 unitNoteLength: jm.source.unitNoteLength,
-                meter: jm.source.measure.meter
+                meter: jm.source.measure.meter,
+                keyChange: jm.keyChange
             ))
 
             x = measureOrigin.x + jm.finalWidth

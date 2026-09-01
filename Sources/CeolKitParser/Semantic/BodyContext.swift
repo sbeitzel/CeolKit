@@ -45,6 +45,16 @@ struct VoiceAccumulator {
     /// bar line, which is where ABC habitually puts a mid-tune field (#85).
     var pendingUnitNoteLength: (length: Fraction, after: Int)? = nil
 
+    /// A `K:` that moved the key part way through the voice, paired with the number of
+    /// musical events the measure then being written already held.
+    ///
+    /// Consumed exactly as `pendingUnitNoteLength` is, and for the same reason: the change
+    /// belongs to the bar the first note after it falls in, which is this one where music
+    /// follows in the bar and the next where the field was written against the bar line
+    /// (#129).  Unlike the unit note length, this one is engraved — the measure it lands on
+    /// is where the new signature gets drawn.
+    var pendingKey: (key: KeySignature, after: Int)? = nil
+
     init(source: SourceRange, unitNoteLength: Fraction) {
         self.measureSource = source
         self.openingUnitNoteLength = unitNoteLength
@@ -114,6 +124,11 @@ struct VoiceAccumulator {
         pendingUnitNoteLength = (length, musicalEventCount)
     }
 
+    /// Records a `K:` met here, to be carried by whichever measure the next note lands in.
+    mutating func markKeyChange(_ key: KeySignature) {
+        pendingKey = (key, musicalEventCount)
+    }
+
     /// Appends a bar with no music in it, to keep an `&` overlay's measures aligned with the
     /// stave's own.  It draws nothing: the voice underneath owns the staff's furniture.
     mutating func appendEmptyMeasure(source: SourceRange) {
@@ -171,6 +186,7 @@ struct VoiceAccumulator {
             // Nothing was written, so nothing can have followed the change: it still belongs
             // to the measure the next note falls in, counted from that measure's start.
             pendingUnitNoteLength?.after = 0
+            pendingKey?.after = 0
             return
         }
         let src = measureSourceSpan(
@@ -189,6 +205,15 @@ struct VoiceAccumulator {
                 pendingUnitNoteLength = (change.length, 0)
             }
         }
+        var keyTag: KeySignature? = nil
+        if let change = pendingKey {
+            if musicalEventCount > change.after {
+                keyTag = change.key
+                pendingKey = nil
+            } else {
+                pendingKey = (change.key, 0)
+            }
+        }
         let measure = Measure(
             openingBar: lastBarLine,
             events: currentEvents,
@@ -196,6 +221,7 @@ struct VoiceAccumulator {
             endingNumber: endingNumber,
             source: src,
             meter: meterTag,
+            key: keyTag,
             unitNoteLength: effectiveUnitNoteLength
         )
         closedMeasures.append(measure)
@@ -256,9 +282,9 @@ struct VoiceState {
     /// voice it applies to, and so reads a `K:` as belonging to the voice that carries it.
     ///
     /// Only what the voice *opens* in, which is what gets drawn at the head of its staff.  A
-    /// later `K:` moves `accidentals` and leaves this alone: a key change part way through a
-    /// staff is not drawn at all yet, and reporting it here would put the wrong signature at
-    /// the head of the whole voice rather than no signature at the point of change.
+    /// later `K:` leaves this alone and lands on the measure it falls in, as
+    /// `Measure.key` (#129): reporting it here would put the new signature at the head of the
+    /// whole voice rather than at the point of change.
     var openingKey: KeySignature?
 
     /// The `L:` this voice stated before any of its music, or `nil` while the tune's stands.
@@ -334,6 +360,26 @@ struct VoiceState {
     /// and a measure carries one divisor, so there is nowhere finer for it to land — which is
     /// the case ABC itself gives no meaning to, since the durations either side of it would
     /// then be written in different units with nothing marking the seam.
+    /// Moves this voice's key.
+    ///
+    /// Before any music it is what the voice opens in — the signature drawn at the head of
+    /// every one of its staves.  After, it is a change, engraved where it happens: it is
+    /// carried by the measure the first note after it falls in, which is the measure being
+    /// written when the `K:` was met if music follows it in that bar, and the next one where
+    /// the field was written against a bar line.
+    ///
+    /// Either way the accidental scope is re-seeded here and now, because §4.2 scopes a bar's
+    /// written accidentals to the bar and the new key governs every note after this point —
+    /// including the rest of a bar whose signature is not drawn until its start.
+    mutating func setKey(_ key: KeySignature, alterations: [DiatonicStep: Alteration]) {
+        if accumulator.hasMusic {
+            accumulator.markKeyChange(key)
+        } else {
+            openingKey = key
+        }
+        accidentals = AccidentalScope(keyAlterations: alterations)
+    }
+
     mutating func setUnitNoteLength(_ length: Fraction) {
         accumulator.unitNoteLength = length
         if accumulator.hasMusic {
@@ -435,6 +481,7 @@ struct VoiceState {
                 endingNumber: m.endingNumber,
                 source: m.source,
                 meter: m.meter,
+                key: m.key,
                 unitNoteLength: m.unitNoteLength
             )
             offset += count
@@ -761,10 +808,7 @@ struct BodyContext {
     /// affect, which is only meaningful if one voice's does not reach the rest.
     mutating func setKey(_ newKey: KeySignature, in voice: VoiceKey, source: SourceRange) {
         let alterations = keyAlterations(for: newKey)
-        withVoice(voice, source: source) {
-            if !$0.accumulator.hasMusic { $0.openingKey = newKey }
-            $0.accidentals = AccidentalScope(keyAlterations: alterations)
-        }
+        withVoice(voice, source: source) { $0.setKey(newKey, alterations: alterations) }
     }
 
     /// Moves the unit note length for one voice, likewise — at its head as the length the

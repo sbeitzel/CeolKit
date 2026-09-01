@@ -25,7 +25,12 @@ public struct MeasureSizer: Sendable {
     ///     tagged with it, so the passes below can tell the voices of a shared staff apart
     ///     without the layout types growing a second dimension.  A staff with one voice —
     ///     which is every staff but a `( … )` group — passes `0`.
-    public func size(_ measure: Measure, voiceIndex: Int = 0) -> SizedMeasure {
+    ///   - keyChange: The key change engraved before this measure's first note, where
+    ///     ``Measure/key`` says the key moved here (issue #129).  Resolved by the caller,
+    ///     which is the only place that knows the key the staff was in and the clef it
+    ///     carries; the signature's glyphs are reserved for at the head of the bar.
+    public func size(_ measure: Measure, voiceIndex: Int = 0,
+                     keyChange: KeyChange? = nil) -> SizedMeasure {
         let unitNoteLength = measure.unitNoteLength
         // Quarter-note duration expressed in unit-note-length units.
         // e.g. unitNoteLength = 1/8 → quarterInUnits = 2.0
@@ -34,7 +39,7 @@ public struct MeasureSizer: Sendable {
 
         var offsets: [Double] = []
         var graceEventIndices: Set<Int> = []
-        var x: Double = metrics.leftMargin(for: measure)
+        var x: Double = metrics.leftMargin(for: measure, keyChange: keyChange)
         var i = 0
 
         while i < measure.events.count {
@@ -70,7 +75,8 @@ public struct MeasureSizer: Sendable {
 
         return SizedMeasure(measure: measure, naturalWidth: naturalWidth, eventOffsets: offsets,
                             unitNoteLength: unitNoteLength, graceEventIndices: graceEventIndices,
-                            eventVoiceIndices: Array(repeating: voiceIndex, count: offsets.count))
+                            eventVoiceIndices: Array(repeating: voiceIndex, count: offsets.count),
+                            keyChange: keyChange)
     }
 
     /// The next event of the bar that a column runs to.  A column is spaced for the syllable
@@ -85,15 +91,19 @@ public struct MeasureSizer: Sendable {
     /// A staff whose voices all fell silent here but one is not a shared staff for this bar,
     /// and is sized as the single voice it is — which is what makes an aligner-padded voice
     /// contribute nothing at all.  See ``SharedStaffMerger``.
-    public func size(sharedStaff parts: [SharedVoice]) -> SizedMeasure {
+    ///
+    /// `keyChange` is the staff's, not a voice's: §7.3 makes a `K:` belong to the voice that
+    /// wrote it, but one staff carries one signature, and the lead voice is the one whose
+    /// clef and key the staff head already draws.
+    public func size(sharedStaff parts: [SharedVoice], keyChange: KeyChange? = nil) -> SizedMeasure {
         let sounding = parts.filter { !$0.isPadding }
         if let only = sounding.count == 1 ? sounding[0] : nil {
-            return size(only.measure, voiceIndex: only.voiceIndex)
+            return size(only.measure, voiceIndex: only.voiceIndex, keyChange: keyChange)
         }
         return merger.merge(parts.map {
             SharedStaffMerger.VoicePart(measure: $0.measure, voiceIndex: $0.voiceIndex,
                                         isPadding: $0.isPadding)
-        })
+        }, keyChange: keyChange)
     }
 
     /// One voice's contribution to one bar of a shared staff.

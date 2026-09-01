@@ -26,6 +26,12 @@ public struct SizedMeasure: Sendable {
     /// than a property of the measure, and what the opposed stems and per-voice beaming above
     /// this pass read to tell its tenants apart.
     public let eventVoiceIndices: [Int]
+    /// Non-nil where a `K:` moved the key before this measure, resolved against the key the
+    /// staff was in and the clef it carries — everything needed to engrave the change
+    /// (#129). `Measure.key` alone cannot say what to draw: the naturals that cancel the
+    /// outgoing signature depend on the key being left behind, which is not the measure's to
+    /// know.
+    public let keyChange: KeyChange?
 
     public init(
         measure: Measure,
@@ -33,13 +39,15 @@ public struct SizedMeasure: Sendable {
         eventOffsets: [Double],
         unitNoteLength: Fraction = Fraction(numerator: 1, denominator: 8),
         graceEventIndices: Set<Int> = [],
-        eventVoiceIndices: [Int]? = nil
+        eventVoiceIndices: [Int]? = nil,
+        keyChange: KeyChange? = nil
     ) {
         self.measure = measure
         self.naturalWidth = naturalWidth
         self.eventOffsets = eventOffsets
         self.unitNoteLength = unitNoteLength
         self.graceEventIndices = graceEventIndices
+        self.keyChange = keyChange
         // Kept parallel by construction: a caller that says nothing about voices gets the
         // single-voice answer rather than an array the rest of the pipeline has to test.
         self.eventVoiceIndices = eventVoiceIndices
@@ -296,6 +304,10 @@ public struct JustifiedMeasure: Sendable {
     /// ``eventOffsets``.  Justification moves events along the line; it never adds, drops or
     /// reorders one, so the sizer's table is as valid after it as before.
     public var eventVoiceIndices: [Int] { source.eventVoiceIndices }
+
+    /// The key change the sizer resolved for this bar, carried through unchanged:
+    /// justification moves x positions, never what a bar is written in.
+    public var keyChange: KeyChange? { source.keyChange }
 }
 
 // MARK: - Pass 4 output
@@ -591,6 +603,10 @@ public struct ResolvedMeasure: Sendable {
     /// Non-nil when an inline `[M:…]` changed the time signature before this measure.
     /// The emitter draws the corresponding glyph at `origin.x` before the first note.
     public let meter: Meter?
+    /// Non-nil when a `K:` changed the key before this measure. The emitter draws the
+    /// cancelling naturals and the new signature at `origin.x`, ahead of any time signature
+    /// changing in the same bar, in the space ``ColumnMetrics`` reserved for them.
+    public let keyChange: KeyChange?
 
     public init(
         origin: Point,
@@ -599,7 +615,8 @@ public struct ResolvedMeasure: Sendable {
         openingBar: ResolvedBarLine?,
         closingBar: ResolvedBarLine,
         unitNoteLength: Fraction = Fraction(numerator: 1, denominator: 8),
-        meter: Meter? = nil
+        meter: Meter? = nil,
+        keyChange: KeyChange? = nil
     ) {
         self.origin = origin
         self.width = width
@@ -608,6 +625,7 @@ public struct ResolvedMeasure: Sendable {
         self.closingBar = closingBar
         self.unitNoteLength = unitNoteLength
         self.meter = meter
+        self.keyChange = keyChange
     }
 }
 

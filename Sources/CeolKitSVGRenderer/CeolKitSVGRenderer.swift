@@ -99,6 +99,11 @@ public struct SVGRenderer: CeolKitRenderer {
             // boundary is always a system break; a staff plan cannot change mid-system.
             var groups: [SystemGroup] = []
             var headerWidths: [Double] = []
+            // The key each voice is standing in, threaded across the regions: a `%%score` in
+            // the body cuts the tune but does not reset it, so the region after one opens in
+            // whatever key the music before it reached (#134).  Empty until a body `K:` moves
+            // a voice, which leaves the tune's own key standing for everything else.
+            var runningKeys: [VoiceId: KeySignature] = [:]
 
             for region in PlanRegions.segment(tune) {
                 let selection = VoiceSelector.select(from: region.voices, plan: region.plan,
@@ -107,11 +112,12 @@ public struct SVGRenderer: CeolKitRenderer {
                 guard !printedVoices.isEmpty else { continue }
 
                 // §7.3: a voice states its own `K:` where it needs one, and the tune's stands
-                // in where it does not.  Resolved once here — every staff head of the voice
-                // draws the same key.  The unit note length is *not* resolved here: an `L:`
-                // moves it part way through a voice, so it is the measure that carries it
-                // (issue #122).
-                let voiceKeys = printedVoices.map { tune.effectiveKey(for: $0) }
+                // in where it does not.  This is the key the voice *opens* this region in,
+                // not one it holds throughout: a body `K:` moves it, and the staff heads
+                // after that draw the new one (#134), which the column walk below resolves.
+                // The unit note length is not resolved here either — an `L:` moves it part
+                // way through a voice, so it is the measure that carries it (issue #122).
+                let voiceKeys = printedVoices.map { runningKeys[$0.id] ?? tune.effectiveKey(for: $0) }
 
                 // Bring the voices into agreement about how much music each source line
                 // holds, so the break points chosen below are legal for every one of them.
@@ -132,6 +138,10 @@ public struct SVGRenderer: CeolKitRenderer {
                 let voicesByStaff = selection.voicesByStaff
                 var breaks: [ScoreLineBreak?] = []
                 var columnsPerStaff = [[SizedMeasure]](repeating: [], count: voicesByStaff.count)
+                // The same columns as they are drawn when one opens a system: the change moves
+                // up into the staff head there, so the bar reserves no space for it (#134).
+                // Only a column carrying a `K:` differs, and only that one is sized twice.
+                var startColumnsPerStaff = [[SizedMeasure]](repeating: [], count: voicesByStaff.count)
                 // The key each staff is standing in, so a `K:` part way through the tune is
                 // drawn as the change it is — the naturals cancelling the signature being
                 // left behind, then the new one (#129).  It starts at what the staff's head
@@ -139,6 +149,11 @@ public struct SVGRenderer: CeolKitRenderer {
                 // `K:`: one staff carries one signature, and the lead is the voice whose
                 // clef and key the head already reads (§7.3).
                 var staffKeys: [KeySignature?] = voicesByStaff.map { voiceKeys[$0[0]] }
+                // That running value, kept rather than discarded: it is the signature the head
+                // of a system opening at this column has to draw, and it is knowable here —
+                // before anything is packed — because it depends only on the columns before it
+                // and not on how they were broken (#134).
+                var columnKeysPerStaff = [[KeySignature?]](repeating: [], count: voicesByStaff.count)
                 for (si, stave) in alignedStaves.enumerated() {
                     let isLastStave = si == alignedStaves.count - 1
                     for column in 0..<stave.measureCount {
@@ -151,17 +166,27 @@ public struct SVGRenderer: CeolKitRenderer {
                                                       clef: printedVoices[lead].properties.clef)
                                 staffKeys[staffIndex] = newKey
                             }
-                            columnsPerStaff[staffIndex].append(
-                                sizer.size(sharedStaff: members.enumerated().map { position, voice in
-                                    MeasureSizer.SharedVoice(
-                                        measure: stave.measures[voice][column],
-                                        voiceIndex: position,
-                                        isPadding: stave.isPadding(voice: voice, column: column))
-                                }, keyChange: keyChange))
+                            columnKeysPerStaff[staffIndex].append(staffKeys[staffIndex])
+                            let parts = members.enumerated().map { position, voice in
+                                MeasureSizer.SharedVoice(
+                                    measure: stave.measures[voice][column],
+                                    voiceIndex: position,
+                                    isPadding: stave.isPadding(voice: voice, column: column))
+                            }
+                            let sized = sizer.size(sharedStaff: parts, keyChange: keyChange)
+                            columnsPerStaff[staffIndex].append(sized)
+                            startColumnsPerStaff[staffIndex].append(
+                                keyChange == nil ? sized : sizer.size(sharedStaff: parts))
                         }
                     }
                 }
                 guard !breaks.isEmpty else { continue }
+                // Hand the keys this region ended in to the next one.  A staff carries one
+                // signature, so every voice drawn on it leaves in the key its lead does.
+                for (staffIndex, members) in voicesByStaff.enumerated() {
+                    guard let key = staffKeys[staffIndex] else { continue }
+                    for voice in members { runningKeys[printedVoices[voice].id] = key }
+                }
 
                 // Everything below draws one staff at a time, and a shared staff draws the
                 // clef, key and name of the voice written at the top of it — as an engraver
@@ -197,7 +222,9 @@ public struct SVGRenderer: CeolKitRenderer {
                                           laterSystemLabel: laterLabels[staffIndex],
                                           voiceStemDirections: voicesByStaff[staffIndex].map {
                                               printedVoices[$0].properties.stemDirection
-                                          })
+                                          },
+                                          systemStartMeasures: startColumnsPerStaff[staffIndex],
+                                          columnKeys: columnKeysPerStaff[staffIndex])
                 }
                 // Space for the region's braces and brackets, reserved before anything is
                 // packed into the line.  It is added to the header widths rather than taken
@@ -219,27 +246,42 @@ public struct SVGRenderer: CeolKitRenderer {
                 let laterGutter = VoiceLabelGutter(labels: laterLabels, font: labelFont,
                                                    staffSize: tuneConfig.staffSize).width
 
-                // Header widths differ between the first system (has time sig) and later
-                // ones, and are the max across the group: the staves of a system have to
-                // start at the same x even when one voice's clef or key signature is wider.
-                let openingHeaderW = indent + openingGutter + staffLead.reduce(0.0) { widest, voice in
-                    max(widest, systemHeaderWidth(clef: printedVoices[voice].properties.clef,
-                                                  keySignature: voiceKeys[voice],
-                                                  meter: regionMeter, metadata: metadata,
-                                                  staffSize: tuneConfig.staffSize))
+                // The header width of one system: the max across the group, because its staves
+                // have to start at the same x even when one voice's clef or key signature is
+                // wider.  It differs system by system twice over — the region's first carries
+                // the time signature and the full voice names, and a system opening on a `K:`
+                // draws that change rather than a plain signature (#134) — so it is a function
+                // rather than the two flat numbers it used to be.  Written once and asked
+                // twice: of the *columns*, while the breaker is deciding where the systems
+                // fall, and of the systems it decided on, so the justifier spends what the
+                // breaker charged.
+                let headerWidth = { (isOpening: Bool,
+                                     signature: (Int) -> (KeySignature?, KeyChange?)) -> Double in
+                    indent + (isOpening ? openingGutter : laterGutter)
+                        + staffLead.indices.reduce(0.0) { widest, staffIndex in
+                            let (key, change) = signature(staffIndex)
+                            return max(widest, systemHeaderWidth(
+                                clef: printedVoices[staffLead[staffIndex]].properties.clef,
+                                keySignature: key, meter: isOpening ? regionMeter : nil,
+                                metadata: metadata, staffSize: tuneConfig.staffSize,
+                                keyChange: change))
+                        }
                 }
-                let laterHeaderW = indent + laterGutter + staffLead.reduce(0.0) { widest, voice in
-                    max(widest, systemHeaderWidth(clef: printedVoices[voice].properties.clef,
-                                                  keySignature: voiceKeys[voice],
-                                                  meter: nil, metadata: metadata,
-                                                  staffSize: tuneConfig.staffSize))
+                let regionGroups = breaker.breakIntoGroups(
+                    voiceLines, breaks: breaks, usableWidth: usableWidth,
+                    grouping: selection.grouping,
+                    headerWidth: { systemIndex, startColumn in
+                        headerWidth(systemIndex == 0) { staffIndex in
+                            (columnKeysPerStaff[staffIndex][startColumn],
+                             columnsPerStaff[staffIndex][startColumn].keyChange)
+                        }
+                    })
+                headerWidths += regionGroups.enumerated().map { index, group in
+                    headerWidth(index == 0) { staffIndex in
+                        (group.staves[staffIndex].keySignature,
+                         group.staves[staffIndex].headerKeyChange)
+                    }
                 }
-                let regionGroups = breaker.breakIntoGroups(voiceLines, breaks: breaks,
-                                                           usableWidth: usableWidth,
-                                                           firstSystemHeaderWidth: openingHeaderW,
-                                                           laterSystemHeaderWidth: laterHeaderW,
-                                                           grouping: selection.grouping)
-                headerWidths += regionGroups.indices.map { $0 == 0 ? openingHeaderW : laterHeaderW }
                 groups += regionGroups
             }
 
@@ -406,7 +448,8 @@ private extension SystemGroup {
             System(measures: $0.measures, isLastSystem: isLast, sourceForced: $0.sourceForced,
                    staveWasSplit: $0.staveWasSplit, clef: $0.clef,
                    keySignature: $0.keySignature, meter: $0.meter,
-                   voiceLabel: $0.voiceLabel, voiceStemDirections: $0.voiceStemDirections)
+                   voiceLabel: $0.voiceLabel, voiceStemDirections: $0.voiceStemDirections,
+                   headerKeyChange: $0.headerKeyChange)
         }, grouping: grouping)
     }
 }

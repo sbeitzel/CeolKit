@@ -82,6 +82,11 @@ public struct System: Sendable {
     /// case — means that voice asked for nothing, and its position on the staff, then the
     /// document, then the note's own pitch decides (issue #77).
     public let voiceStemDirections: [StemDirection]
+    /// Non-nil when a body `K:` lands on this system's *first* measure, so the head signature
+    /// is the change itself: the naturals cancelling the key being left behind, then the new
+    /// one.  It is drawn there and not again at the head of the bar — the opening measure is
+    /// sized without it for exactly that reason (#134).
+    public let headerKeyChange: KeyChange?
 
     /// What the staff's *first* voice asked for.  That is the whole answer for a staff
     /// carrying one voice, which is every staff until a `%%score` group shares one.
@@ -96,7 +101,8 @@ public struct System: Sendable {
         keySignature: KeySignature? = nil,
         meter: Meter? = nil,
         voiceLabel: String? = nil,
-        voiceStemDirections: [StemDirection] = []
+        voiceStemDirections: [StemDirection] = [],
+        headerKeyChange: KeyChange? = nil
     ) {
         self.measures = measures
         self.isLastSystem = isLastSystem
@@ -107,6 +113,7 @@ public struct System: Sendable {
         self.meter = meter
         self.voiceLabel = voiceLabel
         self.voiceStemDirections = voiceStemDirections
+        self.headerKeyChange = headerKeyChange
     }
 }
 
@@ -259,6 +266,11 @@ public struct JustifiedSystem: Sendable {
     /// Carried through from ``System/voiceStemDirections`` — justification moves x
     /// positions, never which way a voice's stems point.
     public let voiceStemDirections: [StemDirection]
+    /// Non-nil when a body `K:` lands on this system's *first* measure, so the head signature
+    /// is the change itself: the naturals cancelling the key being left behind, then the new
+    /// one.  It is drawn there and not again at the head of the bar — the opening measure is
+    /// sized without it for exactly that reason (#134).
+    public let headerKeyChange: KeyChange?
 
     /// What the staff's first voice asked for; see ``System/stemDirection``.
     public var stemDirection: StemDirection { voiceStemDirections.first ?? .auto }
@@ -271,7 +283,8 @@ public struct JustifiedSystem: Sendable {
         keySignature: KeySignature? = nil,
         meter: Meter? = nil,
         voiceLabel: String? = nil,
-        voiceStemDirections: [StemDirection] = []
+        voiceStemDirections: [StemDirection] = [],
+        headerKeyChange: KeyChange? = nil
     ) {
         self.measures = measures
         self.isLastSystem = isLastSystem
@@ -281,6 +294,7 @@ public struct JustifiedSystem: Sendable {
         self.meter = meter
         self.voiceLabel = voiceLabel
         self.voiceStemDirections = voiceStemDirections
+        self.headerKeyChange = headerKeyChange
     }
 }
 
@@ -548,6 +562,11 @@ public struct ResolvedSystem: Sendable {
     /// The variant-ending brackets drawn above this staff, left to right.  Empty on every
     /// staff of every tune that writes none, which reserves no space for them either.
     public let endingBrackets: [EndingBracket]
+    /// Non-nil when a body `K:` lands on this system's *first* measure, so the head signature
+    /// is the change itself: the naturals cancelling the key being left behind, then the new
+    /// one.  It is drawn there and not again at the head of the bar — the opening measure is
+    /// sized without it for exactly that reason (#134).
+    public let headerKeyChange: KeyChange?
 
     /// What the staff's first voice asked for; see ``System/stemDirection``.
     public var stemDirection: StemDirection { voiceStemDirections.first ?? .auto }
@@ -569,7 +588,8 @@ public struct ResolvedSystem: Sendable {
         staffGroup: StaffGroup? = nil,
         voiceLabel: VoiceLabel? = nil,
         voiceStemDirections: [StemDirection] = [],
-        endingBrackets: [EndingBracket] = []
+        endingBrackets: [EndingBracket] = [],
+        headerKeyChange: KeyChange? = nil
     ) {
         self.origin = origin
         self.measures = measures
@@ -588,6 +608,7 @@ public struct ResolvedSystem: Sendable {
         self.voiceLabel = voiceLabel
         self.voiceStemDirections = voiceStemDirections
         self.endingBrackets = endingBrackets
+        self.headerKeyChange = headerKeyChange
     }
 }
 

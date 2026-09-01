@@ -369,7 +369,7 @@ public struct VerticalLayoutEngine: Sendable {
                 ?? staffSize * 1.2
         }()
         let keySigW = jsystem.keySignature.map {
-            keySignatureWidth(for: $0, metadata: metadata, staffSize: staffSize,
+            keySignatureWidth(for: $0, clef: jsystem.clef, metadata: metadata, staffSize: staffSize,
                               trailingGap: keySigTrailing)
         } ?? 0
         let clefW = clefHeaderWidth(for: jsystem.clef, metadata: metadata, staffSize: staffSize)

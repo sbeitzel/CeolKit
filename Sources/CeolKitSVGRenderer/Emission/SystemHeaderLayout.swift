@@ -65,7 +65,8 @@ func systemHeaderWidth(
         metadata.glyphBBoxes["noteheadBlack"].map { $0.width * staffSize } ?? staffSize * 1.2
     }()
     let keySigW = keySignature.map {
-        keySignatureWidth(for: $0, metadata: metadata, staffSize: staffSize, trailingGap: keySigTrailing)
+        keySignatureWidth(for: $0, clef: clef, metadata: metadata, staffSize: staffSize,
+                          trailingGap: keySigTrailing)
     } ?? 0
     return clefW + keySigW + timeSigW
 }

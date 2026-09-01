@@ -757,11 +757,13 @@ struct SVGEmitter: Sendable {
     // MARK: - Clef
 
     private func emitClef(_ system: ResolvedSystem, builder: inout SVGBuilder) {
-        guard let glyph = clefGlyph(for: system.clef.clef) else { return }
+        guard let glyph = clefGlyph(for: system.clef) else { return }
         let s = config.staffSize
         let bottomStaffY = system.origin.y + system.staffOrigin + system.staffHeight
         let fontSize = 4.0 * s
         let x = system.origin.x + 0.25 * s
+        // The octave numeral hangs off the same origin the plain clef has, so a shifted
+        // clef still names the same staff line and there is nothing extra to place here.
         let y: Double
         switch system.clef.clef {
         case .none:                 return
@@ -788,7 +790,7 @@ struct SVGEmitter: Sendable {
         let bottomStaffY = system.origin.y + system.staffOrigin + system.staffHeight
         let glyphW       = metadata.glyphBBoxes["accidentalSharp"].map { $0.width * s } ?? s * 0.75
         let gap          = s * 0.1
-        let startX       = system.origin.x + clefWidth(for: system.clef.clef)
+        let startX       = system.origin.x + clefWidth(for: system.clef)
 
         for (i, acc) in accs.enumerated() {
             let x = startX + Double(i) * (glyphW + gap)
@@ -805,7 +807,7 @@ struct SVGEmitter: Sendable {
         let keySigW = system.keySignature.map {
             keySignatureWidth(for: $0, metadata: metadata, staffSize: s)
         } ?? 0
-        let startX = system.origin.x + clefWidth(for: system.clef.clef) + keySigW
+        let startX = system.origin.x + clefWidth(for: system.clef) + keySigW
         emitTimeSignatureGlyph(meter, atX: startX, system: system, builder: &builder)
     }
 
@@ -859,29 +861,12 @@ struct SVGEmitter: Sendable {
         }
     }
 
-    /// Width consumed by the clef glyph plus its right-side padding.
-    private func clefWidth(for clef: Clef) -> Double {
-        let name: String
-        switch clef {
-        case .none:                              return 0
-        case .treble:                            name = "gClef"
-        case .bass, .baritone:                  name = "fClef"
-        case .alto, .tenor, .soprano, .mezzoSoprano: name = "cClef"
-        case .percussion:                        name = "unpitchedPercussionClef1"
-        }
-        let glyphWidth = metadata.glyphBBoxes[name].map { $0.width * config.staffSize }
-            ?? (2.8 * config.staffSize)
-        return glyphWidth + 0.5 * config.staffSize
-    }
-
-    private func clefGlyph(for clef: Clef) -> SMuFLGlyph? {
-        switch clef {
-        case .none:                 return nil
-        case .treble:               return .gClef
-        case .bass, .baritone:      return .fClef
-        case .alto, .tenor, .soprano, .mezzoSoprano: return .cClef
-        case .percussion:           return .unpitchedPercussionClef1
-        }
+    /// Width consumed by the clef glyph plus its right-side padding.  Delegates to
+    /// `clefHeaderWidth`, which is the same number the line breaker and the justifier
+    /// reserved — an octave clef (`clef=treble-8`) is wider than its plain form, and the
+    /// key signature drawn after it has to start where the space was actually kept.
+    private func clefWidth(for spec: ClefSpec) -> Double {
+        clefHeaderWidth(for: spec, metadata: metadata, staffSize: config.staffSize)
     }
 
     // MARK: - Measure

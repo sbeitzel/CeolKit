@@ -16,6 +16,13 @@ struct VoiceAccumulator {
     /// The unit note length in force now.  Seeds an `&` layer opened from here, and is what
     /// a further `L:` is measured against.
     var unitNoteLength: Fraction
+    /// The unit note length the measures being closed are counted in — what every closed
+    /// measure is stamped with.
+    ///
+    /// This lags `unitNoteLength` by exactly the deferral `pendingUnitNoteLength` describes:
+    /// an `L:` written against a bar line takes effect at the bar the next note falls in, and
+    /// until that bar closes the measures still being written are in the old unit.
+    var effectiveUnitNoteLength: Fraction
     // Set by VoiceState after a barline when the tune's meter has moved on since this voice
     // last reported it; consumed by the next closeWith to tag that measure for renderers.
     var pendingMeter: Meter? = nil
@@ -31,6 +38,7 @@ struct VoiceAccumulator {
         self.measureSource = source
         self.openingUnitNoteLength = unitNoteLength
         self.unitNoteLength = unitNoteLength
+        self.effectiveUnitNoteLength = unitNoteLength
     }
 
     /// How many staves of this voice are finished — the index of the stave now being
@@ -94,7 +102,8 @@ struct VoiceAccumulator {
             closingBar: BarLine(kind: .single, source: source),
             endingNumber: nil,
             source: source,
-            meter: nil
+            meter: nil,
+            unitNoteLength: effectiveUnitNoteLength
         ))
     }
 
@@ -127,10 +136,9 @@ struct VoiceAccumulator {
         )
         let meterTag = pendingMeter
         pendingMeter = nil
-        var unitTag: Fraction? = nil
         if let change = pendingUnitNoteLength {
             if musicalEventCount > change.after {
-                unitTag = change.length
+                effectiveUnitNoteLength = change.length
                 pendingUnitNoteLength = nil
             } else {
                 pendingUnitNoteLength = (change.length, 0)
@@ -143,7 +151,7 @@ struct VoiceAccumulator {
             endingNumber: endingNumber,
             source: src,
             meter: meterTag,
-            unitNoteLength: unitTag
+            unitNoteLength: effectiveUnitNoteLength
         )
         closedMeasures.append(measure)
         currentEvents = []
@@ -279,6 +287,7 @@ struct VoiceState {
         } else {
             openingUnitNoteLength = length
             accumulator.openingUnitNoteLength = length
+            accumulator.effectiveUnitNoteLength = length
         }
     }
 

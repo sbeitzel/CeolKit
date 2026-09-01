@@ -34,7 +34,8 @@ private func measure(events: [Event]) -> Measure {
         events: events,
         closingBar: dummyBar,
         endingNumber: nil,
-        source: dummyRange
+        source: dummyRange,
+        unitNoteLength: unitNoteLength
     )
 }
 
@@ -51,21 +52,21 @@ private func measure(events: [Event]) -> Measure {
 
     @Test func wholeNoteHasPositiveNaturalWidth() {
         let m = measure(events: [.note(note(duration: Fraction(numerator: 8, denominator: 1)))])
-        let sized = sizer.size(m, unitNoteLength: unitNoteLength)
+        let sized = sizer.size(m)
         #expect(sized.naturalWidth > 0)
     }
 
     @Test func fourQuarterNotesProduceCorrectOffsetCount() {
         let quarter = Fraction(numerator: 2, denominator: 1)
         let events: [Event] = (0..<4).map { _ in .note(note(duration: quarter)) }
-        let sized = sizer.size(measure(events: events), unitNoteLength: unitNoteLength)
+        let sized = sizer.size(measure(events: events))
         #expect(sized.eventOffsets.count == 4)
     }
 
     @Test func quarterNoteOffsetsAreStrictlyIncreasing() {
         let quarter = Fraction(numerator: 2, denominator: 1)
         let events: [Event] = (0..<4).map { _ in .note(note(duration: quarter)) }
-        let sized = sizer.size(measure(events: events), unitNoteLength: unitNoteLength)
+        let sized = sizer.size(measure(events: events))
         for i in 1..<sized.eventOffsets.count {
             #expect(sized.eventOffsets[i] > sized.eventOffsets[i - 1])
         }
@@ -78,7 +79,7 @@ private func measure(events: [Event]) -> Measure {
                        ?? config.staffSize * 1.2
         let quarter = Fraction(numerator: 2, denominator: 1)
         let events: [Event] = [.note(note(duration: quarter))]
-        let sized = sizer.size(measure(events: events), unitNoteLength: unitNoteLength)
+        let sized = sizer.size(measure(events: events))
         #expect(abs(sized.eventOffsets[0] - noteW) < 0.001)
     }
 
@@ -89,8 +90,8 @@ private func measure(events: [Event]) -> Measure {
         let quarterMeasure = measure(events: [.note(note(duration: quarterDur))])
         let wholeMeasure   = measure(events: [.note(note(duration: wholeDur))])
 
-        let quarterSized = sizer.size(quarterMeasure, unitNoteLength: unitNoteLength)
-        let wholeSized   = sizer.size(wholeMeasure,   unitNoteLength: unitNoteLength)
+        let quarterSized = sizer.size(quarterMeasure)
+        let wholeSized   = sizer.size(wholeMeasure)
 
         // Quarter column width = naturalWidth − bar padding; whole column must be wider.
         let barPad = SVGRenderConfig().staffSize * 0.5
@@ -104,8 +105,8 @@ private func measure(events: [Event]) -> Measure {
         let plain  = measure(events: [.note(note(duration: quarter))])
         let sharp  = measure(events: [.note(note(duration: quarter, accidental: .sharp))])
 
-        let plainSized = sizer.size(plain, unitNoteLength: unitNoteLength)
-        let sharpSized = sizer.size(sharp, unitNoteLength: unitNoteLength)
+        let plainSized = sizer.size(plain)
+        let sharpSized = sizer.size(sharp)
 
         #expect(sharpSized.naturalWidth > plainSized.naturalWidth)
     }
@@ -117,7 +118,7 @@ private func measure(events: [Event]) -> Measure {
         let grace = GraceGroup(kind: .appoggiatura, notes: [gNote], source: dummyRange)
         let quarter = Fraction(numerator: 2, denominator: 1)
         let events: [Event] = [.grace(grace), .note(note(duration: quarter))]
-        let sized = sizer.size(measure(events: events), unitNoteLength: unitNoteLength)
+        let sized = sizer.size(measure(events: events))
 
         #expect(sized.eventOffsets.count == 2)
         #expect(sized.eventOffsets[1] > sized.eventOffsets[0])
@@ -141,7 +142,7 @@ private func measure(events: [Event]) -> Measure {
         let grace = GraceGroup(kind: .appoggiatura, notes: [gNote], source: dummyRange)
         let quarter = Fraction(numerator: 2, denominator: 1)
         let events: [Event] = [.grace(grace), .note(note(duration: quarter))]
-        let sized = sizer.size(measure(events: events), unitNoteLength: unitNoteLength)
+        let sized = sizer.size(measure(events: events))
 
         #expect(abs(sized.eventOffsets[1] - expectedNoteOffset) < 0.001)
     }
@@ -156,8 +157,8 @@ private func measure(events: [Event]) -> Measure {
         let pairedMeasure = measure(events: [.grace(grace), .note(note(duration: quarter))])
         let twoNoteMeasure = measure(events: [.note(note(duration: quarter)), .note(note(duration: quarter))])
 
-        let pairedSized   = sizer.size(pairedMeasure,   unitNoteLength: unitNoteLength)
-        let twoNoteSized  = sizer.size(twoNoteMeasure,  unitNoteLength: unitNoteLength)
+        let pairedSized   = sizer.size(pairedMeasure)
+        let twoNoteSized  = sizer.size(twoNoteMeasure)
 
         // Grace+note pair is narrower than two independent notes
         // (grace group is smaller than a full note column).
@@ -208,8 +209,8 @@ private func measure(events: [Event]) -> Measure {
         let wide  = MeasureSizer(config: SVGRenderConfig(graceNoteSpacing: 1.5), metadata: metadata)
         let tight = MeasureSizer(config: SVGRenderConfig(graceNoteSpacing: 1.05), metadata: metadata)
 
-        let wideSized  = wide.size(measure(events: events),  unitNoteLength: unitNoteLength)
-        let tightSized = tight.size(measure(events: events), unitNoteLength: unitNoteLength)
+        let wideSized  = wide.size(measure(events: events))
+        let tightSized = tight.size(measure(events: events))
 
         #expect(tightSized.naturalWidth < wideSized.naturalWidth)
         // The principal note follows the grace group, so it moves left by the same amount.
@@ -302,8 +303,8 @@ private func measure(events: [Event]) -> Measure {
         let natural = measure(events: [.note(note(duration: quarter, accidental: .natural))])
         let dblFlat = measure(events: [.note(note(duration: quarter, accidental: .doubleFlat))])
 
-        let naturalSized = sizer.size(natural, unitNoteLength: unitNoteLength)
-        let dblFlatSized = sizer.size(dblFlat, unitNoteLength: unitNoteLength)
+        let naturalSized = sizer.size(natural)
+        let dblFlatSized = sizer.size(dblFlat)
 
         #expect(dblFlatSized.naturalWidth > naturalSized.naturalWidth)
     }

@@ -1126,7 +1126,9 @@ struct SemanticPass {
                     layers.append((overlay.source, overlayMeasures))
                 }
                 let barsWritten = measures.count
-                diagnostics += reconcileOverlays(&measures, with: &layers, voiceId: voiceId)
+                diagnostics += reconcileOverlays(
+                    &measures, with: &layers, voiceId: voiceId,
+                    unitNoteLength: accumulator.effectiveUnitNoteLength)
                 // An overlay that overran gives the voice bars past the end of its last line.
                 // They are that line's — the source wrote them there — so the boundary
                 // recorded at what used to be the end is no longer a boundary at all.
@@ -1192,7 +1194,8 @@ struct SemanticPass {
     private func reconcileOverlays(
         _ measures: inout [Measure],
         with layers: inout [(source: SourceRange, measures: [Measure])],
-        voiceId: String
+        voiceId: String,
+        unitNoteLength: Fraction
     ) -> [Diagnostic] {
         guard !layers.isEmpty else { return [] }
         var diagnostics: [Diagnostic] = []
@@ -1211,34 +1214,44 @@ struct SemanticPass {
 
         let width = max(measures.count, layers.map(\.measures.count).max() ?? 0)
         let tail = measures.last
-        measures += (measures.count..<width).map { _ in emptyMeasure(after: tail) }
+        let tailUnit = tail?.unitNoteLength ?? unitNoteLength
+        measures += (measures.count..<width).map { _ in
+            emptyMeasure(after: tail, unitNoteLength: tailUnit)
+        }
         for index in layers.indices {
             let source = layers[index].source
+            let layerUnit = layers[index].measures.last?.unitNoteLength ?? unitNoteLength
             layers[index].measures += (layers[index].measures.count..<width).map { _ in
-                emptyMeasure(after: nil, at: source)
+                emptyMeasure(after: nil, unitNoteLength: layerUnit, at: source)
             }
         }
         return diagnostics
     }
 
     /// A bar with no music in it, for a voice or an overlay that has nothing to say here.
-    private func emptyMeasure(after previous: Measure?, at source: SourceRange? = nil) -> Measure {
+    ///
+    /// `unitNoteLength` is the one in force where the bar is being added: the last real
+    /// measure's, or the voice's own where there is no real measure to follow.
+    private func emptyMeasure(after previous: Measure?, unitNoteLength: Fraction,
+                              at source: SourceRange? = nil) -> Measure {
         let src = source ?? previous?.source ?? .emptySourceRange
         return Measure(openingBar: previous?.closingBar,
                        events: [],
                        closingBar: BarLine(kind: .single, source: src),
                        endingNumber: nil,
                        source: src,
-                       meter: nil)
+                       meter: nil,
+                       unitNoteLength: unitNoteLength)
     }
 
     /// Closes a voice out into measures: the last open bar, tie resolution across the whole
     /// voice, and beaming.
     ///
     /// `openingMeter` is the meter the voice's *first* measure is in, not the one the body
-    /// ended in.  Meter and unit note length both move part way through a tune, and both are
-    /// recorded where they move — `Measure.meter`, `Measure.unitNoteLength` — so the beams are
-    /// grouped measure by measure against whatever was in force there (#85).
+    /// ended in.  Meter and unit note length both move part way through a tune, and every
+    /// measure knows which it is in — `Measure.meter` where the meter moved, and
+    /// `Measure.unitNoteLength` always — so the beams are grouped measure by measure against
+    /// whatever was in force there (#85, #122).
     private func finaliseAccumulator(
         _ acc: VoiceAccumulator, openingMeter: Meter
     ) -> ([Measure], [Diagnostic]) {
@@ -1260,6 +1273,12 @@ struct SemanticPass {
                 closingBar: finalBar,
                 fallback: acc.measureSource
             )
+            // An `L:` still pending at the end of the voice lands on this bar exactly where
+            // `closeWith` would have put it: on the bar the music after it fell in.
+            var finalUnit = acc.effectiveUnitNoteLength
+            if let change = acc.pendingUnitNoteLength, acc.musicalEventCount > change.after {
+                finalUnit = change.length
+            }
             let finalMeasure = Measure(
                 openingBar: acc.lastBarLine,
                 events: acc.currentEvents,
@@ -1267,9 +1286,7 @@ struct SemanticPass {
                 endingNumber: nil,
                 source: src,
                 meter: acc.pendingMeter,
-                unitNoteLength: acc.pendingUnitNoteLength.flatMap {
-                    acc.musicalEventCount > $0.after ? $0.length : nil
-                }
+                unitNoteLength: finalUnit
             )
             measures.append(finalMeasure)
         }
@@ -1319,17 +1336,18 @@ struct SemanticPass {
         }
 
         // Beam measure by measure, against the meter and unit note length in force *there*.
-        // Both start at what the voice opened in and move wherever a measure records a change;
-        // a tune that changes neither builds one resolver and uses it throughout.
+        // Both start at what the voice opened in; the meter moves where a measure records a
+        // change and the unit note length wherever a measure differs from the last.  A tune
+        // that changes neither builds one resolver and uses it throughout.
         var currentMeter = openingMeter
         var currentUnit = acc.openingUnitNoteLength
         var resolver = BeamResolver(meter: currentMeter, unitNoteLength: currentUnit)
         var beamResolved: [Measure] = []
         beamResolved.reserveCapacity(resolvedMeasures.count)
         for m in resolvedMeasures {
-            if m.meter != nil || m.unitNoteLength != nil {
+            if m.meter != nil || m.unitNoteLength != currentUnit {
                 currentMeter = m.meter ?? currentMeter
-                currentUnit = m.unitNoteLength ?? currentUnit
+                currentUnit = m.unitNoteLength
                 resolver = BeamResolver(meter: currentMeter, unitNoteLength: currentUnit)
             }
             beamResolved.append(Measure(

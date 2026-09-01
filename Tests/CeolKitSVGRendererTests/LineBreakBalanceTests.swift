@@ -59,7 +59,7 @@ struct LineBreakBalanceTests {
             let isLast = si == voice.staves.count - 1
             for (mi, m) in stave.measures.enumerated() {
                 pairs.append((
-                    measure: sizer.size(m, unitNoteLength: tune.unitNoteLength),
+                    measure: sizer.size(m),
                     breakAfter: (!isLast && mi == stave.measures.count - 1) ? .hard : nil
                 ))
             }

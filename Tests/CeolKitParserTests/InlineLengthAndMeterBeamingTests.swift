@@ -12,6 +12,9 @@ import CeolKitModel
 @Suite("Inline [L:] and [M:] reach the beam resolver")
 struct InlineLengthAndMeterBeamingTests {
 
+    private let quarter = Fraction(numerator: 1, denominator: 4)
+    private let eighth  = Fraction(numerator: 1, denominator: 8)
+
     private func measures(_ abc: String, voice: Int = 0) -> [Measure] {
         let score = CeolKitParser().parse(abc, options: .default).score
         return score.tunes[0].voices[voice].staves.flatMap(\.measures)
@@ -58,10 +61,11 @@ struct InlineLengthAndMeterBeamingTests {
         """)
         try #require(bars.count == 3)
 
-        #expect(bars[0].unitNoteLength == nil)
-        #expect(bars[1].unitNoteLength == Fraction(numerator: 1, denominator: 8))
-        // Not restated: the change carries forward on its own.
-        #expect(bars[2].unitNoteLength == nil)
+        #expect(bars[0].unitNoteLength == quarter)
+        #expect(bars[1].unitNoteLength == eighth)
+        // Not restated: every measure carries the effective value, so the change is simply
+        // still there in the next bar (#122).
+        #expect(bars[2].unitNoteLength == eighth)
         #expect(beams(bars[2]) == [.start, .middle, .middle, .end,
                                    .start, .middle, .middle, .end])
     }
@@ -76,7 +80,9 @@ struct InlineLengthAndMeterBeamingTests {
         [L:1/8] cdef gabc' |
         """)
         try #require(bars.count == 1)
-        #expect(bars[0].unitNoteLength == nil)
+        // Recorded as the measure's own unit either way; what makes it an opening rather
+        // than a change is that `Voice.unitNoteLength` moved with it.
+        #expect(bars[0].unitNoteLength == eighth)
         #expect(beams(bars[0]) == [.start, .middle, .middle, .end,
                                    .start, .middle, .middle, .end])
 
@@ -100,8 +106,8 @@ struct InlineLengthAndMeterBeamingTests {
         C D | E [L:1/8] cdef |
         """)
         try #require(bars.count == 2)
-        #expect(bars[0].unitNoteLength == nil)
-        #expect(bars[1].unitNoteLength == Fraction(numerator: 1, denominator: 8))
+        #expect(bars[0].unitNoteLength == quarter)
+        #expect(bars[1].unitNoteLength == eighth)
     }
 
     @Test("An [L:] written against the bar line governs the bar after it")
@@ -114,8 +120,8 @@ struct InlineLengthAndMeterBeamingTests {
         C D E F [L:1/8] | cdef gabc' |
         """)
         try #require(bars.count == 2)
-        #expect(bars[0].unitNoteLength == nil)
-        #expect(bars[1].unitNoteLength == Fraction(numerator: 1, denominator: 8))
+        #expect(bars[0].unitNoteLength == quarter)
+        #expect(bars[1].unitNoteLength == eighth)
 
         #expect(beams(bars[0]) == [.single, .single, .single, .single])
         #expect(beams(bars[1]) == [.start, .middle, .middle, .end,
@@ -176,8 +182,8 @@ struct InlineLengthAndMeterBeamingTests {
         try #require(one.count == 2)
         try #require(two.count == 2)
 
-        #expect(one[1].unitNoteLength == Fraction(numerator: 1, denominator: 8))
-        #expect(two[1].unitNoteLength == nil)
+        #expect(one[1].unitNoteLength == eighth)
+        #expect(two[1].unitNoteLength == quarter)
         #expect(beams(one[1]) == [.start, .middle, .middle, .end,
                                   .start, .middle, .middle, .end])
         #expect(beams(two[1]) == Array(repeating: .single, count: 8))
@@ -193,7 +199,7 @@ struct InlineLengthAndMeterBeamingTests {
         GAB cBA | GAB d3 |
         """)
         try #require(bars.count == 2)
-        #expect(bars.allSatisfy { $0.unitNoteLength == nil })
+        #expect(bars.allSatisfy { $0.unitNoteLength == eighth })
         #expect(beams(bars[0]) == [.start, .middle, .end, .start, .middle, .end])
         #expect(beams(bars[1]) == [.start, .middle, .end, .single])
     }

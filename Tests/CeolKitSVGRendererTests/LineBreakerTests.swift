@@ -13,7 +13,8 @@ private func sizedMeasure(width: Double) -> SizedMeasure {
         events: [],
         closingBar: dummyBar,
         endingNumber: nil,
-        source: dummyRange
+        source: dummyRange,
+        unitNoteLength: Fraction(numerator: 1, denominator: 8)
     )
     return SizedMeasure(measure: m, naturalWidth: width, eventOffsets: [])
 }

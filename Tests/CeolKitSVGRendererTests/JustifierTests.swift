@@ -14,7 +14,8 @@ private func sizedMeasure(width: Double, offsets: [Double] = [],
         events: [],
         closingBar: dummyBar,
         endingNumber: nil,
-        source: dummyRange
+        source: dummyRange,
+        unitNoteLength: Fraction(numerator: 1, denominator: 8)
     )
     return SizedMeasure(measure: m, naturalWidth: width, eventOffsets: offsets,
                         graceEventIndices: graceEventIndices)
@@ -275,8 +276,9 @@ private let usableWidth: Double = 300
         )
         let m = Measure(openingBar: nil,
                         events: [.grace(grace), .note(principal)],
-                        closingBar: dummyBar, endingNumber: nil, source: dummyRange)
-        let sized = sizer.size(m, unitNoteLength: Fraction(numerator: 1, denominator: 8))
+                        closingBar: dummyBar, endingNumber: nil, source: dummyRange,
+                        unitNoteLength: Fraction(numerator: 1, denominator: 8))
+        let sized = sizer.size(m)
 
         // Grace is the first event (index 0); it must appear in graceEventIndices.
         #expect(sized.graceEventIndices.contains(0))

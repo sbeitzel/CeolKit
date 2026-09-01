@@ -9,7 +9,6 @@ import CeolKitSVGGeometry
 private let config   = SVGRenderConfig()
 private let metadata = try! BravuraMetadata.load()
 private let sizer    = MeasureSizer(config: config, metadata: metadata)
-private let eighth   = Fraction(numerator: 1, denominator: 8)
 
 /// The first bar of every voice of `abc`, in `V:` declaration order.
 private func firstBars(_ abc: String) -> [Measure] {
@@ -17,11 +16,10 @@ private func firstBars(_ abc: String) -> [Measure] {
         .voices.map { $0.staves[0].measures[0] }
 }
 
-private func shared(_ measures: [Measure], padding: Set<Int> = [],
-                    unitNoteLength: Fraction = eighth) -> SizedMeasure {
+private func shared(_ measures: [Measure], padding: Set<Int> = []) -> SizedMeasure {
     sizer.size(sharedStaff: measures.enumerated().map { index, measure in
-        MeasureSizer.SharedVoice(measure: measure, unitNoteLength: unitNoteLength,
-                                 voiceIndex: index, isPadding: padding.contains(index))
+        MeasureSizer.SharedVoice(measure: measure, voiceIndex: index,
+                                 isPadding: padding.contains(index))
     })
 }
 
@@ -58,7 +56,7 @@ struct SharedStaffMergeTests {
             [V:2]CDEFGABc|
             """)
         let merged = shared(bars)
-        let alone  = sizer.size(bars[0], unitNoteLength: eighth)
+        let alone  = sizer.size(bars[0])
 
         #expect(isClose(merged.naturalWidth, alone.naturalWidth))
         #expect(columns(of: merged).count == 8)
@@ -81,7 +79,7 @@ struct SharedStaffMergeTests {
             [V:2]X|
             """)
         let merged = shared(bars, padding: [1])
-        let alone  = sizer.size(bars[0], unitNoteLength: eighth)
+        let alone  = sizer.size(bars[0])
 
         #expect(isClose(merged.naturalWidth, alone.naturalWidth))
         #expect(zip(merged.eventOffsets, alone.eventOffsets).allSatisfy(isClose))
@@ -180,7 +178,7 @@ struct SharedStaffMergeTests {
         let steps = zip(grid.dropFirst(), grid).map(-)
         #expect(steps.allSatisfy { isClose($0, steps[0]) })
         // And the lower voice alone would have used exactly the same grid.
-        let alone = sizer.size(bars[1], unitNoteLength: eighth)
+        let alone = sizer.size(bars[1])
         #expect(zip(grid, alone.eventOffsets).allSatisfy(isClose))
     }
 
@@ -197,12 +195,11 @@ struct SharedStaffMergeTests {
             [V:1]C2D2E2F2|
             [V:2][L:1/4]CDEF|
             """)
+        // Each bar carries the unit note length its own voice is written in (#122):
+        // 1/8 for V:1, 1/4 for V:2.
         let merged = sizer.size(sharedStaff: [
-            MeasureSizer.SharedVoice(measure: bars[0], unitNoteLength: eighth,
-                                     voiceIndex: 0, isPadding: false),
-            MeasureSizer.SharedVoice(measure: bars[1],
-                                     unitNoteLength: Fraction(numerator: 1, denominator: 4),
-                                     voiceIndex: 1, isPadding: false)
+            MeasureSizer.SharedVoice(measure: bars[0], voiceIndex: 0, isPadding: false),
+            MeasureSizer.SharedVoice(measure: bars[1], voiceIndex: 1, isPadding: false)
         ])
         #expect(merged.eventOffsets.count == 8)
         #expect(columns(of: merged).count == 4)
@@ -222,7 +219,7 @@ struct SharedStaffMergeTests {
             [V:2]C2D2|
             """)
         let merged = shared(bars)
-        let alone  = sizer.size(bars[0], unitNoteLength: eighth)
+        let alone  = sizer.size(bars[0])
 
         #expect(!merged.graceEventIndices.isEmpty)
         let graceIndex = try #require(alone.graceEventIndices.min())
@@ -307,7 +304,7 @@ struct SharedStaffMergeTests {
             """)
         for bar in bars {
             let viaShared = shared([bar])
-            let alone     = sizer.size(bar, unitNoteLength: eighth)
+            let alone     = sizer.size(bar)
             #expect(isClose(viaShared.naturalWidth, alone.naturalWidth))
             #expect(zip(viaShared.eventOffsets, alone.eventOffsets).allSatisfy(isClose))
             #expect(viaShared.graceEventIndices == alone.graceEventIndices)

@@ -106,12 +106,12 @@ public struct SVGRenderer: CeolKitRenderer {
                 let printedVoices = selection.voices
                 guard !printedVoices.isEmpty else { continue }
 
-                // §7.3: a voice states its own `K:` and `L:` where it needs them, and the
-                // tune's stand in where it does not.  Resolved once here — every measure of
-                // a voice is sized against the same unit note length, and its staff head
-                // draws the same key.
+                // §7.3: a voice states its own `K:` where it needs one, and the tune's stands
+                // in where it does not.  Resolved once here — every staff head of the voice
+                // draws the same key.  The unit note length is *not* resolved here: an `L:`
+                // moves it part way through a voice, so it is the measure that carries it
+                // (issue #122).
                 let voiceKeys = printedVoices.map { tune.effectiveKey(for: $0) }
-                let voiceUnitLengths = printedVoices.map { tune.effectiveUnitNoteLength(for: $0) }
 
                 // Bring the voices into agreement about how much music each source line
                 // holds, so the break points chosen below are legal for every one of them.
@@ -141,7 +141,6 @@ public struct SVGRenderer: CeolKitRenderer {
                                 sizer.size(sharedStaff: members.enumerated().map { position, voice in
                                     MeasureSizer.SharedVoice(
                                         measure: stave.measures[voice][column],
-                                        unitNoteLength: voiceUnitLengths[voice],
                                         voiceIndex: position,
                                         isPadding: stave.isPadding(voice: voice, column: column))
                                 }))

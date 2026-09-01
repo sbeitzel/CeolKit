@@ -23,15 +23,21 @@ public struct Measure: Sendable {
     /// Non-nil when an inline `[M:…]` field changed the meter before this measure.
     /// A renderer should draw the corresponding time-signature glyph before the first note.
     public let meter: Meter?
-    /// Non-nil when an `L:` field changed the unit note length at this measure, after the
-    /// voice had already begun. `nil` means "whatever was in force at the previous measure",
-    /// which for the first measure of a voice is `Voice.unitNoteLength` — the length the
-    /// voice opened in.
+    /// The unit note length this measure's durations are counted in — always the effective
+    /// value, on every measure, not only where an `L:` moved it.
     ///
-    /// `Event` durations are counted in unit note lengths, so this is what says what those
-    /// counts are worth from here on: it is the divisor beaming is decided against, and the
-    /// one a renderer needs to size a note head.
-    public let unitNoteLength: Fraction?
+    /// `Event.duration` is a multiple of this, so it is the divisor beaming is decided
+    /// against and the one a renderer needs to size a note head, a stem and a flag.
+    ///
+    /// This deliberately does not follow the convention `meter` uses, where non-nil means
+    /// "changed here": a renderer must draw a time signature exactly where the meter changes,
+    /// whereas a unit note length is never drawn, only used as a scale. "Always the effective
+    /// value" is the useful shape for a divisor; "only where it changed" is the useful shape
+    /// for something engraved at the point of change.
+    ///
+    /// "Did it change here?" is still recoverable as `m.unitNoteLength != previous`, with
+    /// `Voice.unitNoteLength` as the comparison for a voice's first measure.
+    public let unitNoteLength: Fraction
 
     public init(
         openingBar: BarLine?,
@@ -40,7 +46,7 @@ public struct Measure: Sendable {
         endingNumber: [Int]?,
         source: SourceRange,
         meter: Meter? = nil,
-        unitNoteLength: Fraction? = nil
+        unitNoteLength: Fraction
     ) {
         self.openingBar = openingBar
         self.events = events

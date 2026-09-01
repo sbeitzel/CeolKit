@@ -64,6 +64,13 @@ enum VoiceAligner {
         // Running measure index across the whole tune, so a diagnostic can name the bar the
         // reader would count to rather than a position within some line.
         var measureOrigin = 0
+        // The unit note length each voice's filler is written in, carried across staves so a
+        // voice that skips a line entirely still pads in the unit it was last in.
+        var fillUnits = voices.map { voice in
+            voice.staves.lazy.flatMap(\.measures).first?.unitNoteLength
+                ?? voice.unitNoteLength
+                ?? Fraction(numerator: 1, denominator: 8)
+        }
 
         for staveIndex in 0..<staveCount {
             let perVoice = voices.map { $0.staves.indices.contains(staveIndex) ? $0.staves[staveIndex].measures : [] }
@@ -74,7 +81,15 @@ enum VoiceAligner {
                 diagnostics.append(diagnostic)
             }
 
-            result.append(AlignedStave(measures: perVoice.map { pad($0, to: width) },
+            // Padding is written in whatever unit note length the voice is in here: the last
+            // real measure's, or — for a stave the voice supplied nothing for — the one it
+            // was in when it last had something to say (issue #122).
+            let padded = perVoice.indices.map { voice -> [Measure] in
+                let unit = perVoice[voice].last?.unitNoteLength ?? fillUnits[voice]
+                fillUnits[voice] = unit
+                return pad(perVoice[voice], to: width, unitNoteLength: unit)
+            }
+            result.append(AlignedStave(measures: padded,
                                        realMeasureCounts: perVoice.map(\.count)))
             measureOrigin += width
         }
@@ -125,7 +140,8 @@ enum VoiceAligner {
     /// The padding borrows the source range of the measure it follows so the padded bars
     /// still point somewhere real in the file; where there is nothing to follow — a voice
     /// that supplied no measures for this line at all — it falls back to the empty range.
-    private static func pad(_ measures: [Measure], to width: Int) -> [Measure] {
+    private static func pad(_ measures: [Measure], to width: Int,
+                            unitNoteLength: Fraction) -> [Measure] {
         guard measures.count < width else { return measures }
         let source = measures.last?.source ?? .emptySourceRange
         let bar = BarLine(kind: .single, source: source)
@@ -133,7 +149,8 @@ enum VoiceAligner {
                         duration: Fraction(numerator: 1, denominator: 1),
                         decorations: [], source: source)
         let filler = Measure(openingBar: bar, events: [.rest(rest)], closingBar: bar,
-                             endingNumber: nil, source: source)
+                             endingNumber: nil, source: source,
+                             unitNoteLength: unitNoteLength)
         return measures + Array(repeating: filler, count: width - measures.count)
     }
 }

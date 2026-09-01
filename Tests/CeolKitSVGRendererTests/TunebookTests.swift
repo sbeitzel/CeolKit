@@ -53,9 +53,8 @@ struct TunebookTests {
         let voice = try #require(score.tunes.first?.voices.first)
         let stave = try #require(voice.staves.first)
         var totalWidth = 0.0
-        let unl = score.tunes.first!.unitNoteLength
         for m in stave.measures {
-            totalWidth += sizer.size(m, unitNoteLength: unl).naturalWidth
+            totalWidth += sizer.size(m).naturalWidth
         }
         let usable = effectiveConfig.pageSize.width - effectiveConfig.margins.left - effectiveConfig.margins.right
         let header = systemHeaderWidth(

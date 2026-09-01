@@ -203,7 +203,8 @@ enum FloatingVoiceSplitter {
         // moves nothing.
         return Measure(openingBar: measure.openingBar, events: events,
                        closingBar: measure.closingBar, endingNumber: measure.endingNumber,
-                       source: measure.source, meter: measure.meter)
+                       source: measure.source, meter: measure.meter,
+                       unitNoteLength: measure.unitNoteLength)
     }
 
     // MARK: - Durations

@@ -23,6 +23,15 @@ public struct Measure: Sendable {
     /// Non-nil when an inline `[M:…]` field changed the meter before this measure.
     /// A renderer should draw the corresponding time-signature glyph before the first note.
     public let meter: Meter?
+    /// Non-nil when an `L:` field changed the unit note length at this measure, after the
+    /// voice had already begun. `nil` means "whatever was in force at the previous measure",
+    /// which for the first measure of a voice is `Voice.unitNoteLength` — the length the
+    /// voice opened in.
+    ///
+    /// `Event` durations are counted in unit note lengths, so this is what says what those
+    /// counts are worth from here on: it is the divisor beaming is decided against, and the
+    /// one a renderer needs to size a note head.
+    public let unitNoteLength: Fraction?
 
     public init(
         openingBar: BarLine?,
@@ -30,7 +39,8 @@ public struct Measure: Sendable {
         closingBar: BarLine,
         endingNumber: [Int]?,
         source: SourceRange,
-        meter: Meter? = nil
+        meter: Meter? = nil,
+        unitNoteLength: Fraction? = nil
     ) {
         self.openingBar = openingBar
         self.events = events
@@ -38,5 +48,6 @@ public struct Measure: Sendable {
         self.endingNumber = endingNumber
         self.source = source
         self.meter = meter
+        self.unitNoteLength = unitNoteLength
     }
 }

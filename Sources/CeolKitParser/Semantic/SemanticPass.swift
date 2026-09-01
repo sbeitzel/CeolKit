@@ -1270,7 +1270,9 @@ struct SemanticPass {
                 staves = [Staff(measures: [], overlays: [])]
             }
 
-            let props = bodyCtx.voiceProperties[voiceId] ?? defaultVoiceProperties()
+            let props = foldingKeyClef(
+                into: bodyCtx.voiceProperties[voiceId] ?? defaultVoiceProperties(),
+                openingKey: state?.openingKey, tuneKey: bodyCtx.key)
             let vid: VoiceId = .named(voiceId)
             let voiceDirs = bodyCtx.voiceDirectives[voiceId] ?? []
             let voice = Voice(
@@ -1288,7 +1290,8 @@ struct SemanticPass {
             // No events at all — return a single empty voice
             voices.append(Voice(
                 id: .named("1"),
-                properties: defaultVoiceProperties(),
+                properties: foldingKeyClef(into: defaultVoiceProperties(),
+                                           openingKey: nil, tuneKey: bodyCtx.key),
                 staves: [Staff(measures: [], overlays: [])],
                 directives: [],
                 source: tuneSource
@@ -1475,6 +1478,42 @@ struct SemanticPass {
             ))
         }
         return (beamResolved, diagnostics)
+    }
+
+    /// Folds a `K:` clef into a voice's properties, so the renderer keeps reading one place.
+    ///
+    /// §4.6 lets `clef=` be written on `K:` as well as on `V:`, and the two have to be
+    /// reconciled somewhere.  The `V:` wins: it names the staff, and the key field's clef is
+    /// the older spelling of the same thing.  Where the voice named no clef, the clef comes
+    /// from the key the voice opens in — its own `K:` — and failing that from the tune's,
+    /// because a clef set on the tune's key holds until something else changes it.
+    ///
+    /// Neither field can say "no clef" — both parsers resolve an absent `clef=` to treble —
+    /// so a stated treble reads here as silence.  Nothing is lost by that: the fallback it
+    /// suppresses can only put treble back.
+    ///
+    /// A `K:` part way through a voice is not considered: `openingKey` is only the key of a
+    /// `K:` that arrives before the voice's first note, and the renderer has one clef per
+    /// voice for the whole tune, so a mid-tune change has nowhere to go yet (#126).
+    private func foldingKeyClef(
+        into props: VoiceProperties,
+        openingKey: KeySignature?,
+        tuneKey: KeySignature
+    ) -> VoiceProperties {
+        let defaultClef = ClefSpec(clef: .treble, octaveShift: 0)
+        guard props.clef == defaultClef else { return props }
+        let candidates = [openingKey?.clef, tuneKey.clef]
+        guard let keyClef = candidates.compactMap({ $0 }).first(where: { $0 != defaultClef })
+        else { return props }
+        return VoiceProperties(
+            clef: keyClef,
+            transposition: props.transposition,
+            staffProperties: props.staffProperties,
+            name: props.name,
+            subname: props.subname,
+            stemDirection: props.stemDirection,
+            middleNote: props.middleNote
+        )
     }
 
     private func defaultVoiceProperties() -> VoiceProperties {

@@ -753,6 +753,19 @@ struct SemanticPass {
                 message: "I:abc-include has no effect as an inline field",
                 source: source
             ))
+        case .instruction(let t):
+            // §4.4: `I:name payload` is the stylesheet directive `%%name payload`.  A `%%`
+            // line interrupting a `\\` continuation is spliced in as one of these, and a
+            // source may write one directly.  The instructions that configure the *parser*
+            // are not stylesheet directives and are handled (or ignored) elsewhere.
+            let value = t.value.trimmingCharacters(in: .whitespaces)
+            let parts = value.split(separator: " ", maxSplits: 1)
+            let name = parts.first.map(String.init) ?? value
+            guard !Self.parserInstructions.contains(name.lowercased()) else { break }
+            applyBodyDirective(
+                name: name, payload: parts.count > 1 ? String(parts[1]) : "",
+                source: source, voice: voice.base, ctx: &ctx, diagnostics: &diagnostics
+            )
         case .unknown(let code, let payload, let src) where String(code) == "%":
             // Body-level directive stored by ABCFileBuilder as .unknown(code:"%", payload:"name payload")
             let parts = payload.split(separator: " ", maxSplits: 1)
@@ -766,6 +779,12 @@ struct SemanticPass {
             break
         }
     }
+
+    /// §4.4 instructions that configure the parser rather than the stylesheet.  They are not
+    /// `%%` directives, so they must not be reported as unsupported ones.
+    private static let parserInstructions: Set<String> = [
+        "abc-version", "abc-charset", "abc-creator", "abc-include", "linebreak", "decoration",
+    ]
 
     private func applyBodyDirective(
         name: String,

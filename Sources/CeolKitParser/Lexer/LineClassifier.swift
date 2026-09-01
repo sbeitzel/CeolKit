@@ -19,8 +19,11 @@ struct LineClassifier {
 
             // §2.2: a backslash continues a music line *through* information fields,
             // comments and stylesheet directives — only the next line of music code joins
-            // it.  Anything else is set aside and emitted after the music line it
-            // interrupted, so a `w:` still lands on the line it belongs to.  Comments are
+            // it.  §6.1.1 has those interrupting lines take effect *at the physical line
+            // break*, which is the whole reason to write a backslash, so each is spliced
+            // into the joined text as its inline equivalent.  A line with no inline form —
+            // `w:` above all — is set aside and emitted after the music line it
+            // interrupted, so it still lands on the line it belongs to.  Comments are
             // dropped, as they are everywhere else.
             if var cont = pendingContinuation {
                 switch line {
@@ -44,7 +47,11 @@ struct LineClassifier {
                     result += cont.deferred
                     pendingContinuation = nil
                 default:
-                    cont.deferred.append(line)
+                    if let inline = Self.inlineEquivalent(of: line) {
+                        cont.text += inline
+                    } else {
+                        cont.deferred.append(line)
+                    }
                     pendingContinuation = cont
                     continue
                 }
@@ -81,6 +88,35 @@ struct LineClassifier {
         }
 
         return joiningContinuedLyrics(result)
+    }
+
+    /// The `[code:payload]` text a line interrupting a `\\` continuation is equivalent to
+    /// (§6.1.1), or `nil` when it has no inline form and must be deferred to the end of the
+    /// joined line instead.
+    private static func inlineEquivalent(of line: LogicalLine) -> String? {
+        switch line {
+        case .informationField(let code, let payload, _):
+            guard inlineLegalFieldCodes.contains(code) else { return nil }
+            return bracketed(code: code, payload: payload)
+        case .directive(let name, let payload, _):
+            // §4.4: the stylesheet directive `%%name payload` is the field `I:name payload`.
+            return bracketed(code: "I", payload: payload.isEmpty ? name : "\(name) \(payload)")
+        default:
+            return nil
+        }
+    }
+
+    /// §4.19: the field codes that may be written inline in a line of music code.  `w:` is
+    /// pointedly not among them.
+    private static let inlineLegalFieldCodes: Set<Character> = [
+        "I", "K", "L", "M", "m", "N", "P", "Q", "R", "r", "s", "U", "V", "W",
+    ]
+
+    private static func bracketed(code: Character, payload: String) -> String? {
+        // An inline field ends at the first `]`, so a payload carrying one has no inline
+        // form at all and the line keeps its deferral rather than being truncated.
+        guard !payload.contains("]") else { return nil }
+        return "[\(code):\(payload)]"
     }
 
     /// Joins a `w:` line that ends in `\\` to the one after it (§2.2).

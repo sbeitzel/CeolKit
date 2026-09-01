@@ -782,7 +782,7 @@ struct SVGEmitter: Sendable {
 
     private func emitKeySignature(_ keySig: KeySignature, system: ResolvedSystem,
                                   builder: inout SVGBuilder) {
-        let accs = keyAccidentals(for: keySig)
+        let accs = keyAccidentals(for: keySig, clef: system.clef)
         guard !accs.isEmpty else { return }
 
         let s            = config.staffSize
@@ -805,7 +805,7 @@ struct SVGEmitter: Sendable {
     private func emitTimeSignature(_ meter: Meter, system: ResolvedSystem, builder: inout SVGBuilder) {
         let s = config.staffSize
         let keySigW = system.keySignature.map {
-            keySignatureWidth(for: $0, metadata: metadata, staffSize: s)
+            keySignatureWidth(for: $0, clef: system.clef, metadata: metadata, staffSize: s)
         } ?? 0
         let startX = system.origin.x + clefWidth(for: system.clef) + keySigW
         emitTimeSignatureGlyph(meter, atX: startX, system: system, builder: &builder)

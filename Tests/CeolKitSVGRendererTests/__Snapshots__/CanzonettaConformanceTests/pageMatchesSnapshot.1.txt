@@ -390,9 +390,9 @@
   <use href="#libertinusSerif-g80" xlink:href="#libertinusSerif-g80" transform="translate(66.084 232.548) scale(0.012 -0.012)"/>
   <use href="#libertinusSerif-g83" xlink:href="#libertinusSerif-g83" transform="translate(72.132 232.548) scale(0.012 -0.012)"/>
   <use href="#bravura-g92" xlink:href="#bravura-g92" transform="translate(97.752 222.6) scale(0.024 -0.024)"/>
-  <use href="#bravura-g535" xlink:href="#bravura-g535" transform="translate(115.788 228.6) scale(0.024 -0.024)"/>
-  <use href="#bravura-g535" xlink:href="#bravura-g535" transform="translate(122.364 219.6) scale(0.024 -0.024)"/>
-  <use href="#bravura-g535" xlink:href="#bravura-g535" transform="translate(128.94 231.6) scale(0.024 -0.024)"/>
+  <use href="#bravura-g535" xlink:href="#bravura-g535" transform="translate(115.788 234.6) scale(0.024 -0.024)"/>
+  <use href="#bravura-g535" xlink:href="#bravura-g535" transform="translate(122.364 225.6) scale(0.024 -0.024)"/>
+  <use href="#bravura-g535" xlink:href="#bravura-g535" transform="translate(128.94 237.6) scale(0.024 -0.024)"/>
   <use href="#bravura-g132" xlink:href="#bravura-g132" transform="translate(138.516 228.6) scale(0.024 -0.024)"/>
   <line x1="159.192" y1="216.6" x2="159.192" y2="240.6" stroke="black" stroke-width="0.96"/>
   <line x1="163.992" y1="216.6" x2="163.992" y2="240.6" stroke="black" stroke-width="3"/>
@@ -763,9 +763,9 @@
   <line x1="63.996" y1="453" x2="576" y2="453" stroke="black" stroke-width="0.78"/>
   <use href="#libertinusSerif-g35" xlink:href="#libertinusSerif-g35" transform="translate(37.284 444.948) scale(0.012 -0.012)"/>
   <use href="#bravura-g92" xlink:href="#bravura-g92" transform="translate(65.496 435) scale(0.024 -0.024)"/>
-  <use href="#bravura-g535" xlink:href="#bravura-g535" transform="translate(83.532 441) scale(0.024 -0.024)"/>
-  <use href="#bravura-g535" xlink:href="#bravura-g535" transform="translate(90.108 432) scale(0.024 -0.024)"/>
-  <use href="#bravura-g535" xlink:href="#bravura-g535" transform="translate(96.684 444) scale(0.024 -0.024)"/>
+  <use href="#bravura-g535" xlink:href="#bravura-g535" transform="translate(83.532 447) scale(0.024 -0.024)"/>
+  <use href="#bravura-g535" xlink:href="#bravura-g535" transform="translate(90.108 438) scale(0.024 -0.024)"/>
+  <use href="#bravura-g535" xlink:href="#bravura-g535" transform="translate(96.684 450) scale(0.024 -0.024)"/>
   <line x1="220.022" y1="429" x2="220.022" y2="453" stroke="black" stroke-width="0.96"/>
   <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(117.42 423) scale(0.024 -0.024)"/>
   <line x1="117.42" y1="423" x2="117.42" y2="444" stroke="black" stroke-width="0.72"/>
@@ -1098,9 +1098,9 @@
   <use href="#libertinusSerif-g19" xlink:href="#libertinusSerif-g19" transform="translate(459.206 646.242) scale(0.013 -0.013)"/>
   <use href="#libertinusSerif-g35" xlink:href="#libertinusSerif-g35" transform="translate(37.284 666.21) scale(0.012 -0.012)"/>
   <use href="#bravura-g92" xlink:href="#bravura-g92" transform="translate(65.496 656.262) scale(0.024 -0.024)"/>
-  <use href="#bravura-g535" xlink:href="#bravura-g535" transform="translate(83.532 662.262) scale(0.024 -0.024)"/>
-  <use href="#bravura-g535" xlink:href="#bravura-g535" transform="translate(90.108 653.262) scale(0.024 -0.024)"/>
-  <use href="#bravura-g535" xlink:href="#bravura-g535" transform="translate(96.684 665.262) scale(0.024 -0.024)"/>
+  <use href="#bravura-g535" xlink:href="#bravura-g535" transform="translate(83.532 668.262) scale(0.024 -0.024)"/>
+  <use href="#bravura-g535" xlink:href="#bravura-g535" transform="translate(90.108 659.262) scale(0.024 -0.024)"/>
+  <use href="#bravura-g535" xlink:href="#bravura-g535" transform="translate(96.684 671.262) scale(0.024 -0.024)"/>
   <line x1="194.178" y1="650.262" x2="194.178" y2="674.262" stroke="black" stroke-width="0.96"/>
   <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(117.42 656.262) scale(0.024 -0.024)"/>
   <use href="#bravura-g535" xlink:href="#bravura-g535" transform="translate(111.276 656.262) scale(0.024 -0.024)"/>

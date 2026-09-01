@@ -187,8 +187,8 @@
   <use href="#libertinusSerif-g80" xlink:href="#libertinusSerif-g80" transform="translate(64.86 150.948) scale(0.012 -0.012)"/>
   <use href="#libertinusSerif-g42" xlink:href="#libertinusSerif-g42" transform="translate(73.908 150.948) scale(0.012 -0.012)"/>
   <use href="#bravura-g92" xlink:href="#bravura-g92" transform="translate(84.972 141) scale(0.024 -0.024)"/>
-  <use href="#bravura-g535" xlink:href="#bravura-g535" transform="translate(103.008 147) scale(0.024 -0.024)"/>
-  <use href="#bravura-g535" xlink:href="#bravura-g535" transform="translate(109.584 138) scale(0.024 -0.024)"/>
+  <use href="#bravura-g535" xlink:href="#bravura-g535" transform="translate(103.008 153) scale(0.024 -0.024)"/>
+  <use href="#bravura-g535" xlink:href="#bravura-g535" transform="translate(109.584 144) scale(0.024 -0.024)"/>
   <use href="#bravura-g132" xlink:href="#bravura-g132" transform="translate(119.16 147) scale(0.024 -0.024)"/>
   <line x1="252.279" y1="135" x2="252.279" y2="159" stroke="black" stroke-width="0.96"/>
   <use href="#bravura-g994" xlink:href="#bravura-g994" transform="translate(146.916 141) scale(0.024 -0.024)"/>
@@ -286,8 +286,8 @@
   <use href="#libertinusSerif-g15" xlink:href="#libertinusSerif-g15" transform="translate(43.164 258.948) scale(0.012 -0.012)"/>
   <use href="#libertinusSerif-g42" xlink:href="#libertinusSerif-g42" transform="translate(45.804 258.948) scale(0.012 -0.012)"/>
   <use href="#bravura-g92" xlink:href="#bravura-g92" transform="translate(56.868 249) scale(0.024 -0.024)"/>
-  <use href="#bravura-g535" xlink:href="#bravura-g535" transform="translate(74.904 255) scale(0.024 -0.024)"/>
-  <use href="#bravura-g535" xlink:href="#bravura-g535" transform="translate(81.48 246) scale(0.024 -0.024)"/>
+  <use href="#bravura-g535" xlink:href="#bravura-g535" transform="translate(74.904 261) scale(0.024 -0.024)"/>
+  <use href="#bravura-g535" xlink:href="#bravura-g535" transform="translate(81.48 252) scale(0.024 -0.024)"/>
   <line x1="153.216" y1="243" x2="153.216" y2="267" stroke="black" stroke-width="0.96"/>
   <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(102.216 249) scale(0.024 -0.024)"/>
   <line x1="109.296" y1="228" x2="109.296" y2="249" stroke="black" stroke-width="0.72"/>

@@ -177,6 +177,15 @@ struct TupletState {
     let r: Int
     let source: SourceRange
     var events: [Event] = []
+
+    /// How many of the collected events are music.  A space inside a tuplet breaks a beam;
+    /// it is not one of the `r` notes the tuplet is counting off.
+    var musicalEventCount: Int {
+        events.reduce(into: 0) { count, event in
+            if case .spacer = event { return }
+            count += 1
+        }
+    }
 }
 
 // MARK: - VoiceState
@@ -260,7 +269,7 @@ struct VoiceState {
         }
         if tuplet != nil {
             tuplet!.events.append(event)
-            if tuplet!.events.count >= tuplet!.r {
+            if tuplet!.musicalEventCount >= tuplet!.r {
                 flushTuplet()
             }
             return
@@ -324,12 +333,33 @@ struct VoiceState {
         tuplet = TupletState(p: p, q: q, r: r, source: source)
     }
 
-    mutating func flushTuplet() {
-        guard let open = tuplet else { return }
-        let adjustedEvents = open.events.map { applyTupletFactor(q: open.q, p: open.p, to: $0) }
-        let t = Tuplet(p: open.p, q: open.q, r: open.r, events: adjustedEvents, source: open.source)
+    /// Closes the open tuplet, if any, and writes it into the measure being written.
+    ///
+    /// Returns the state it closed when the tuplet was *abandoned* — short of the `r` events
+    /// it asked for, because a bar line, the end of a line or a second `(` reached it first —
+    /// and `nil` when there was nothing open or the tuplet was complete.  What comes back is
+    /// a warning waiting to be written: the caller has the diagnostics list, this does not.
+    ///
+    /// An abandoned tuplet keeps the notes it did collect, as a tuplet of the length actually
+    /// written (#86).  Dropping them loses music the author wrote; emitting them outside a
+    /// tuplet loses the duration scaling the source asked for.
+    @discardableResult
+    mutating func flushTuplet() -> TupletState? {
+        guard let open = tuplet else { return nil }
         tuplet = nil
+        // A tuplet abandoned at a bar line or a line end ends on the space before it, and that
+        // space separates the tuplet from what follows rather than sitting inside it.
+        var events = open.events
+        while let last = events.last, case .spacer = last { events.removeLast() }
+        let count = open.musicalEventCount
+        guard count > 0 else { return open }  // `(3` with nothing after it: nothing to keep
+        let adjustedEvents = events.map { applyTupletFactor(q: open.q, p: open.p, to: $0) }
+        // `p` and `q` say what the source asked for and stand as written; only `r`, which
+        // counts the notes the tuplet spans, moves to what is actually there.
+        let t = Tuplet(p: open.p, q: open.q, r: min(open.r, count), events: adjustedEvents,
+                       source: open.source)
         accumulator.currentEvents.append(.tuplet(t))
+        return count < open.r ? open : nil
     }
 
     // MARK: Lyrics
@@ -789,6 +819,24 @@ struct BodyContext {
     }
 
     func isInTuplet(_ voice: VoiceKey) -> Bool { voices[voice]?.tuplet != nil }
+
+    /// Closes `voice`'s open tuplet, returning it when it was abandoned short of its `r`
+    /// events — see ``VoiceState/flushTuplet()``.
+    @discardableResult
+    mutating func flushTuplet(in voice: VoiceKey) -> TupletState? {
+        voices[voice]?.flushTuplet() ?? nil
+    }
+
+    /// Closes every voice's open tuplet, and returns those that were abandoned short.
+    ///
+    /// A line can leave a tuplet open in a voice the cursor has since left — an inline `[V:]`
+    /// moves the cursor and the tuplet stays where it was written — so the end of a line has
+    /// to sweep every voice rather than just the one being written.
+    mutating func flushOpenTuplets() -> [TupletState] {
+        voices.keys
+            .sorted { ($0.base, $0.overlay) < ($1.base, $1.overlay) }
+            .compactMap { flushTuplet(in: $0) }
+    }
 
     mutating func applyLyrics(_ tokens: [LyricToken], in voice: VoiceKey) {
         // No state means no music line to align against — nothing to do.

@@ -38,6 +38,11 @@ public enum DiagnosticCode: String, Codable, Sendable {
     case constructOutOfOrder
     case reservedCharacter
     case danglingTie
+    /// A tuplet ended before the `r` notes it asked for — at a bar line, at the end of a
+    /// line, or because a second tuplet started inside it.  The notes it did collect are kept,
+    /// as a tuplet of the length actually written, so the duration scaling the source asked
+    /// for still applies to them.
+    case incompleteTuplet
     /// Two voices of the same tune disagree about how much music a source line holds,
     /// so the staves of a system cannot be aligned from the source alone.  The renderer
     /// pads the short voice with invisible full-measure rests and carries on.

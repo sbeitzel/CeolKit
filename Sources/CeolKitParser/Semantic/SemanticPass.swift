@@ -374,6 +374,26 @@ struct SemanticPass {
         if ctx.isInGrace(voice) {
             ctx.flushGrace(in: voice)
         }
+        // A tuplet does not run past the end of the line that opened it: whatever it collected
+        // is written here rather than left hanging, where the next line would drop it (#86).
+        for abandoned in ctx.flushOpenTuplets() {
+            diagnostics.append(incompleteTuplet(abandoned))
+        }
+    }
+
+    /// The warning for a tuplet that ended before the `r` notes it asked for.
+    private func incompleteTuplet(_ open: TupletState) -> Diagnostic {
+        let kept = open.musicalEventCount
+        return Diagnostic(
+            severity: .warning, code: .incompleteTuplet,
+            message: "this tuplet asks for \(open.r) notes but "
+                   + (kept == 0 ? "none follow it" : "only \(kept) follow it"),
+            source: open.source,
+            hint: kept == 0
+                ? "a tuplet's notes follow it directly; nothing was collected here, so nothing "
+                + "is drawn for it."
+                : "the \(kept) note\(kept == 1 ? "" : "s") written are kept, as a tuplet of "
+                + "\(kept).")
     }
 
     /// Moves the cursor into the temporary voice a run of `bars` `&`s opens (§7.4).
@@ -392,6 +412,9 @@ struct SemanticPass {
     ) {
         // Whatever the layer being left holds open is finished before the clock moves.
         if ctx.isInGrace(voice) { ctx.flushGrace(source: source, in: voice) }
+        if let abandoned = ctx.flushTuplet(in: voice) {
+            diagnostics.append(incompleteTuplet(abandoned))
+        }
 
         let primary = ctx.voice(voice.primary)?.accumulator
         let closed = primary?.closedMeasures.count ?? 0
@@ -435,6 +458,11 @@ struct SemanticPass {
             ctx.emit(.rest(rest), in: voice)
 
         case .barLine(let kind, let src):
+            // A tuplet does not span a bar line, so one still open here is short of what it
+            // asked for; it is written into the bar being closed rather than lost with it (#86).
+            if let abandoned = ctx.flushTuplet(in: voice) {
+                diagnostics.append(incompleteTuplet(abandoned))
+            }
             // Closes this bar for every `&` layer standing in it, not just the current one:
             // the bar line is the staff's, and §7.4 overlays share the bar it ends.
             ctx.closeBar(barLine: BarLine(kind: kind, source: src), in: voice)
@@ -469,6 +497,11 @@ struct SemanticPass {
             ctx.setPendingChordSymbol(parseChordSymbol(s, source: src), in: voice, source: src)
 
         case .tupletStart(let p, let q, let r, let src):
+            // Tuplets do not nest: a second one closes the first, which keeps what the first
+            // had collected instead of clobbering it (#86).
+            if let abandoned = ctx.flushTuplet(in: voice) {
+                diagnostics.append(incompleteTuplet(abandoned))
+            }
             let resolvedQ = q ?? defaultQ(p: p, meter: ctx.meter)
             let resolvedR = r ?? p
             ctx.startTuplet(p: p, q: resolvedQ, r: resolvedR, source: src, in: voice)

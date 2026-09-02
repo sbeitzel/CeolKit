@@ -50,12 +50,18 @@ func clefHeaderWidth(for spec: ClefSpec, metadata: BravuraMetadata, staffSize: D
 ///
 /// Mirrors the `startWidth` calculation in `VerticalLayoutEngine` so that the
 /// `LineBreaker` and `Justifier` can account for it when packing and stretching measures.
+///
+/// - Parameter keyChange: Non-nil where a body `K:` lands on the system's first measure and
+///   the head therefore draws the *change* — cancelling naturals included — rather than the
+///   plain signature (#134).  It supersedes `keySignature`, which is the key the change
+///   arrives at and so would draw only half of it.
 func systemHeaderWidth(
     clef: ClefSpec,
     keySignature: KeySignature?,
     meter: Meter?,
     metadata: BravuraMetadata,
-    staffSize: Double
+    staffSize: Double,
+    keyChange: KeyChange? = nil
 ) -> Double {
     let clefW    = clefHeaderWidth(for: clef, metadata: metadata, staffSize: staffSize)
     let timeSigW = meter.map { timeSignatureWidth(for: $0, metadata: metadata, staffSize: staffSize) } ?? 0
@@ -64,9 +70,25 @@ func systemHeaderWidth(
     let keySigTrailing: Double? = timeSigW > 0 ? nil : {
         metadata.glyphBBoxes["noteheadBlack"].map { $0.width * staffSize } ?? staffSize * 1.2
     }()
-    let keySigW = keySignature.map {
-        keySignatureWidth(for: $0, clef: clef, metadata: metadata, staffSize: staffSize,
-                          trailingGap: keySigTrailing)
-    } ?? 0
+    let keySigW = headerKeySignatureWidth(keySignature: keySignature, keyChange: keyChange,
+                                          clef: clef, metadata: metadata, staffSize: staffSize,
+                                          trailingGap: keySigTrailing)
     return clefW + keySigW + timeSigW
+}
+
+/// The width of the key signature run a staff head draws — the change where one lands on the
+/// system's first measure, the plain signature otherwise, and zero where the staff carries
+/// neither.  One function so the breaker, the justifier, the layout engine and the emitter
+/// cannot disagree about how much space the head's accidentals take.
+func headerKeySignatureWidth(keySignature: KeySignature?, keyChange: KeyChange?,
+                             clef: ClefSpec, metadata: BravuraMetadata, staffSize: Double,
+                             trailingGap: Double? = nil) -> Double {
+    if let change = keyChange {
+        return keyChangeWidth(for: change, metadata: metadata, staffSize: staffSize,
+                              trailingGap: trailingGap)
+    }
+    return keySignature.map {
+        keySignatureWidth(for: $0, clef: clef, metadata: metadata, staffSize: staffSize,
+                          trailingGap: trailingGap)
+    } ?? 0
 }

@@ -89,7 +89,8 @@ public struct VerticalLayoutEngine: Sendable {
                 abcLine: abcLine,
                 endingBrackets: EndingBracketBand.place(
                     runs, over: measures, bandTopY: systemOrigin.y,
-                    staffSize: config.staffSize, metadata: metadata)
+                    staffSize: config.staffSize, metadata: metadata),
+                headerKeyChange: jsystem.headerKeyChange
             ))
 
             y += totalHeight + config.systemGap
@@ -334,7 +335,8 @@ public struct VerticalLayoutEngine: Sendable {
                 voiceStemDirections: staff.voiceStemDirections,
                 endingBrackets: EndingBracketBand.place(
                     endingRuns[i], over: measures, bandTopY: systemOrigin.y,
-                    staffSize: staffSize, metadata: metadata)
+                    staffSize: staffSize, metadata: metadata),
+                headerKeyChange: staff.headerKeyChange
             )
         }
     }
@@ -368,10 +370,10 @@ public struct VerticalLayoutEngine: Sendable {
             metadata.glyphBBoxes["noteheadBlack"].map { $0.width * staffSize }
                 ?? staffSize * 1.2
         }()
-        let keySigW = jsystem.keySignature.map {
-            keySignatureWidth(for: $0, clef: jsystem.clef, metadata: metadata, staffSize: staffSize,
-                              trailingGap: keySigTrailing)
-        } ?? 0
+        let keySigW = headerKeySignatureWidth(keySignature: jsystem.keySignature,
+                                              keyChange: jsystem.headerKeyChange,
+                                              clef: jsystem.clef, metadata: metadata,
+                                              staffSize: staffSize, trailingGap: keySigTrailing)
         let clefW = clefHeaderWidth(for: jsystem.clef, metadata: metadata, staffSize: staffSize)
         return clefW + keySigW + timeSigW
     }

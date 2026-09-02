@@ -379,9 +379,7 @@ struct SVGEmitter: Sendable {
         emitEndingBrackets(system, builder: &builder)
         emitVoiceLabel(system, builder: &builder)
         emitClef(system, builder: &builder)
-        if let keySig = system.keySignature {
-            emitKeySignature(keySig, system: system, builder: &builder)
-        }
+        emitKeySignature(system: system, builder: &builder)
         if let meter = system.meter {
             emitTimeSignature(meter, system: system, builder: &builder)
         }
@@ -783,9 +781,19 @@ struct SVGEmitter: Sendable {
 
     // MARK: - Key signature
 
-    private func emitKeySignature(_ keySig: KeySignature, system: ResolvedSystem,
-                                  builder: inout SVGBuilder) {
-        emitKeyAccidentals(keyAccidentals(for: keySig, clef: system.clef),
+    /// Draws the staff head's key signature: the *change* where a body `K:` lands on this
+    /// system's first measure — cancelling naturals and all, drawn here and not again in the
+    /// bar (#134) — and the plain signature on every other system.
+    private func emitKeySignature(system: ResolvedSystem, builder: inout SVGBuilder) {
+        let accidentals: [KeyAccidental]
+        if let change = system.headerKeyChange {
+            accidentals = keyChangeAccidentals(for: change)
+        } else if let keySig = system.keySignature {
+            accidentals = keyAccidentals(for: keySig, clef: system.clef)
+        } else {
+            return
+        }
+        emitKeyAccidentals(accidentals,
                            atX: system.origin.x + clefWidth(for: system.clef),
                            system: system, builder: &builder)
     }
@@ -814,9 +822,9 @@ struct SVGEmitter: Sendable {
 
     private func emitTimeSignature(_ meter: Meter, system: ResolvedSystem, builder: inout SVGBuilder) {
         let s = config.staffSize
-        let keySigW = system.keySignature.map {
-            keySignatureWidth(for: $0, clef: system.clef, metadata: metadata, staffSize: s)
-        } ?? 0
+        let keySigW = headerKeySignatureWidth(keySignature: system.keySignature,
+                                              keyChange: system.headerKeyChange,
+                                              clef: system.clef, metadata: metadata, staffSize: s)
         let startX = system.origin.x + clefWidth(for: system.clef) + keySigW
         emitTimeSignatureGlyph(meter, atX: startX, system: system, builder: &builder)
     }

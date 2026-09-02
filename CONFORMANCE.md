@@ -114,6 +114,21 @@ conforming; §4.1 says the name is *"printed on the left of the first staff of t
 question"* and says nothing about what to do when two voices claim the same staff. CeolKit's
 gutter reserves one line per staff, which is the choice this follows from.
 
+### The head of every system draws the key that system opens in
+
+§7.3 says a `K:` in the tune body changes the key from that point on, and says nothing about
+what the *next* staff head draws. Every engraving convention repeats the key signature at the
+head of every system, so CeolKit does — and repeats the key in force where that system starts,
+not the one the voice was declared in. A tune that changes key half way through therefore
+carries the new signature at the head of every system after the change, as printed music does.
+
+Where a system opens *on* the bar the change lands in, the head is the change itself: the
+naturals cancelling the outgoing signature, then the incoming one's accidentals. It is drawn
+there and not again at the head of the bar, so the change is engraved once.
+
+A time signature is not treated this way, and deliberately: `M:` is drawn where the meter
+moves and never repeated at a line break, which is also standard practice.
+
 ### Everything about a floating voice
 
 The standard names the outcome — each note on the staff above or the staff below — and gives

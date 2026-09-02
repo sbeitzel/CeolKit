@@ -71,6 +71,7 @@ struct SemanticPass {
                     userSymbols: tune.userSymbols,
                     macros: tune.macros,
                     directives: preambleCeolKitDirectives + tune.directives,
+                    staffPlans: initialStaffPlans(from: preambleCeolKitDirectives) + tune.staffPlans,
                     source: tune.source
                 ))
             } else {
@@ -135,6 +136,7 @@ struct SemanticPass {
         name == "landscape" || name == "flatbeams" || name == "writefields"
             || name == "dateformat" || name == "footer"
             || name == "straightflags" || name == "graceslurs"
+            || name == "score" || name == "staves"
     }
 
     // MARK: - Tune builder
@@ -189,8 +191,8 @@ struct SemanticPass {
             meter: meter,
             key: key,
             userSymbols: ctx.userSymbols,
-            macros: ctx.macros,
             headerVoices: ctx.headerVoices,
+            headerVoiceOrder: ctx.headerVoiceOrder,
             linebreakChars: ctx.linebreakChars,
             linebreakOnEOL: ctx.linebreakOnEOL
         )
@@ -215,6 +217,7 @@ struct SemanticPass {
             userSymbols: ctx.userSymbols,
             macros: ctx.macros,
             directives: tuneDirectives + bodyCtx.bodyTuneDirectives,
+            staffPlans: initialStaffPlans(from: tuneDirectives) + bodyCtx.bodyStaffPlans,
             source: abcTune.source
         )
         return (tune, diagnostics)
@@ -235,7 +238,10 @@ struct SemanticPass {
         case .unitNoteLength(let f, _): ctx.unitNoteLength = f
         case .tempo(let t, _):          ctx.tempo = t
         case .parts(let p):             ctx.parts = p
-        case .voice(let id, let props, _): ctx.headerVoices[id] = props
+        case .voice(let id, let props, _):
+            if ctx.headerVoices.updateValue(props, forKey: id) == nil {
+                ctx.headerVoiceOrder.append(id)
+            }
         case .userSymbol(let ch, let d, _): ctx.userSymbols[ch] = d
         case .macro(let pat, let exp, let src):
             ctx.macros.append(MacroDefinition(pattern: pat, expansion: exp, source: src))
@@ -285,126 +291,306 @@ struct SemanticPass {
         ctx: inout BodyContext,
         diagnostics: inout [Diagnostic]
     ) {
-        for line in body {
+        // The one cursor in the pass, threaded from here down.  It is a parameter rather than
+        // a field on BodyContext so nothing can read "the current voice" implicitly.
+        var voice = ctx.initialVoice
+        // Where each line-set ends, worked out ahead of the walk because it takes the *next*
+        // line to know: a system ends where the source starts writing a voice it has already
+        // written here.  Under `I:linebreak <none>` or `$` alone the end of a line is not a
+        // break at all, and only an explicit `$`/`!` splits a stave.
+        let lineSetEnds = ctx.linebreakOnEOL
+            ? lineSetBoundaries(body, initialVoice: ctx.initialVoice)
+            : []
+        for (index, line) in body.enumerated() {
             // Check if this is a single-field lyric line
-            if line.count == 1, case .inlineField(let f, _) = line[0], case .lyric(let tokens, _) = f {
-                ctx.applyLyrics(tokens)
+            if isLyricLine(line), case .inlineField(let f, _) = line[0], case .lyric(let tokens, _) = f {
+                // §7.4: "disregarding any overlay in the accompanying music code" — the
+                // syllables belong to the voice, not to whichever `&` layer the line above
+                // left the cursor standing in.
+                ctx.applyLyrics(tokens, in: voice.primary)
                 continue
             }
-            // Record lyric anchor before processing this music line
-            for id in ctx.voiceOrder {
-                ctx.lyricMeasureAnchor[id] = ctx.voiceData[id]?.closedMeasures.count ?? 0
+            // A line beginning `&` overlays the line above it, so it takes neither a stave of
+            // its own nor a lyric anchor of its own: §7.4 matches `w:` to the notes
+            // "disregarding any overlay in the accompanying music code", and the notes it
+            // means are the ones above.  The cursor stays where that line left it too, so
+            // this line's leading `&` opens the *next* layer over the same music: three parts
+            // written as three lines and three parts written on one line with two `&`s are
+            // the same tune.
+            if !continuesOverlay(line) {
+                ctx.recordLyricAnchors()
+                // An ordinary line opens in the voice itself: an `&` layer lives to the end
+                // of the line that opened it, and the next line's first `&` reopens layer one.
+                voice = voice.primary
             }
-            ctx.lyricMeasureAnchor[ctx.currentVoiceId] =
-                ctx.voiceData[ctx.currentVoiceId]?.closedMeasures.count ?? 0
-            walkLine(line, ctx: &ctx, diagnostics: &diagnostics)
-            if ctx.linebreakOnEOL {
-                ctx.splitCurrentStave()
+            walkLine(line, voice: &voice, ctx: &ctx, diagnostics: &diagnostics)
+            if lineSetEnds.contains(index) { ctx.closeLineSet() }
+        }
+    }
+
+    /// The body lines each line-set ends at.
+    ///
+    /// A line-set is what the source lays out as one system, and the parser is handed a flat
+    /// stream of lines with no marker between them.  What identifies one is the voices: a run
+    /// of lines in which each voice appears once, ending as soon as a line writes to a voice
+    /// the run already holds.  A source that writes each voice as a whole block instead falls
+    /// out of the same rule — every one of its lines is a line-set of its own, which is what
+    /// keeps each voice counting its own staves from zero.
+    ///
+    /// The boundary is reported against the last line that *wrote* something, not the line
+    /// that begins the next set, so the `V:` and `%%score` lines introducing a system are
+    /// walked on its far side — a plan written there governs from the stave it stands above.
+    private func lineSetBoundaries(_ body: [[MusicElement]], initialVoice: VoiceKey) -> Set<Int> {
+        var boundaries: Set<Int> = []
+        var current = initialVoice.base
+        var written: Set<String> = []
+        var lastContentLine: Int? = nil
+
+        for (index, line) in body.enumerated() {
+            if isLyricLine(line) { continue }
+            // An `&` continuation belongs to the line above it, so it neither opens a set nor
+            // may be cut away from the music it overlays.
+            if continuesOverlay(line) {
+                lastContentLine = index
+                continue
+            }
+            var voicesWritten: Set<String> = []
+            for element in line {
+                switch element {
+                case .inlineField(let field, _):
+                    if case .voice(let id, _, _) = field { current = id }
+                case .space, .voiceOverlay, .unknown:
+                    continue
+                default:
+                    voicesWritten.insert(current)
+                }
+            }
+            guard !voicesWritten.isEmpty else { continue }
+            if !voicesWritten.isDisjoint(with: written), let end = lastContentLine {
+                boundaries.insert(end)
+                written = []
+            }
+            written.formUnion(voicesWritten)
+            lastContentLine = index
+        }
+        // The body ends the line-set it is in, at the last line that wrote anything: a
+        // `%%score` trailing the music governs from the stave after it, not from the last one
+        // written.
+        if let end = lastContentLine { boundaries.insert(end) }
+        return boundaries
+    }
+
+    /// Whether `line` is a lyric line — a `w:` on its own, which belongs to the music above
+    /// it and is neither music nor a line-set of its own.
+    private func isLyricLine(_ line: [MusicElement]) -> Bool {
+        guard line.count == 1, case .inlineField(let field, _) = line[0],
+              case .lyric = field else { return false }
+        return true
+    }
+
+    /// Whether `line` is the continuation of the one before it — an `&` overlay written on
+    /// its own source line, which shares a stave and a lyric anchor with what it overlays.
+    private func continuesOverlay(_ line: [MusicElement]) -> Bool {
+        for element in line {
+            switch element {
+            case .space: continue
+            case .voiceOverlay: return true
+            default: return false
             }
         }
+        return false
     }
 
     private func walkLine(
         _ elements: [MusicElement],
+        voice: inout VoiceKey,
         ctx: inout BodyContext,
         diagnostics: inout [Diagnostic]
     ) {
         // Pre-pass: resolve broken rhythms so note durations are correct
         let resolved = resolveBrokenRhythms(elements)
 
-        for elem in resolved {
-            walkElement(elem, ctx: &ctx, diagnostics: &diagnostics)
+        var index = resolved.startIndex
+        while index < resolved.endIndex {
+            // §7.4: each `&` sets the time point back by one bar line, so a run of them winds
+            // back that many — `&&` under a two-bar line overlays both of its bars.  Read here
+            // rather than in the parser: the count is an interpretation of the syntax, and the
+            // AST keeps one node per character the source wrote.
+            guard case .voiceOverlay(let src) = resolved[index] else {
+                walkElement(resolved[index], voice: &voice, ctx: &ctx, diagnostics: &diagnostics)
+                index += 1
+                continue
+            }
+            var bars = 1
+            while index + bars < resolved.endIndex,
+                  case .voiceOverlay = resolved[index + bars] { bars += 1 }
+            openOverlay(rewinding: bars, source: src, voice: &voice, ctx: &ctx,
+                        diagnostics: &diagnostics)
+            index += bars
         }
         // Finish any open grace group (malformed; just close it)
-        if ctx.inGrace {
-            ctx.flushGrace()
+        if ctx.isInGrace(voice) {
+            ctx.flushGrace(in: voice)
         }
+        // A tuplet does not run past the end of the line that opened it: whatever it collected
+        // is written here rather than left hanging, where the next line would drop it (#86).
+        for abandoned in ctx.flushOpenTuplets() {
+            diagnostics.append(incompleteTuplet(abandoned))
+        }
+    }
+
+    /// The warning for a tuplet that ended before the `r` notes it asked for.
+    private func incompleteTuplet(_ open: TupletState) -> Diagnostic {
+        let kept = open.musicalEventCount
+        return Diagnostic(
+            severity: .warning, code: .incompleteTuplet,
+            message: "this tuplet asks for \(open.r) notes but "
+                   + (kept == 0 ? "none follow it" : "only \(kept) follow it"),
+            source: open.source,
+            hint: kept == 0
+                ? "a tuplet's notes follow it directly; nothing was collected here, so nothing "
+                + "is drawn for it."
+                : "the \(kept) note\(kept == 1 ? "" : "s") written are kept, as a tuplet of "
+                + "\(kept).")
+    }
+
+    /// Moves the cursor into the temporary voice a run of `bars` `&`s opens (§7.4).
+    ///
+    /// The clock is wound back over `bars` bar lines: back to the head of the bar now being
+    /// written, and then one whole bar further for each `&` after the first.  A `&` written
+    /// where no bar has begun — at the head of a line, or of the tune — winds back from the
+    /// last bar line instead, which is what makes the standard's own `&&` example overlay the
+    /// two bars of the line above rather than the two after them.
+    private func openOverlay(
+        rewinding bars: Int,
+        source: SourceRange,
+        voice: inout VoiceKey,
+        ctx: inout BodyContext,
+        diagnostics: inout [Diagnostic]
+    ) {
+        // Whatever the layer being left holds open is finished before the clock moves.
+        if ctx.isInGrace(voice) { ctx.flushGrace(source: source, in: voice) }
+        if let abandoned = ctx.flushTuplet(in: voice) {
+            diagnostics.append(incompleteTuplet(abandoned))
+        }
+
+        let primary = ctx.voice(voice.primary)?.accumulator
+        let closed = primary?.closedMeasures.count ?? 0
+        let openBar = primary?.hasOpenMeasure ?? false
+        let start = closed - (bars - 1) - (openBar ? 0 : 1)
+        if start < 0 {
+            diagnostics.append(Diagnostic(
+                severity: .warning, code: .voiceOverlayWithoutBar,
+                message: "\(bars == 1 ? "an &" : "\(bars) &s") here would set the time point "
+                       + "back before the first bar of this voice; the overlay starts at that bar",
+                source: source,
+                hint: "each & sets the time point back by one bar line (§7.4), so there must be "
+                    + "at least that many bars of music before it."))
+        }
+        voice = voice.nextOverlay
+        ctx.openOverlay(voice, startingAt: max(0, start), source: source)
     }
 
     private func walkElement(
         _ elem: MusicElement,
+        voice: inout VoiceKey,
         ctx: inout BodyContext,
         diagnostics: inout [Diagnostic]
     ) {
-        let prevWasSpace = ctx.lastElementWasSpace
-        ctx.lastElementWasSpace = false
+        let prevWasSpace = ctx.lastElementWasSpace(in: voice)
+        ctx.setLastElementWasSpace(false, in: voice)
 
         switch elem {
         case .note(let tok):
-            let event = buildNoteEvent(tok, ctx: &ctx)
-            ctx.emit(event)
+            let event = buildNoteEvent(tok, voice: voice, ctx: &ctx)
+            ctx.emit(event, in: voice)
 
         case .chord(let notes, let src):
-            let event = buildChordEvent(notes, source: src, ctx: &ctx)
-            ctx.emit(event)
+            let event = buildChordEvent(notes, source: src, voice: voice, ctx: &ctx)
+            ctx.emit(event, in: voice)
 
         case .rest(let kind, let dur, let src):
             let duration = resolveDuration(dur)
-            let rest = Rest(kind: kind, duration: duration, decorations: ctx.flushDecorations(), source: src)
-            ctx.emit(.rest(rest))
+            let decorations = ctx.flushDecorations(in: voice, source: src)
+            let rest = Rest(kind: kind, duration: duration, decorations: decorations, source: src)
+            ctx.emit(.rest(rest), in: voice)
 
         case .barLine(let kind, let src):
-            ctx.closeCurrentMeasure(barLine: BarLine(kind: kind, source: src))
-            ctx.accidentalScope.resetBar()
+            // A tuplet does not span a bar line, so one still open here is short of what it
+            // asked for; it is written into the bar being closed rather than lost with it (#86).
+            if let abandoned = ctx.flushTuplet(in: voice) {
+                diagnostics.append(incompleteTuplet(abandoned))
+            }
+            // Closes this bar for every `&` layer standing in it, not just the current one:
+            // the bar line is the staff's, and §7.4 overlays share the bar it ends.
+            ctx.closeBar(barLine: BarLine(kind: kind, source: src), in: voice)
 
         case .inlineField(let field, let src):
-            applyInlineField(field, source: src, ctx: &ctx, diagnostics: &diagnostics)
+            applyInlineField(field, source: src, voice: &voice, ctx: &ctx, diagnostics: &diagnostics)
 
-        case .graceStart(let acciaccatura, _):
-            ctx.startGrace(acciaccatura: acciaccatura)
+        case .graceStart(let acciaccatura, let src):
+            ctx.startGrace(acciaccatura: acciaccatura, source: src, in: voice)
 
         case .graceEnd(let src):
-            ctx.flushGrace(source: src)
+            ctx.flushGrace(source: src, in: voice)
 
-        case .decoration(let tok, _):
+        case .decoration(let tok, let src):
             let decoration = expandDecoration(tok, userSymbols: ctx.userSymbols)
             // Post-note decoration: if preceded by a space and there's a note in currentEvents,
             // apply retroactively to the preceding note.
-            if prevWasSpace && ctx.applyDecorationToLastNote(decoration) {
+            if prevWasSpace && ctx.applyDecorationToLastNote(decoration, in: voice) {
                 // Applied retroactively
             } else {
-                ctx.pendingDecorations.append(decoration)
+                ctx.addPendingDecoration(decoration, in: voice, source: src)
             }
 
         case .annotation(let pos, let text, let src):
-            ctx.pendingAnnotations.append(Annotation(
+            ctx.addPendingAnnotation(Annotation(
                 position: pos,
                 text: TextString(value: text, source: src),
                 source: src
-            ))
+            ), in: voice)
 
         case .chordSymbol(let s, let src):
-            ctx.pendingChordSymbol = parseChordSymbol(s, source: src)
+            ctx.setPendingChordSymbol(parseChordSymbol(s, source: src), in: voice, source: src)
 
         case .tupletStart(let p, let q, let r, let src):
+            // Tuplets do not nest: a second one closes the first, which keeps what the first
+            // had collected instead of clobbering it (#86).
+            if let abandoned = ctx.flushTuplet(in: voice) {
+                diagnostics.append(incompleteTuplet(abandoned))
+            }
             let resolvedQ = q ?? defaultQ(p: p, meter: ctx.meter)
             let resolvedR = r ?? p
-            ctx.startTuplet(p: p, q: resolvedQ, r: resolvedR, source: src)
+            ctx.startTuplet(p: p, q: resolvedQ, r: resolvedR, source: src, in: voice)
 
-        case .slurOpen:
-            ctx.openSlurs += 1
+        case .slurOpen(let src):
+            ctx.openSlur(in: voice, source: src)
 
-        case .slurClose:
+        case .slurClose(let src):
             // `)` is a post-fix on the preceding note, not a prefix for the next.
             // Retroactively add the close to the last emitted note so that
             // `(A2 | A2) B` gives A2 `closes:1`, not B.
-            if !ctx.addSlurCloseToLastNote() {
-                ctx.closeSlurs += 1   // fallback: no note yet, carry forward
+            if !ctx.addSlurCloseToLastNote(in: voice) {
+                ctx.carrySlurClose(in: voice, source: src)   // fallback: no note yet, carry forward
             }
 
-        case .endingNumber(let nums, _):
-            ctx.pendingEndingNumber = nums
+        case .endingNumber(let nums, let src):
+            ctx.setPendingEndingNumber(nums, in: voice, source: src)
 
         case .space(let src):
-            ctx.emitSpaceBreak(source: src)
-            ctx.lastElementWasSpace = true
+            ctx.emitSpaceBreak(source: src, in: voice)
+            ctx.setLastElementWasSpace(true, in: voice)
+
+        case .voiceOverlay:
+            break  // read as a run by `walkLine`, which never hands one down here
 
         case .brokenRhythm:
             break  // already handled in resolveBrokenRhythms pre-pass
 
         case .unknown(let ch, let src):
             if ctx.linebreakChars.contains(ch) {
-                ctx.splitCurrentStave()
+                ctx.splitStave(in: voice.primary)
             } else {
                 let severity: Diagnostic.Severity = options.strictRecovery ? .error : .warning
                 diagnostics.append(Diagnostic(
@@ -418,13 +604,13 @@ struct SemanticPass {
 
     // MARK: - Note / chord building
 
-    private func buildNoteEvent(_ tok: NoteToken, ctx: inout BodyContext) -> Event {
+    private func buildNoteEvent(_ tok: NoteToken, voice: VoiceKey, ctx: inout BodyContext) -> Event {
         let step = diatonicStep(from: tok.pitchLetter)
         // ABC octave convention: uppercase C..B = octave 4 (middle C = C4), lowercase c..b = octave 5
         let baseOctave = tok.pitchLetter.isUppercase ? 4 : 5
         let octave = baseOctave + tok.octaveMarks
 
-        let currentResolved = ctx.accidentalScope.resolve(step: step, octave: octave)
+        let currentResolved = ctx.resolveAccidental(step: step, octave: octave, in: voice)
         let writtenAlt = tok.accidental.map { alterationFromToken($0) }
         let playedAlt: Alteration
         let displayedAlt: Alteration?
@@ -432,7 +618,7 @@ struct SemanticPass {
             playedAlt = written
             // displayedAccidental is nil when the accidental is redundant (bar memory already implies it)
             displayedAlt = (written == currentResolved) ? nil : written
-            ctx.accidentalScope.record(step: step, octave: octave, alteration: written)
+            ctx.recordAccidental(step: step, octave: octave, alteration: written, in: voice, source: tok.source)
         } else {
             playedAlt = currentResolved
             displayedAlt = nil
@@ -441,7 +627,7 @@ struct SemanticPass {
         let pitch = Pitch(step: step, alteration: playedAlt, octave: octave)
         let duration = resolveDuration(tok.duration)
         let tieState: TieState = tok.tie ? .startsTie : .none
-        let (opens, closes) = ctx.consumeSlurs()
+        let (opens, closes) = ctx.consumeSlurs(in: voice, source: tok.source)
 
         let note = Note(
             pitch: pitch,
@@ -450,38 +636,43 @@ struct SemanticPass {
             duration: duration,
             ties: tieState,
             slurs: SlurState(opens: opens, closes: closes),
-            decorations: ctx.flushDecorations(),
-            chordSymbol: ctx.flushChordSymbol(),
-            annotations: ctx.flushAnnotations(),
+            decorations: ctx.flushDecorations(in: voice, source: tok.source),
+            chordSymbol: ctx.flushChordSymbol(in: voice, source: tok.source),
+            annotations: ctx.flushAnnotations(in: voice, source: tok.source),
             beam: .single,
             lyric: nil,
             source: tok.source
         )
 
-        if ctx.inGrace {
-            ctx.graceNotes.append(note)
+        if ctx.isInGrace(voice) {
+            ctx.appendGraceNote(note, in: voice)
             return .note(note)  // returned but not emitted directly; grace buffer holds it
         }
-        if ctx.tupletState != nil {
+        if ctx.isInTuplet(voice) {
             return .note(note)  // will be handed to tuplet collector
         }
         return .note(note)
     }
 
-    private func buildChordEvent(_ notes: [NoteToken], source: SourceRange, ctx: inout BodyContext) -> Event {
+    private func buildChordEvent(
+        _ notes: [NoteToken],
+        source: SourceRange,
+        voice: VoiceKey,
+        ctx: inout BodyContext
+    ) -> Event {
         let resolvedNotes: [Note] = notes.map { tok in
             let step = diatonicStep(from: tok.pitchLetter)
             let baseOctave = tok.pitchLetter.isUppercase ? 4 : 5
             let octave = baseOctave + tok.octaveMarks
 
-            let currentResolved = ctx.accidentalScope.resolve(step: step, octave: octave)
+            let currentResolved = ctx.resolveAccidental(step: step, octave: octave, in: voice)
             let writtenAlt = tok.accidental.map { alterationFromToken($0) }
             let playedAlt: Alteration
             let displayedAlt: Alteration?
             if let written = writtenAlt {
                 playedAlt = written
                 displayedAlt = (written == currentResolved) ? nil : written
-                ctx.accidentalScope.record(step: step, octave: octave, alteration: written)
+                ctx.recordAccidental(step: step, octave: octave, alteration: written, in: voice, source: tok.source)
             } else {
                 playedAlt = currentResolved
                 displayedAlt = nil
@@ -508,14 +699,14 @@ struct SemanticPass {
 
         let duration = resolvedNotes.first?.duration ?? Fraction(numerator: 1, denominator: 8)
         let tieState: TieState = resolvedNotes.contains { $0.ties == .startsTie } ? .startsTie : .none
-        let (opens, closes) = ctx.consumeSlurs()
+        let (opens, closes) = ctx.consumeSlurs(in: voice, source: source)
 
         let chord = Chord(
             notes: resolvedNotes,
             duration: duration,
-            decorations: ctx.flushDecorations(),
-            chordSymbol: ctx.flushChordSymbol(),
-            annotations: ctx.flushAnnotations(),
+            decorations: ctx.flushDecorations(in: voice, source: source),
+            chordSymbol: ctx.flushChordSymbol(in: voice, source: source),
+            annotations: ctx.flushAnnotations(in: voice, source: source),
             beam: .single,
             ties: tieState,
             slurs: SlurState(opens: opens, closes: closes),
@@ -530,24 +721,28 @@ struct SemanticPass {
     private func applyInlineField(
         _ field: InformationField,
         source: SourceRange,
+        voice: inout VoiceKey,
         ctx: inout BodyContext,
         diagnostics: inout [Diagnostic]
     ) {
         switch field {
         case .key(let k):
-            ctx.key = k
-            ctx.accidentalScope = AccidentalScope(keyAlterations: keyAlterations(for: k))
+            ctx.setKey(k, in: voice, source: source)
         case .meter(let m, _):
-            ctx.meter = m
-            ctx.meterChangedSinceLastBar = true
+            ctx.setMeter(m, in: voice)
         case .unitNoteLength(let f, _):
-            ctx.unitNoteLength = f
+            ctx.setUnitNoteLength(f, in: voice, source: source)
         case .tempo(let t, _):
-            ctx.emit(.tempoChange(t))
+            ctx.emit(.tempoChange(t), in: voice)
         case .voice(let id, let props, _):
-            ctx.switchVoice(id: id, properties: props)
+            ctx.registerVoice(id: id, properties: props)
+            // The one place the cursor moves between voices.  It lands on the voice itself,
+            // never on one of its `&` layers: those belong to the line that opened them.
+            voice = VoiceKey(id)
         case .lyric(let tokens, _):
-            ctx.applyLyrics(tokens)
+            // §7.4: syllables match the notes "disregarding any overlay in the accompanying
+            // music code", so they land on the voice even when an `&` layer is being written.
+            ctx.applyLyrics(tokens, in: voice.primary)
         case .userSymbol(let ch, let dec, _):
             ctx.userSymbols[ch] = dec
         case .instruction(let t)
@@ -558,21 +753,44 @@ struct SemanticPass {
                 message: "I:abc-include has no effect as an inline field",
                 source: source
             ))
+        case .instruction(let t):
+            // §4.4: `I:name payload` is the stylesheet directive `%%name payload`.  A `%%`
+            // line interrupting a `\\` continuation is spliced in as one of these, and a
+            // source may write one directly.  The instructions that configure the *parser*
+            // are not stylesheet directives and are handled (or ignored) elsewhere.
+            let value = t.value.trimmingCharacters(in: .whitespaces)
+            let parts = value.split(separator: " ", maxSplits: 1)
+            let name = parts.first.map(String.init) ?? value
+            guard !Self.parserInstructions.contains(name.lowercased()) else { break }
+            applyBodyDirective(
+                name: name, payload: parts.count > 1 ? String(parts[1]) : "",
+                source: source, voice: voice.base, ctx: &ctx, diagnostics: &diagnostics
+            )
         case .unknown(let code, let payload, let src) where String(code) == "%":
             // Body-level directive stored by ABCFileBuilder as .unknown(code:"%", payload:"name payload")
             let parts = payload.split(separator: " ", maxSplits: 1)
             let dirName = parts.first.map(String.init) ?? payload
             let dirPayload = parts.count > 1 ? String(parts[1]) : ""
-            applyBodyDirective(name: dirName, payload: dirPayload, source: src, ctx: &ctx, diagnostics: &diagnostics)
+            applyBodyDirective(
+                name: dirName, payload: dirPayload, source: src,
+                voice: voice.base, ctx: &ctx, diagnostics: &diagnostics
+            )
         default:
             break
         }
     }
 
+    /// §4.4 instructions that configure the parser rather than the stylesheet.  They are not
+    /// `%%` directives, so they must not be reported as unsupported ones.
+    private static let parserInstructions: Set<String> = [
+        "abc-version", "abc-charset", "abc-creator", "abc-include", "linebreak", "decoration",
+    ]
+
     private func applyBodyDirective(
         name: String,
         payload: String,
         source: SourceRange,
+        voice: String,
         ctx: inout BodyContext,
         diagnostics: inout [Diagnostic]
     ) {
@@ -581,9 +799,9 @@ struct SemanticPass {
             if ctx.hasExplicitVoice {
                 var tempDiags: [Diagnostic] = []
                 if let d = parseCeolKitDirective(name: name, payload: payload, source: source, diagnostics: &tempDiags) {
-                    let vid = VoiceId.named(ctx.currentVoiceId)
+                    let vid = VoiceId.named(voice)
                     let scope = Scope.voiceLocal(vid)
-                    ctx.voiceDirectives[ctx.currentVoiceId, default: []].append(
+                    ctx.voiceDirectives[voice, default: []].append(
                         CeolKitDirectiveScope(directive: d, scope: scope, source: source)
                     )
                 }
@@ -595,6 +813,31 @@ struct SemanticPass {
                     source: source
                 ))
             }
+        case "score", "staves":
+            // §11.1: a plan in the body resets the music generator from here on, so unlike
+            // every other directive its position is part of what it means.
+            var tempDiags: [Diagnostic] = []
+            if let d = parseCeolKitDirective(name: name, payload: payload, source: source, diagnostics: &tempDiags) {
+                ctx.bodyTuneDirectives.append(CeolKitDirectiveScope(directive: d, scope: .tuneGlobal, source: source))
+                if case .staffPlan(let plan) = d {
+                    // The plan can only change where the staves of a system do, so one
+                    // written inside a stave governs the whole of the stave enclosing it
+                    // rather than breaking the system where it happens to fall.
+                    if ctx.hasStaveInProgress {
+                        tempDiags.append(Diagnostic(
+                            severity: .warning, code: .staffPlanSnappedToStave,
+                            message: "%%\(name) inside a stave takes effect from the start of that stave",
+                            source: source
+                        ))
+                    }
+                    ctx.bodyStaffPlans.append(StaffPlanChange(
+                        plan: plan,
+                        effectiveFromStave: ctx.currentStaveIndex,
+                        source: source
+                    ))
+                }
+            }
+            diagnostics += tempDiags
         case "landscape", "flatbeams", "ceolkit:justifylast", "ceolkit:scale",
              "ceolkit:gracenotespacing", "writefields",
              "dateformat", "footer", "straightflags", "graceslurs":
@@ -722,14 +965,6 @@ struct SemanticPass {
         reducedFraction(numerator: dur.numerator, denominator: dur.denominator)
     }
 
-    private func reducedFraction(numerator: Int, denominator: Int) -> Fraction {
-        guard numerator != 0 else { return Fraction(numerator: 0, denominator: 1) }
-        let g = gcd(abs(numerator), abs(denominator))
-        return Fraction(numerator: numerator / g, denominator: denominator / g)
-    }
-
-    private func gcd(_ a: Int, _ b: Int) -> Int { b == 0 ? a : gcd(b, a % b) }
-
     // Default q for tuplet (number of normal-note beats in the time of p tuplet notes)
     private func defaultQ(p: Int, meter: Meter?) -> Int {
         switch meter {
@@ -838,6 +1073,15 @@ struct SemanticPass {
         return result
     }
 
+    /// The staff plans among `scopes`, each governing from the first stave — the position
+    /// of a plan written before any music, in the file preamble or the tune header.
+    private func initialStaffPlans(from scopes: [CeolKitDirectiveScope]) -> [StaffPlanChange] {
+        scopes.compactMap { scoped in
+            guard case .staffPlan(let plan) = scoped.directive else { return nil }
+            return StaffPlanChange(plan: plan, effectiveFromStave: 0, source: scoped.source)
+        }
+    }
+
     private func parseCeolKitDirective(
         name: String,
         payload: String,
@@ -938,6 +1182,12 @@ struct SemanticPass {
             diagnostics.append(Diagnostic(severity: .warning, code: .unknownDirective,
                 message: "%%graceslurs expects '0'/'false' or '1'/'true'", source: source))
             return nil
+        case "score", "staves":
+            // Both spellings normalise to one StaffPlan; a malformed payload drops the
+            // whole directive rather than storing a partial tree (ABC v2.2 §11.1).
+            let (plan, planDiags) = StaffPlanParser.parse(name: name, payload: payload, source: source)
+            diagnostics += planDiags
+            return plan.map { .staffPlan($0) }
         case "footer":
             // %%footer is file-scoped and extracted directly in build(); silently accept here.
             return nil
@@ -967,30 +1217,69 @@ struct SemanticPass {
         var voices: [Voice] = []
         var diagnostics: [Diagnostic] = []
 
-        for (voiceId, accumulator) in bodyCtx.voices(orderedBy: bodyCtx.voiceOrder) {
-            let (measures, voiceDiags) = finaliseAccumulator(accumulator, meter: bodyCtx.meter)
-            diagnostics += voiceDiags
-
+        for (voiceId, state) in bodyCtx.orderedVoices() {
+            // A voice a `V:` declared and no music reached: it exists, with one empty stave,
+            // so a later `%%score` can place it.  Renderers skip it — see `Voice.isEmpty`.
             var staves: [Staff] = []
-            var start = 0
-            for breakIdx in accumulator.staveBreakIndices where breakIdx <= measures.count {
-                let slice = Array(measures[start..<breakIdx])
-                if !slice.isEmpty {
-                    staves.append(Staff(measures: slice, overlays: []))
+            if let state {
+                let accumulator = state.accumulator
+                var (measures, voiceDiags) = finaliseAccumulator(accumulator, openingMeter: bodyCtx.openingMeter)
+                diagnostics += voiceDiags
+
+                // §7.4: each `&` layer of this voice, finished the same way and then squared
+                // off against it, so a stave and its overlays hold the same bars.
+                var layers: [(source: SourceRange, measures: [Measure])] = []
+                for overlay in bodyCtx.overlays(of: voiceId) {
+                    let (overlayMeasures, overlayDiags) =
+                        finaliseAccumulator(overlay.state.accumulator, openingMeter: bodyCtx.openingMeter)
+                    diagnostics += overlayDiags
+                    layers.append((overlay.source, overlayMeasures))
                 }
-                start = breakIdx
-            }
-            let tail = Array(measures[start...])
-            if !tail.isEmpty || staves.isEmpty {
-                staves.append(Staff(measures: tail, overlays: []))
+                let barsWritten = measures.count
+                diagnostics += reconcileOverlays(
+                    &measures, with: &layers, voiceId: voiceId,
+                    unitNoteLength: accumulator.effectiveUnitNoteLength)
+                // An overlay that overran gives the voice bars past the end of its last line.
+                // They are that line's — the source wrote them there — so the boundary
+                // recorded at what used to be the end is no longer a boundary at all.
+                let breaks = measures.count > barsWritten
+                    ? accumulator.staveBreaks.filter { $0.measureIndex < barsWritten }
+                    : accumulator.staveBreaks
+
+                var start = 0
+                func appendStaff(through end: Int, evenIfEmpty: Bool = false) {
+                    let slice = Array(measures[start..<end])
+                    guard evenIfEmpty || !slice.isEmpty || (staves.isEmpty && end == measures.count)
+                    else { return }
+                    staves.append(Staff(
+                        measures: slice,
+                        overlays: layers.map {
+                            VoiceOverlay(measures: Array($0.measures[start..<end]),
+                                         source: $0.source)
+                        }))
+                }
+                // An empty stave is kept, where an ordinary break that closed no measures is
+                // not: it is a line-set the source wrote no line for in this voice, and
+                // dropping it would shift every stave after it up one (#102).
+                for brk in breaks where brk.measureIndex <= measures.count {
+                    appendStaff(through: brk.measureIndex, evenIfEmpty: brk.isEmptyStave)
+                    start = brk.measureIndex
+                }
+                appendStaff(through: measures.count)
+            } else {
+                staves = [Staff(measures: [], overlays: [])]
             }
 
-            let props = bodyCtx.voiceProperties[voiceId] ?? defaultVoiceProperties()
+            let props = foldingKeyClef(
+                into: bodyCtx.voiceProperties[voiceId] ?? defaultVoiceProperties(),
+                openingKey: state?.openingKey, tuneKey: bodyCtx.key)
             let vid: VoiceId = .named(voiceId)
             let voiceDirs = bodyCtx.voiceDirectives[voiceId] ?? []
             let voice = Voice(
                 id: vid,
                 properties: props,
+                key: state?.openingKey,
+                unitNoteLength: state?.openingUnitNoteLength,
                 staves: staves,
                 directives: voiceDirs,
                 source: tuneSource
@@ -1001,7 +1290,8 @@ struct SemanticPass {
             // No events at all — return a single empty voice
             voices.append(Voice(
                 id: .named("1"),
-                properties: defaultVoiceProperties(),
+                properties: foldingKeyClef(into: defaultVoiceProperties(),
+                                           openingKey: nil, tuneKey: bodyCtx.key),
                 staves: [Staff(measures: [], overlays: [])],
                 directives: [],
                 source: tuneSource
@@ -1010,12 +1300,85 @@ struct SemanticPass {
         return (voices, diagnostics)
     }
 
-    private func finaliseAccumulator(_ acc: VoiceAccumulator, meter: Meter) -> ([Measure], [Diagnostic]) {
+    /// Squares a voice's `&` layers off against the voice itself, so every layer holds
+    /// exactly one measure per measure of the voice (§7.4, and see ``VoiceOverlay``).
+    ///
+    /// A layer that says nothing in a bar gets an empty measure there; the merge draws
+    /// nothing from it and the voice underneath keeps the bar's furniture.  A layer that runs
+    /// *past* the voice is the standard's "one complete bar's worth of music for each `&`"
+    /// broken: the voice is given the bars it is missing and a warning says so, because the
+    /// alternative is dropping bars the author wrote.
+    private func reconcileOverlays(
+        _ measures: inout [Measure],
+        with layers: inout [(source: SourceRange, measures: [Measure])],
+        voiceId: String,
+        unitNoteLength: Fraction
+    ) -> [Diagnostic] {
+        guard !layers.isEmpty else { return [] }
+        var diagnostics: [Diagnostic] = []
+
+        for layer in layers where layer.measures.count > measures.count {
+            diagnostics.append(Diagnostic(
+                severity: .warning, code: .voiceOverlayTooLong,
+                message: "the & overlay in voice \(voiceId) has \(layer.measures.count) bars "
+                       + "where the music it overlays has \(measures.count); §7.4 allows one "
+                       + "bar for each &. The extra bars are printed, and the voice under them "
+                       + "is left empty.",
+                source: layer.source,
+                hint: "write one & for each bar the overlay covers, or close the overlay with "
+                    + "a bar line before the extra music."))
+        }
+
+        let width = max(measures.count, layers.map(\.measures.count).max() ?? 0)
+        let tail = measures.last
+        let tailUnit = tail?.unitNoteLength ?? unitNoteLength
+        measures += (measures.count..<width).map { _ in
+            emptyMeasure(after: tail, unitNoteLength: tailUnit)
+        }
+        for index in layers.indices {
+            let source = layers[index].source
+            let layerUnit = layers[index].measures.last?.unitNoteLength ?? unitNoteLength
+            layers[index].measures += (layers[index].measures.count..<width).map { _ in
+                emptyMeasure(after: nil, unitNoteLength: layerUnit, at: source)
+            }
+        }
+        return diagnostics
+    }
+
+    /// A bar with no music in it, for a voice or an overlay that has nothing to say here.
+    ///
+    /// `unitNoteLength` is the one in force where the bar is being added: the last real
+    /// measure's, or the voice's own where there is no real measure to follow.
+    private func emptyMeasure(after previous: Measure?, unitNoteLength: Fraction,
+                              at source: SourceRange? = nil) -> Measure {
+        let src = source ?? previous?.source ?? .emptySourceRange
+        return Measure(openingBar: previous?.closingBar,
+                       events: [],
+                       closingBar: BarLine(kind: .single, source: src),
+                       endingNumber: nil,
+                       source: src,
+                       meter: nil,
+                       unitNoteLength: unitNoteLength)
+    }
+
+    /// Closes a voice out into measures: the last open bar, tie resolution across the whole
+    /// voice, and beaming.
+    ///
+    /// `openingMeter` is the meter the voice's *first* measure is in, not the one the body
+    /// ended in.  Meter and unit note length both move part way through a tune, and every
+    /// measure knows which it is in — `Measure.meter` where the meter moved, and
+    /// `Measure.unitNoteLength` always — so the beams are grouped measure by measure against
+    /// whatever was in force there (#85, #122).
+    private func finaliseAccumulator(
+        _ acc: VoiceAccumulator, openingMeter: Meter
+    ) -> ([Measure], [Diagnostic]) {
         var measures = acc.closedMeasures
         var diagnostics: [Diagnostic] = []
 
-        // Close the final open measure if it has events
-        if !acc.currentEvents.isEmpty {
+        // Close the final open measure if it holds music.  Spacer-only content is not music
+        // and not a measure — `closeWith` says the same at every bar line, and the leading
+        // whitespace of an `&` continuation line would otherwise close a bar of nothing.
+        if acc.hasOpenMeasure {
             let finalBar = BarLine(
                 kind: .final,
                 source: acc.currentEvents.reversed().lazy
@@ -1027,13 +1390,27 @@ struct SemanticPass {
                 closingBar: finalBar,
                 fallback: acc.measureSource
             )
+            // An `L:` still pending at the end of the voice lands on this bar exactly where
+            // `closeWith` would have put it: on the bar the music after it fell in.
+            var finalUnit = acc.effectiveUnitNoteLength
+            if let change = acc.pendingUnitNoteLength, acc.musicalEventCount > change.after {
+                finalUnit = change.length
+            }
+            // A `K:` still pending lands here on the same terms, so a key stated in the last
+            // bar of a voice is still engraved where it happens.
+            var finalKey: KeySignature? = nil
+            if let change = acc.pendingKey, acc.musicalEventCount > change.after {
+                finalKey = change.key
+            }
             let finalMeasure = Measure(
                 openingBar: acc.lastBarLine,
                 events: acc.currentEvents,
                 closingBar: finalBar,
                 endingNumber: nil,
                 source: src,
-                meter: acc.pendingMeter
+                meter: acc.pendingMeter,
+                key: finalKey,
+                unitNoteLength: finalUnit
             )
             measures.append(finalMeasure)
         }
@@ -1077,23 +1454,75 @@ struct SemanticPass {
                 closingBar: m.closingBar,
                 endingNumber: m.endingNumber,
                 source: m.source,
-                meter: m.meter
+                meter: m.meter,
+                key: m.key,
+                unitNoteLength: m.unitNoteLength
             ))
         }
 
-        // Apply beam resolution to all measures
-        let resolver = BeamResolver(meter: meter, unitNoteLength: acc.unitNoteLength)
-        let beamResolved = resolvedMeasures.map { m in
-            Measure(
+        // Beam measure by measure, against the meter and unit note length in force *there*.
+        // Both start at what the voice opened in; the meter moves where a measure records a
+        // change and the unit note length wherever a measure differs from the last.  A tune
+        // that changes neither builds one resolver and uses it throughout.
+        var currentMeter = openingMeter
+        var currentUnit = acc.openingUnitNoteLength
+        var resolver = BeamResolver(meter: currentMeter, unitNoteLength: currentUnit)
+        var beamResolved: [Measure] = []
+        beamResolved.reserveCapacity(resolvedMeasures.count)
+        for m in resolvedMeasures {
+            if m.meter != nil || m.unitNoteLength != currentUnit {
+                currentMeter = m.meter ?? currentMeter
+                currentUnit = m.unitNoteLength
+                resolver = BeamResolver(meter: currentMeter, unitNoteLength: currentUnit)
+            }
+            beamResolved.append(Measure(
                 openingBar: m.openingBar,
                 events: resolver.resolve(m.events),
                 closingBar: m.closingBar,
                 endingNumber: m.endingNumber,
                 source: m.source,
-                meter: m.meter
-            )
+                meter: m.meter,
+                key: m.key,
+                unitNoteLength: m.unitNoteLength
+            ))
         }
         return (beamResolved, diagnostics)
+    }
+
+    /// Folds a `K:` clef into a voice's properties, so the renderer keeps reading one place.
+    ///
+    /// §4.6 lets `clef=` be written on `K:` as well as on `V:`, and the two have to be
+    /// reconciled somewhere.  The `V:` wins: it names the staff, and the key field's clef is
+    /// the older spelling of the same thing.  Where the voice named no clef, the clef comes
+    /// from the key the voice opens in — its own `K:` — and failing that from the tune's,
+    /// because a clef set on the tune's key holds until something else changes it.
+    ///
+    /// Neither field can say "no clef" — both parsers resolve an absent `clef=` to treble —
+    /// so a stated treble reads here as silence.  Nothing is lost by that: the fallback it
+    /// suppresses can only put treble back.
+    ///
+    /// A `K:` part way through a voice is not considered: `openingKey` is only the key of a
+    /// `K:` that arrives before the voice's first note, and the renderer has one clef per
+    /// voice for the whole tune, so a mid-tune change has nowhere to go yet (#126).
+    private func foldingKeyClef(
+        into props: VoiceProperties,
+        openingKey: KeySignature?,
+        tuneKey: KeySignature
+    ) -> VoiceProperties {
+        let defaultClef = ClefSpec(clef: .treble, octaveShift: 0)
+        guard props.clef == defaultClef else { return props }
+        let candidates = [openingKey?.clef, tuneKey.clef]
+        guard let keyClef = candidates.compactMap({ $0 }).first(where: { $0 != defaultClef })
+        else { return props }
+        return VoiceProperties(
+            clef: keyClef,
+            transposition: props.transposition,
+            staffProperties: props.staffProperties,
+            name: props.name,
+            subname: props.subname,
+            stemDirection: props.stemDirection,
+            middleNote: props.middleNote
+        )
     }
 
     private func defaultVoiceProperties() -> VoiceProperties {
@@ -1138,6 +1567,10 @@ private struct TuneContext {
     var tempo: Tempo? = nil
     var parts: PartPlan? = nil
     var headerVoices: [String: VoiceProperties] = [:]
+    /// The ids of `headerVoices` in the order the header declared them.  The dictionary
+    /// answers "what are this voice's properties?"; this answers "in what order do the
+    /// voices print?", which a dictionary cannot (issue #61).
+    var headerVoiceOrder: [String] = []
     var userSymbols: [Character: Decoration] = [:]
     var macros: [MacroDefinition] = []
     // metadata fields
@@ -1157,433 +1590,3 @@ private struct TuneContext {
     var linebreakChars: Set<Character> = ["$"] // $ and/or !
     var linebreakOnEOL: Bool = true            // <EOL> token
 }
-
-// MARK: - VoiceAccumulator
-
-struct VoiceAccumulator {
-    var closedMeasures: [Measure] = []
-    var staveBreakIndices: [Int] = []
-    var currentEvents: [Event] = []
-    var lastBarLine: BarLine? = nil
-    var measureSource: SourceRange
-    var unitNoteLength: Fraction
-    // Set by BodyContext after a barline when [M:...] changed the meter mid-measure;
-    // consumed by the next closeWith to tag that measure's meter change for renderers.
-    var pendingMeter: Meter? = nil
-
-    init(source: SourceRange, unitNoteLength: Fraction) {
-        self.measureSource = source
-        self.unitNoteLength = unitNoteLength
-    }
-
-    mutating func markStaveBoundary() {
-        let idx = closedMeasures.count
-        guard idx != staveBreakIndices.last else { return }  // no new measures since last split
-        staveBreakIndices.append(idx)
-    }
-
-    mutating func closeWith(barLine: BarLine, endingNumber: [Int]?) {
-        // Skip spacer-only content (e.g. the space between [V:1] and |:) — treat as empty.
-        let hasMusicalContent = currentEvents.contains {
-            if case .spacer = $0 { return false }
-            return true
-        }
-        guard hasMusicalContent || endingNumber != nil else {
-            currentEvents = []
-            lastBarLine = barLine
-            return
-        }
-        let src = measureSourceSpan(
-            events: currentEvents,
-            openingBar: lastBarLine,
-            closingBar: barLine,
-            fallback: measureSource
-        )
-        let meterTag = pendingMeter
-        pendingMeter = nil
-        let measure = Measure(
-            openingBar: lastBarLine,
-            events: currentEvents,
-            closingBar: barLine,
-            endingNumber: endingNumber,
-            source: src,
-            meter: meterTag
-        )
-        closedMeasures.append(measure)
-        currentEvents = []
-        lastBarLine = barLine
-    }
-}
-
-// MARK: - BodyContext
-
-/// Mutable state threaded through music body processing.
-private struct BodyContext {
-    var unitNoteLength: Fraction
-    var meter: Meter
-    var key: KeySignature
-    var userSymbols: [Character: Decoration]
-    var macros: [MacroDefinition]
-    var accidentalScope: AccidentalScope
-
-    // Voice tracking
-    var currentVoiceId: String = "1"
-    var voiceOrder: [String] = ["1"]
-    private(set) var voiceData: [String: VoiceAccumulator] = [:]
-    var voiceProperties: [String: VoiceProperties] = [:]
-    var voiceDirectives: [String: [CeolKitDirectiveScope]] = [:]
-    var bodyTuneDirectives: [CeolKitDirectiveScope] = []
-    var hasExplicitVoice: Bool = false
-
-    // Pending attachments for the next note/chord
-    var pendingDecorations: [Decoration] = []
-    var pendingAnnotations: [Annotation] = []
-    var pendingChordSymbol: ChordSymbol? = nil
-    var pendingEndingNumber: [Int]? = nil
-
-    // Slur state
-    var openSlurs: Int = 0
-    var closeSlurs: Int = 0
-
-    // Grace group accumulation
-    var inGrace: Bool = false
-    var graceAcciaccatura: Bool = false
-    var graceNotes: [Note] = []
-    var graceSource: SourceRange?
-
-    // Tuplet state
-    var tupletState: TupletState? = nil
-
-    // Lyric anchor: closedMeasures count before the current music line (per voice)
-    var lyricMeasureAnchor: [String: Int] = [:]
-
-    // Space tracking for post-note decoration
-    var lastElementWasSpace: Bool = false
-
-    // I:linebreak settings — ABC 2.2 §9.2 — default is I:linebreak <EOL> $
-    var linebreakChars: Set<Character> = ["$"] // $ and/or !
-    var linebreakOnEOL: Bool = true            // <EOL>
-
-    // Signals that [M:…] fired since the last barline; used to tag the next measure.
-    var meterChangedSinceLastBar: Bool = false
-
-    init(
-        unitNoteLength: Fraction,
-        meter: Meter,
-        key: KeySignature,
-        userSymbols: [Character: Decoration],
-        macros: [MacroDefinition],
-        headerVoices: [String: VoiceProperties] = [:],
-        linebreakChars: Set<Character> = ["$"],
-        linebreakOnEOL: Bool = true
-    ) {
-        self.unitNoteLength = unitNoteLength
-        self.meter = meter
-        self.key = key
-        self.userSymbols = userSymbols
-        self.macros = macros
-        self.accidentalScope = AccidentalScope(keyAlterations: keyAlterations(for: key))
-        self.voiceProperties = headerVoices
-        self.linebreakChars = linebreakChars
-        self.linebreakOnEOL = linebreakOnEOL
-    }
-
-    mutating func splitCurrentStave() {
-        voiceData[currentVoiceId]?.markStaveBoundary()
-    }
-
-    // Returns voices in the order they were first encountered.
-    func voices(orderedBy order: [String]) -> [(String, VoiceAccumulator)] {
-        order.compactMap { id in voiceData[id].map { (id, $0) } }
-    }
-
-    mutating func emit(_ event: Event) {
-        if inGrace {
-            // Grace notes are accumulated; the note itself was already added to graceNotes
-            return
-        }
-        if var tuplet = tupletState {
-            tuplet.events.append(event)
-            tupletState = tuplet
-            if tuplet.events.count >= tuplet.r {
-                flushTuplet()
-            }
-            return
-        }
-        voiceData[currentVoiceId, default: VoiceAccumulator(
-            source: eventSourceRange(event) ?? .emptySourceRange,
-            unitNoteLength: unitNoteLength
-        )].currentEvents.append(event)
-    }
-
-    mutating func emitSpaceBreak(source: SourceRange) {
-        emit(.spacer(Spacer(width: 0, source: source)))
-    }
-
-    mutating func closeCurrentMeasure(barLine: BarLine) {
-        voiceData[currentVoiceId, default: VoiceAccumulator(
-            source: barLine.source,
-            unitNoteLength: unitNoteLength
-        )].closeWith(barLine: barLine, endingNumber: pendingEndingNumber)
-        pendingEndingNumber = nil
-        if meterChangedSinceLastBar {
-            voiceData[currentVoiceId]?.pendingMeter = meter
-            meterChangedSinceLastBar = false
-        }
-    }
-
-    mutating func switchVoice(id: String, properties: VoiceProperties) {
-        if !voiceOrder.contains(id) { voiceOrder.append(id) }
-        currentVoiceId = id
-        hasExplicitVoice = true
-
-        let defaultClef = ClefSpec(clef: .treble, octaveShift: 0)
-
-        if let existing = voiceProperties[id] {
-            // Merge: only override with non-default values from new properties,
-            // preserving header-set values when inline V: uses defaults.
-            voiceProperties[id] = VoiceProperties(
-                clef: properties.clef != defaultClef ? properties.clef : existing.clef,
-                transposition: properties.transposition != .none ? properties.transposition : existing.transposition,
-                staffProperties: properties.staffProperties.staffLines != 5
-                    ? properties.staffProperties : existing.staffProperties,
-                name: properties.name ?? existing.name,
-                subname: properties.subname ?? existing.subname,
-                stemDirection: properties.stemDirection != .auto ? properties.stemDirection : existing.stemDirection,
-                middleNote: properties.middleNote ?? existing.middleNote
-            )
-        } else {
-            voiceProperties[id] = properties
-        }
-    }
-
-    mutating func startGrace(acciaccatura: Bool) {
-        inGrace = true
-        graceAcciaccatura = acciaccatura
-        graceNotes = []
-    }
-
-    mutating func flushGrace(source: SourceRange? = nil) {
-        let src = source ?? graceSource ?? .emptySourceRange
-        let kind: GraceKind = graceAcciaccatura ? .acciaccatura : .appoggiatura
-        let group = GraceGroup(kind: kind, notes: graceNotes, source: src)
-        inGrace = false
-        graceNotes = []
-        graceAcciaccatura = false
-        voiceData[currentVoiceId, default: VoiceAccumulator(
-            source: src, unitNoteLength: unitNoteLength
-        )].currentEvents.append(.grace(group))
-    }
-
-    mutating func startTuplet(p: Int, q: Int, r: Int, source: SourceRange) {
-        tupletState = TupletState(p: p, q: q, r: r, source: source)
-    }
-
-    mutating func flushTuplet() {
-        guard let tuplet = tupletState else { return }
-        let adjustedEvents = tuplet.events.map { applyTupletFactor(q: tuplet.q, p: tuplet.p, to: $0) }
-        let t = Tuplet(p: tuplet.p, q: tuplet.q, r: tuplet.r, events: adjustedEvents, source: tuplet.source)
-        tupletState = nil
-        voiceData[currentVoiceId, default: VoiceAccumulator(
-            source: tuplet.source, unitNoteLength: unitNoteLength
-        )].currentEvents.append(.tuplet(t))
-    }
-
-    /// Applies lyrics to events from the music line just before this lyric field.
-    /// Uses lyricMeasureAnchor to find which closed measures belong to the preceding line.
-    mutating func applyLyrics(_ tokens: [LyricToken]) {
-        guard var acc = voiceData[currentVoiceId] else { return }
-        let anchor = lyricMeasureAnchor[currentVoiceId] ?? 0
-
-        // Collect all events from closedMeasures[anchor...] + currentEvents
-        var allEvents: [Event] = []
-        for i in anchor..<acc.closedMeasures.count {
-            allEvents += acc.closedMeasures[i].events
-        }
-        allEvents += acc.currentEvents
-
-        let aligned = LyricAligner.align(tokens: tokens, to: allEvents)
-
-        // Write back: first update closedMeasures[anchor...], then currentEvents
-        var offset = 0
-        for i in anchor..<acc.closedMeasures.count {
-            let count = acc.closedMeasures[i].events.count
-            let newEvents = Array(aligned[offset..<(offset + count)])
-            acc.closedMeasures[i] = Measure(
-                openingBar: acc.closedMeasures[i].openingBar,
-                events: newEvents,
-                closingBar: acc.closedMeasures[i].closingBar,
-                endingNumber: acc.closedMeasures[i].endingNumber,
-                source: acc.closedMeasures[i].source,
-                meter: acc.closedMeasures[i].meter
-            )
-            offset += count
-        }
-        acc.currentEvents = Array(aligned[offset...])
-        voiceData[currentVoiceId] = acc
-    }
-
-    /// Retroactively applies a decoration to the last note in currentEvents (skipping spacers).
-    /// Returns true if successfully applied.
-    mutating func applyDecorationToLastNote(_ decoration: Decoration) -> Bool {
-        guard var acc = voiceData[currentVoiceId] else { return false }
-        for i in stride(from: acc.currentEvents.count - 1, through: 0, by: -1) {
-            switch acc.currentEvents[i] {
-            case .spacer:
-                continue
-            case .note(let n):
-                acc.currentEvents[i] = .note(Note(
-                    pitch: n.pitch,
-                    writtenAccidental: n.writtenAccidental,
-                    displayedAccidental: n.displayedAccidental,
-                    duration: n.duration,
-                    ties: n.ties,
-                    slurs: n.slurs,
-                    decorations: n.decorations + [decoration],
-                    chordSymbol: n.chordSymbol,
-                    annotations: n.annotations,
-                    beam: n.beam,
-                    lyric: n.lyric,
-                    source: n.source
-                ))
-                voiceData[currentVoiceId] = acc
-                return true
-            default:
-                return false
-            }
-        }
-        return false
-    }
-
-    /// Retroactively increments the `slurs.closes` count on the last note in
-    /// `currentEvents` (skipping spacers).  Returns true if a note was found and updated.
-    mutating func addSlurCloseToLastNote() -> Bool {
-        guard var acc = voiceData[currentVoiceId] else { return false }
-        for i in stride(from: acc.currentEvents.count - 1, through: 0, by: -1) {
-            switch acc.currentEvents[i] {
-            case .spacer:
-                continue
-            case .note(let n):
-                let updated = SlurState(opens: n.slurs.opens, closes: n.slurs.closes + 1)
-                acc.currentEvents[i] = .note(Note(
-                    pitch: n.pitch,
-                    writtenAccidental: n.writtenAccidental,
-                    displayedAccidental: n.displayedAccidental,
-                    duration: n.duration,
-                    ties: n.ties,
-                    slurs: updated,
-                    decorations: n.decorations,
-                    chordSymbol: n.chordSymbol,
-                    annotations: n.annotations,
-                    beam: n.beam,
-                    lyric: n.lyric,
-                    source: n.source
-                ))
-                voiceData[currentVoiceId] = acc
-                return true
-            case .chord(let c):
-                let updated = SlurState(opens: c.slurs.opens, closes: c.slurs.closes + 1)
-                acc.currentEvents[i] = .chord(Chord(
-                    notes: c.notes,
-                    duration: c.duration,
-                    decorations: c.decorations,
-                    chordSymbol: c.chordSymbol,
-                    annotations: c.annotations,
-                    beam: c.beam,
-                    ties: c.ties,
-                    slurs: updated,
-                    lyric: c.lyric,
-                    source: c.source
-                ))
-                voiceData[currentVoiceId] = acc
-                return true
-            default:
-                return false
-            }
-        }
-        return false
-    }
-
-    mutating func flushDecorations() -> [Decoration] {
-        defer { pendingDecorations = [] }
-        return pendingDecorations
-    }
-
-    mutating func flushAnnotations() -> [Annotation] {
-        defer { pendingAnnotations = [] }
-        return pendingAnnotations
-    }
-
-    mutating func flushChordSymbol() -> ChordSymbol? {
-        defer { pendingChordSymbol = nil }
-        return pendingChordSymbol
-    }
-
-    mutating func consumeSlurs() -> (opens: Int, closes: Int) {
-        defer { openSlurs = 0; closeSlurs = 0 }
-        return (openSlurs, closeSlurs)
-    }
-}
-
-// MARK: - TupletState
-
-private struct TupletState {
-    let p: Int
-    let q: Int
-    let r: Int
-    let source: SourceRange
-    var events: [Event] = []
-}
-
-// MARK: - Tuplet duration adjustment
-
-private func applyTupletFactor(q: Int, p: Int, to event: Event) -> Event {
-    switch event {
-    case .note(let n):
-        let dur = reduceFraction(
-            numerator: n.duration.numerator * q,
-            denominator: n.duration.denominator * p
-        )
-        return .note(Note(
-            pitch: n.pitch,
-            writtenAccidental: n.writtenAccidental,
-            displayedAccidental: n.displayedAccidental,
-            duration: dur,
-            ties: n.ties,
-            slurs: n.slurs,
-            decorations: n.decorations,
-            chordSymbol: n.chordSymbol,
-            annotations: n.annotations,
-            beam: n.beam,
-            lyric: n.lyric,
-            source: n.source
-        ))
-    case .chord(let c):
-        let dur = reduceFraction(
-            numerator: c.duration.numerator * q,
-            denominator: c.duration.denominator * p
-        )
-        return .chord(Chord(
-            notes: c.notes,
-            duration: dur,
-            decorations: c.decorations,
-            chordSymbol: c.chordSymbol,
-            annotations: c.annotations,
-            beam: c.beam,
-            ties: c.ties,
-            slurs: c.slurs,
-            lyric: c.lyric,
-            source: c.source
-        ))
-    default:
-        return event
-    }
-}
-
-private func reduceFraction(numerator: Int, denominator: Int) -> Fraction {
-    guard numerator != 0 else { return Fraction(numerator: 0, denominator: 1) }
-    let g = gcdPrivate(abs(numerator), abs(denominator))
-    return Fraction(numerator: numerator / g, denominator: denominator / g)
-}
-
-private func gcdPrivate(_ a: Int, _ b: Int) -> Int { b == 0 ? a : gcdPrivate(b, a % b) }

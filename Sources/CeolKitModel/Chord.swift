@@ -16,9 +16,38 @@ public struct Chord: Sendable {
     public let beam: BeamState
     public let ties: TieState
     public let slurs: SlurState
-    public let lyric: LyricSyllable?
+    /// The syllables aligned to this chord, one entry per verse; see ``Note/lyrics``.
+    public let lyrics: [LyricSyllable?]
     public let source: SourceRange
 
+    /// The first verse's syllable; see ``Note/lyric``.
+    public var lyric: LyricSyllable? { lyrics.first ?? nil }
+
+    public init(
+        notes: [Note],
+        duration: Fraction,
+        decorations: [Decoration],
+        chordSymbol: ChordSymbol?,
+        annotations: [Annotation],
+        beam: BeamState,
+        ties: TieState,
+        slurs: SlurState,
+        lyrics: [LyricSyllable?],
+        source: SourceRange
+    ) {
+        self.notes = notes
+        self.duration = duration
+        self.decorations = decorations
+        self.chordSymbol = chordSymbol
+        self.annotations = annotations
+        self.beam = beam
+        self.ties = ties
+        self.slurs = slurs
+        self.lyrics = LyricSyllable.trimmingVerses(lyrics)
+        self.source = source
+    }
+
+    /// Convenience for the single-verse case; see ``Note/init(pitch:writtenAccidental:displayedAccidental:duration:ties:slurs:decorations:chordSymbol:annotations:beam:lyric:source:)``.
     public init(
         notes: [Note],
         duration: Fraction,
@@ -31,16 +60,18 @@ public struct Chord: Sendable {
         lyric: LyricSyllable?,
         source: SourceRange
     ) {
-        self.notes = notes
-        self.duration = duration
-        self.decorations = decorations
-        self.chordSymbol = chordSymbol
-        self.annotations = annotations
-        self.beam = beam
-        self.ties = ties
-        self.slurs = slurs
-        self.lyric = lyric
-        self.source = source
+        self.init(
+            notes: notes,
+            duration: duration,
+            decorations: decorations,
+            chordSymbol: chordSymbol,
+            annotations: annotations,
+            beam: beam,
+            ties: ties,
+            slurs: slurs,
+            lyrics: lyric.map { [$0] } ?? [],
+            source: source
+        )
     }
 }
 

@@ -97,6 +97,18 @@ public enum SVGGeometry {
     /// staff's own stroke width is the threshold between them, and it scales with
     /// `%%ceolkit:scale` exactly as the two things being separated do.
     ///
+    /// The stroke has to *start* at the staff's top line, but it is allowed to run past
+    /// the bottom one: in a multi-voice system every staff but the last has its barlines
+    /// carried down to the next staff so the system's barlines read as one stroke.  A note
+    /// stem never starts flush with the top line and outruns the bottom, so admitting the
+    /// overrun costs nothing.  The rule that joins a multi-voice system's staves at the
+    /// left edge outruns the staff too, and is excluded by the same stroke-width test that
+    /// excludes stems: the emitter draws it at the staff lines' own thickness.
+    ///
+    /// The third filter is horizontal: a barline stands over the staff, and the brace or
+    /// bracket joining a group stands left of it, in the indent reserved for it.  A bracket
+    /// spine is drawn *thicker* than a barline, so nothing but its x tells the two apart.
+    ///
     /// This reads drawing output rather than the model, so it stays approximate: it
     /// rests on those three constants keeping their present order.
     static func barlines(in lines: [SVGLine], crossing staff: Staff) -> [Double] {
@@ -105,7 +117,8 @@ public enum SVGGeometry {
 
         let xs = lines
             .filter(\.isVertical)
-            .filter { abs($0.y1 - staff.topY) < tolerance && abs($0.y2 - bottomY) < tolerance }
+            .filter { abs($0.y1 - staff.topY) < tolerance && $0.y2 > bottomY - tolerance }
+            .filter { $0.x1 >= staff.left - tolerance }
             .filter { line in
                 // Keep the stroke when either width is unknown: better to over-report
                 // than to silently drop barlines from output we don't fully recognise.

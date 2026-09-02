@@ -16,15 +16,37 @@ public struct SVGRenderer: CeolKitRenderer {
 
     /// Returns one SVG string per page.
     public func render(_ score: Score) throws -> [String] {
+        var diagnostics: [Diagnostic] = []
+        return try render(score, diagnostics: &diagnostics)
+    }
+
+    /// Returns one SVG string per page, appending anything the *renderer* had to complain
+    /// about to `diagnostics`.
+    ///
+    /// Separate from `render(_:)` because rendering can discover problems parsing cannot:
+    /// laying two voices out as one system means the voices have to agree about where the
+    /// bar lines fall, and only the renderer is in a position to notice that they do not
+    /// (see `VoiceAligner`).  `Score.diagnostics` is already sealed by then, so the caller
+    /// that wants to report both concatenates them.
+    public func render(_ score: Score, diagnostics: inout [Diagnostic]) throws -> [String] {
         let metadata = try BravuraMetadata.load()
 
         // Apply score-level directives that affect the whole document.
         // File-preamble directives are promoted to the first tune by the parser.
         let effectiveConfig = applyingScoreDirectives(score)
 
+        // The face voice labels are measured in, read once and only when a voice has a label
+        // to measure: parsing the bundled faces is the most expensive thing this renderer
+        // does, and a score that names no voice needs none of it.  `nil` where the resource
+        // could not be read — `VoiceLabelGutter` estimates from there, on both sides of the
+        // reservation, so the labels still land in the space kept for them.
+        let labelFont = score.tunes.contains(where: \.hasVoiceLabels)
+            ? OutlineFontSet.textFace() : nil
+
         let breaker   = LineBreaker(overflowTolerance: effectiveConfig.lineOverflowTolerance)
         let justifier = Justifier(maxStretch: effectiveConfig.maxSystemStretch)
-        let engine    = VerticalLayoutEngine(config: effectiveConfig, metadata: metadata)
+        let engine    = VerticalLayoutEngine(config: effectiveConfig, metadata: metadata,
+                                             labelFont: labelFont)
 
         let usableWidth = effectiveConfig.pageSize.width - effectiveConfig.margins.left - effectiveConfig.margins.right
 
@@ -33,14 +55,17 @@ public struct SVGRenderer: CeolKitRenderer {
         // so each tune can start from that baseline and layer its own on top.
         let fileWriteFields: WriteFieldsConfig = {
             var wf = WriteFieldsConfig.default
-            for scope in score.tunes.first?.directives ?? [] where { if case .fileGlobal = scope.scope { true } else { false } }() {
+            for scope in score.tunes.first?.directives ?? [] {
+                guard case .fileGlobal = scope.scope else { continue }
                 wf.apply(scope.directive)
             }
             return wf
         }()
 
         var tuneBlocks: [TuneBlock] = []
-        var stemDirection: StemDirection = .auto
+        // What the *document* asks for. A voice's own `V:` stem= outranks it; the emitter
+        // resolves the two per staff (issue #74).
+        var documentStemDirection: StemDirection = .auto
         var justifyLastSystem = effectiveConfig.justifyLastSystem
         // %%ceolkit:scale is tune-scoped but sticky: a preamble value governs every following
         // tune until a later tune header overrides it. %%ceolkit:gracenotespacing behaves the
@@ -51,7 +76,7 @@ public struct SVGRenderer: CeolKitRenderer {
         for tune in score.tunes {
             for scope in tune.directives {
                 switch scope.directive {
-                case .pipeFormat(true):     stemDirection = .down
+                case .pipeFormat(true):     documentStemDirection = .down
                 case .justifyLast(let on):  justifyLastSystem = on
                 case .scale(let factor):    scale = factor
                 case .graceNoteSpacing(let step): graceNoteSpacing = step
@@ -65,45 +90,210 @@ public struct SVGRenderer: CeolKitRenderer {
             // set after `scaled(by:)` and never multiplied by the scale factor.
             tuneConfig.graceNoteSpacing = graceNoteSpacing
             let sizer = MeasureSizer(config: tuneConfig, metadata: metadata)
-            var tuneSystems: [JustifiedSystem] = []
-            var meterForFirstSystem: Meter? = tune.meter
-            for voice in tune.voices {
-                // Build (measure, breakAfter) pairs honouring stave boundaries.
-                // The semantic pass creates one Staff per source line-break, so the
-                // last measure of every non-final stave gets a .hard score line-break.
-                var pairs: [(measure: SizedMeasure, breakAfter: ScoreLineBreak?)] = []
-                let staves = voice.staves
-                for (si, stave) in staves.enumerated() {
-                    let isLastStave = si == staves.count - 1
-                    for (mi, m) in stave.measures.enumerated() {
-                        let forceBreak = !isLastStave && mi == stave.measures.count - 1
-                        pairs.append((
-                            measure: sizer.size(m, unitNoteLength: tune.unitNoteLength),
-                            breakAfter: forceBreak ? .hard : nil
-                        ))
+
+            // §11.1: a `%%score` / `%%staves` plan decides which voices are printed and in
+            // what order, and one written in the tune body resets that part-way through.
+            // The staff count is therefore not a property of the tune, so the whole
+            // align → size → break block below runs once per *plan region* — a maximal run
+            // of staves under one plan — and the systems are concatenated.  A region
+            // boundary is always a system break; a staff plan cannot change mid-system.
+            var groups: [SystemGroup] = []
+            var headerWidths: [Double] = []
+            // The key each voice is standing in, threaded across the regions: a `%%score` in
+            // the body cuts the tune but does not reset it, so the region after one opens in
+            // whatever key the music before it reached (#134).  Empty until a body `K:` moves
+            // a voice, which leaves the tune's own key standing for everything else.
+            var runningKeys: [VoiceId: KeySignature] = [:]
+
+            for region in PlanRegions.segment(tune) {
+                let selection = VoiceSelector.select(from: region.voices, plan: region.plan,
+                                                     into: &diagnostics)
+                let printedVoices = selection.voices
+                guard !printedVoices.isEmpty else { continue }
+
+                // §7.3: a voice states its own `K:` where it needs one, and the tune's stands
+                // in where it does not.  This is the key the voice *opens* this region in,
+                // not one it holds throughout: a body `K:` moves it, and the staff heads
+                // after that draw the new one (#134), which the column walk below resolves.
+                // The unit note length is not resolved here either — an `L:` moves it part
+                // way through a voice, so it is the measure that carries it (issue #122).
+                let voiceKeys = printedVoices.map { runningKeys[$0.id] ?? tune.effectiveKey(for: $0) }
+
+                // Bring the voices into agreement about how much music each source line
+                // holds, so the break points chosen below are legal for every one of them.
+                // Voices that disagree are padded and warned about rather than laid out
+                // sequentially.
+                let alignedStaves = VoiceAligner.align(printedVoices, into: &diagnostics)
+
+                // Flatten the aligned staves into one measure column per bar, carrying the
+                // stave boundaries as .hard breaks: the semantic pass makes one Staff per
+                // source line-break, so the last column of every non-final stave forces a
+                // system break.  The region's own final stave needs none — the region ends
+                // there, and the next one starts a new system anyway.
+                //
+                // §11.1 `( … )`: a staff may carry more than one voice, and those are merged
+                // onto a common onset grid here — before sizing, because interleaved onsets
+                // need more columns than either voice alone and neither the breaker's nor
+                // the justifier's `max` across staves can invent one.
+                let voicesByStaff = selection.voicesByStaff
+                var breaks: [ScoreLineBreak?] = []
+                var columnsPerStaff = [[SizedMeasure]](repeating: [], count: voicesByStaff.count)
+                // The same columns as they are drawn when one opens a system: the change moves
+                // up into the staff head there, so the bar reserves no space for it (#134).
+                // Only a column carrying a `K:` differs, and only that one is sized twice.
+                var startColumnsPerStaff = [[SizedMeasure]](repeating: [], count: voicesByStaff.count)
+                // The key each staff is standing in, so a `K:` part way through the tune is
+                // drawn as the change it is — the naturals cancelling the signature being
+                // left behind, then the new one (#129).  It starts at what the staff's head
+                // draws, which is its lead voice's key, and moves with that voice's own
+                // `K:`: one staff carries one signature, and the lead is the voice whose
+                // clef and key the head already reads (§7.3).
+                var staffKeys: [KeySignature?] = voicesByStaff.map { voiceKeys[$0[0]] }
+                // That running value, kept rather than discarded: it is the signature the head
+                // of a system opening at this column has to draw, and it is knowable here —
+                // before anything is packed — because it depends only on the columns before it
+                // and not on how they were broken (#134).
+                var columnKeysPerStaff = [[KeySignature?]](repeating: [], count: voicesByStaff.count)
+                for (si, stave) in alignedStaves.enumerated() {
+                    let isLastStave = si == alignedStaves.count - 1
+                    for column in 0..<stave.measureCount {
+                        breaks.append(!isLastStave && column == stave.measureCount - 1 ? .hard : nil)
+                        for (staffIndex, members) in voicesByStaff.enumerated() {
+                            let lead = members[0]
+                            var keyChange: KeyChange? = nil
+                            if let newKey = stave.measures[lead][column].key {
+                                keyChange = KeyChange(from: staffKeys[staffIndex], to: newKey,
+                                                      clef: printedVoices[lead].properties.clef)
+                                staffKeys[staffIndex] = newKey
+                            }
+                            columnKeysPerStaff[staffIndex].append(staffKeys[staffIndex])
+                            let parts = members.enumerated().map { position, voice in
+                                MeasureSizer.SharedVoice(
+                                    measure: stave.measures[voice][column],
+                                    voiceIndex: position,
+                                    isPadding: stave.isPadding(voice: voice, column: column))
+                            }
+                            let sized = sizer.size(sharedStaff: parts, keyChange: keyChange)
+                            columnsPerStaff[staffIndex].append(sized)
+                            startColumnsPerStaff[staffIndex].append(
+                                keyChange == nil ? sized : sizer.size(sharedStaff: parts))
+                        }
                     }
                 }
-                guard !pairs.isEmpty else { continue }
-                // Header widths differ between the first system (has time sig) and later ones.
-                let firstHeaderW = systemHeaderWidth(
-                    clef: voice.properties.clef, keySignature: tune.key, meter: meterForFirstSystem,
-                    metadata: metadata, staffSize: tuneConfig.staffSize)
-                let laterHeaderW = systemHeaderWidth(
-                    clef: voice.properties.clef, keySignature: tune.key, meter: nil,
-                    metadata: metadata, staffSize: tuneConfig.staffSize)
-                let systems = breaker.breakIntoSystems(pairs, usableWidth: usableWidth,
-                                                       firstSystemHeaderWidth: firstHeaderW,
-                                                       laterSystemHeaderWidth: laterHeaderW,
-                                                       clef: voice.properties.clef,
-                                                       keySignature: tune.key,
-                                                       meter: meterForFirstSystem)
-                meterForFirstSystem = nil
-                let headerWidths = systems.enumerated().map { i, _ in i == 0 ? firstHeaderW : laterHeaderW }
-                let justified = justifier.justify(systems, usableWidth: usableWidth,
-                                                  justifyLastSystem: justifyLastSystem,
-                                                  systemHeaderWidths: headerWidths)
-                tuneSystems.append(contentsOf: justified)
+                guard !breaks.isEmpty else { continue }
+                // Hand the keys this region ended in to the next one.  A staff carries one
+                // signature, so every voice drawn on it leaves in the key its lead does.
+                for (staffIndex, members) in voicesByStaff.enumerated() {
+                    guard let key = staffKeys[staffIndex] else { continue }
+                    for voice in members { runningKeys[printedVoices[voice].id] = key }
+                }
+
+                // Everything below draws one staff at a time, and a shared staff draws the
+                // clef, key and name of the voice written at the top of it — as an engraver
+                // does, and as `V:` order decides.
+                let staffLead = voicesByStaff.map { $0[0] }
+
+                // A time signature is drawn once, on the tune's very first system.  A later
+                // region opens a fresh set of staves, but it is still the same tune, and a
+                // meter no more repeats at a staff-plan change than it does at a line break.
+                let isOpeningRegion = groups.isEmpty
+                let regionMeter = isOpeningRegion ? tune.meter : nil
+
+                // §4.1: `name=` labels the voice on the first system it appears on and
+                // `sname=` on every later one.  A region after the opening one is not the
+                // first system of anything — the voice has already been named — so it takes
+                // the subname throughout, exactly as a line break within a region does.
+                let firstLabels = staffLead.map {
+                    isOpeningRegion ? printedVoices[$0].properties.name
+                                    : printedVoices[$0].properties.subname
+                }
+                let laterLabels = staffLead.map { printedVoices[$0].properties.subname }
+
+                // The clef, key and label are the staff lead's; the stem directions are
+                // every tenant's, in staff order.  A shared staff opposes its voices' stems
+                // rather than reading each note's pitch (issue #77), and it is the voices
+                // that were *not* drawn first whose own `stem=` would otherwise be lost.
+                let voiceLines = staffLead.enumerated().map { staffIndex, voice in
+                    LineBreaker.VoiceLine(measures: columnsPerStaff[staffIndex],
+                                          clef: printedVoices[voice].properties.clef,
+                                          keySignature: voiceKeys[voice],
+                                          meter: regionMeter,
+                                          firstSystemLabel: firstLabels[staffIndex],
+                                          laterSystemLabel: laterLabels[staffIndex],
+                                          voiceStemDirections: voicesByStaff[staffIndex].map {
+                                              printedVoices[$0].properties.stemDirection
+                                          },
+                                          systemStartMeasures: startColumnsPerStaff[staffIndex],
+                                          columnKeys: columnKeysPerStaff[staffIndex])
+                }
+                // Space for the region's braces and brackets, reserved before anything is
+                // packed into the line.  It is added to the header widths rather than taken
+                // off `usableWidth` because that is the one number both the breaker and the
+                // justifier already subtract, and `VerticalLayoutEngine` spends exactly the
+                // same amount moving the staves right (see `BracketColumns`).
+                let indent = BracketColumns(grouping: selection.grouping,
+                                            staffCount: voicesByStaff.count,
+                                            metadata: metadata,
+                                            staffSize: tuneConfig.staffSize).indent
+
+                // Space for the voice names, outside the furniture.  Two widths, because the
+                // labels differ: the first system carries the full names and later ones the
+                // subnames, so a voice named "Soprano" with `snm="S"` indents its opening
+                // system further than the rest — which is what an engraver draws, and what
+                // the separate first/later header widths below already express.
+                let openingGutter = VoiceLabelGutter(labels: firstLabels, font: labelFont,
+                                                     staffSize: tuneConfig.staffSize).width
+                let laterGutter = VoiceLabelGutter(labels: laterLabels, font: labelFont,
+                                                   staffSize: tuneConfig.staffSize).width
+
+                // The header width of one system: the max across the group, because its staves
+                // have to start at the same x even when one voice's clef or key signature is
+                // wider.  It differs system by system twice over — the region's first carries
+                // the time signature and the full voice names, and a system opening on a `K:`
+                // draws that change rather than a plain signature (#134) — so it is a function
+                // rather than the two flat numbers it used to be.  Written once and asked
+                // twice: of the *columns*, while the breaker is deciding where the systems
+                // fall, and of the systems it decided on, so the justifier spends what the
+                // breaker charged.
+                let headerWidth = { (isOpening: Bool,
+                                     signature: (Int) -> (KeySignature?, KeyChange?)) -> Double in
+                    indent + (isOpening ? openingGutter : laterGutter)
+                        + staffLead.indices.reduce(0.0) { widest, staffIndex in
+                            let (key, change) = signature(staffIndex)
+                            return max(widest, systemHeaderWidth(
+                                clef: printedVoices[staffLead[staffIndex]].properties.clef,
+                                keySignature: key, meter: isOpening ? regionMeter : nil,
+                                metadata: metadata, staffSize: tuneConfig.staffSize,
+                                keyChange: change))
+                        }
+                }
+                let regionGroups = breaker.breakIntoGroups(
+                    voiceLines, breaks: breaks, usableWidth: usableWidth,
+                    grouping: selection.grouping,
+                    headerWidth: { systemIndex, startColumn in
+                        headerWidth(systemIndex == 0) { staffIndex in
+                            (columnKeysPerStaff[staffIndex][startColumn],
+                             columnsPerStaff[staffIndex][startColumn].keyChange)
+                        }
+                    })
+                headerWidths += regionGroups.enumerated().map { index, group in
+                    headerWidth(index == 0) { staffIndex in
+                        (group.staves[staffIndex].keySignature,
+                         group.staves[staffIndex].headerKeyChange)
+                    }
+                }
+                groups += regionGroups
             }
+
+            // The line breaker marks the last system of whatever it was handed, and it was
+            // handed one region at a time; only the last system of the last region ends the
+            // tune.
+            groups = groups.enumerated().map {
+                $0.element.markingLastSystem($0.offset == groups.count - 1)
+            }
+            let tuneGroups = groups.isEmpty ? [] : justifier.justifyGroups(
+                groups, usableWidth: usableWidth, justifyLastSystem: justifyLastSystem,
+                systemHeaderWidths: headerWidths)
 
             // Build the title block for this tune per §6.1.3.
             // Title row baselineY values are tune-relative; the layout engine offsets
@@ -116,12 +306,13 @@ public struct SVGRenderer: CeolKitRenderer {
             let (titleRows, titleBlockHeight) = SpecTitleBlockBuilder(
                 tune: tune, writeFields: tuneWriteFields, layoutConfig: effectiveConfig
             ).build()
-            tuneBlocks.append(TuneBlock(systems: tuneSystems, titleRows: titleRows,
+            tuneBlocks.append(TuneBlock(systemGroups: tuneGroups, titleRows: titleRows,
                                         titleBlockHeight: titleBlockHeight, scale: scale,
                                         graceNoteSpacing: graceNoteSpacing))
         }
 
-        let emitter = SVGEmitter(config: effectiveConfig, metadata: metadata, stemDirection: stemDirection)
+        let emitter = SVGEmitter(config: effectiveConfig, metadata: metadata,
+                                 stemDirection: documentStemDirection)
         let layout = engine.layout(tuneBlocks)
         let finalLayout = attachFooters(layout, score: score, config: effectiveConfig)
         return try emitter.emit(finalLayout)
@@ -234,5 +425,31 @@ public struct SVGRenderer: CeolKitRenderer {
             }
         }
         return effective
+    }
+}
+
+// MARK: - Voice labels
+
+private extension Tune {
+    /// Whether any voice of this tune prints a name in the left gutter — which is what
+    /// decides whether the renderer has to read a text face at all.
+    var hasVoiceLabels: Bool {
+        voices.contains { $0.properties.name != nil || $0.properties.subname != nil }
+    }
+}
+
+// MARK: - Plan regions
+
+private extension SystemGroup {
+    /// The same group with `isLastSystem` set to `isLast` on every staff.
+    func markingLastSystem(_ isLast: Bool) -> SystemGroup {
+        guard isLastSystem != isLast else { return self }
+        return SystemGroup(staves: staves.map {
+            System(measures: $0.measures, isLastSystem: isLast, sourceForced: $0.sourceForced,
+                   staveWasSplit: $0.staveWasSplit, clef: $0.clef,
+                   keySignature: $0.keySignature, meter: $0.meter,
+                   voiceLabel: $0.voiceLabel, voiceStemDirections: $0.voiceStemDirections,
+                   headerKeyChange: $0.headerKeyChange)
+        }, grouping: grouping)
     }
 }

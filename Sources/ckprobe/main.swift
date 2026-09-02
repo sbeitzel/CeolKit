@@ -74,9 +74,13 @@ if let factors = options.sweep {
 let abc = SourceRewriter.apply(options, to: source)
 let result = parse(abc)
 
+// The renderer can find problems the parser cannot — voices that disagree about where the
+// bar lines fall only matter once they have to share a system — so its diagnostics are
+// collected and reported alongside the parser's.
+var renderDiagnostics: [CeolKitModel.Diagnostic] = []
 let svgs: [String]
 do {
-    svgs = try SVGRenderer(config: renderConfig).render(result.score)
+    svgs = try SVGRenderer(config: renderConfig).render(result.score, diagnostics: &renderDiagnostics)
 } catch {
     fail("render failed: \(error)")
 }
@@ -96,7 +100,7 @@ if let directory = options.outputDirectory {
 do {
     let report = Report(file: options.file,
                         score: result.score,
-                        diagnostics: result.diagnostics,
+                        diagnostics: result.diagnostics + renderDiagnostics,
                         pages: try SVGGeometry.pages(from: svgs))
     if options.json {
         let encoder = JSONEncoder()

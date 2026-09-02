@@ -4,46 +4,48 @@ enum KeyFieldParser {
     static func parse(payload: String, source: SourceRange) -> (KeySignature, [Diagnostic]) {
         let t = payload.trimmingCharacters(in: .whitespaces)
 
-        // Special cases
-        if t.lowercased() == "none" {
-            return (makeKey(tonic: nil, mode: Mode.none, source: source), [])
-        }
-        if t == "HP" {
-            return (makeKey(tonic: nil, mode: .highlandPipes, source: source), [])
-        }
-        if t == "Hp" {
-            return (makeKey(tonic: nil, mode: .highlandPipesNoSignature, source: source), [])
-        }
-
         var rest = t[...]
+        let tonic: PitchClass?
+        let mode: Mode
 
-        // Tonic letter (A–G)
-        guard let first = rest.first, "ABCDEFG".contains(first),
-              let step = diatonicStep(from: first) else {
-            return (
-                makeKey(tonic: nil, mode: .major, source: source),
-                [malformed("Key must start with A–G, 'none', 'HP', or 'Hp': '\(payload)'", source)]
-            )
-        }
-        rest = rest.dropFirst()
-
-        // Optional tonic alteration: 'b' = flat, '#' = sharp
-        var tonicAlt = Alteration(numerator: 0, denominator: 1)
-        if rest.first == "b" {
-            tonicAlt = Alteration(numerator: -1, denominator: 1)
+        // The keys named by a word rather than by a tonic.  The word is consumed like any
+        // other, not matched against the whole payload: `K:none clef=bass` states a clef the
+        // same way `K:C clef=bass` does, and the options after it are read the same way too.
+        let firstWord = String(rest.prefix(while: { !$0.isWhitespace }))
+        if let specialMode = specialKeyMode(firstWord) {
+            tonic = nil
+            mode = specialMode
+            rest = rest.dropFirst(firstWord.count)
+        } else {
+            // Tonic letter (A–G)
+            guard let first = rest.first, "ABCDEFG".contains(first),
+                  let step = diatonicStep(from: first) else {
+                return (
+                    makeKey(tonic: nil, mode: .major, source: source),
+                    [malformed("Key must start with A–G, 'none', 'HP', or 'Hp': '\(payload)'", source)]
+                )
+            }
             rest = rest.dropFirst()
-        } else if rest.first == "#" {
-            tonicAlt = Alteration(numerator: 1, denominator: 1)
-            rest = rest.dropFirst()
+
+            // Optional tonic alteration: 'b' = flat, '#' = sharp
+            var tonicAlt = Alteration(numerator: 0, denominator: 1)
+            if rest.first == "b" {
+                tonicAlt = Alteration(numerator: -1, denominator: 1)
+                rest = rest.dropFirst()
+            } else if rest.first == "#" {
+                tonicAlt = Alteration(numerator: 1, denominator: 1)
+                rest = rest.dropFirst()
+            }
+            tonic = PitchClass(step: step, alteration: tonicAlt)
+
+            // Skip whitespace before mode keyword
+            rest = Substring(rest.drop(while: { $0.isWhitespace }))
+
+            // Mode keyword
+            let (parsedMode, modeLen) = parseMode(from: rest)
+            if modeLen > 0 { rest = rest.dropFirst(modeLen) }
+            mode = parsedMode
         }
-        let tonic = PitchClass(step: step, alteration: tonicAlt)
-
-        // Skip whitespace before mode keyword
-        rest = Substring(rest.drop(while: { $0.isWhitespace }))
-
-        // Mode keyword
-        let (mode, modeLen) = parseMode(from: rest)
-        if modeLen > 0 { rest = rest.dropFirst(modeLen) }
         rest = Substring(rest.drop(while: { $0.isWhitespace }))
 
         // Remaining options (space-separated tokens)
@@ -86,6 +88,17 @@ enum KeyFieldParser {
     }
 
     // MARK: - Mode parsing
+
+    /// The three keys the standard names by a word: `none`, and the two Highland pipe keys.
+    ///
+    /// `none` is matched without regard to case, `HP` and `Hp` with it — they are different
+    /// keys, so their case is the only thing telling them apart.
+    private static func specialKeyMode(_ word: String) -> Mode? {
+        if word.lowercased() == "none" { return Mode.none }
+        if word == "HP" { return .highlandPipes }
+        if word == "Hp" { return .highlandPipesNoSignature }
+        return nil
+    }
 
     private static func parseMode(from rest: Substring) -> (Mode, Int) {
         // Read a run of letters = the mode word

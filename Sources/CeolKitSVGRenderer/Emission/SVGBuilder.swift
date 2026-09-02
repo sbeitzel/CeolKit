@@ -78,6 +78,61 @@ struct SVGBuilder: Sendable {
                           className: className)
     }
 
+    /// Draws `content` stretched independently in x and y — the shape a *stretchy* glyph
+    /// needs, and the one a `font-size` cannot express.
+    ///
+    /// SMuFL designs the brace to be drawn at whatever height the staves it joins happen to
+    /// span — three times its natural height over a piano system — while its arms thicken by
+    /// nothing like as much.  So the two axes have to move independently: `fontSize` fixes
+    /// the natural size on both, and `xScale`/`yScale` stretch from there, `1` leaving an
+    /// axis alone.
+    ///
+    /// `x` and `y` are where the run's origin lands on the page; the stretch is applied
+    /// about that point, so a glyph sitting on its baseline stays on it however far it is
+    /// stretched.
+    mutating func stretchedText(
+        _ content: String,
+        x: Double, y: Double,
+        fontFamily: String,
+        fontSize: Double,
+        xScale: Double,
+        yScale: Double,
+        fill: String = "black",
+        className: String? = nil
+    ) {
+        if textRendering.emitsOutlines,
+           let resolved = fonts?.resolve(family: fontFamily, italic: false) {
+            appendOutlineRun(content, x: x, y: y,
+                             face: resolved.key, font: resolved.font,
+                             fontSize: fontSize, fill: fill,
+                             textAnchor: "start", className: className,
+                             xScale: xScale, yScale: yScale)
+            guard textRendering == .both else { return }
+            appendStretchedTextElement(content, x: x, y: y, fontFamily: fontFamily,
+                                       fontSize: fontSize, xScale: xScale, yScale: yScale,
+                                       fill: "none", className: className)
+            return
+        }
+        appendStretchedTextElement(content, x: x, y: y, fontFamily: fontFamily,
+                                   fontSize: fontSize, xScale: xScale, yScale: yScale,
+                                   fill: fill, className: className)
+    }
+
+    /// Wraps everything `body` draws in a `<g>` carrying `transform`.
+    ///
+    /// The one thing a group is needed for here is the stretch above: a `<text>` element
+    /// carries a single `font-size`, so the only way to scale a run of text by different
+    /// factors on the two axes is to put the factors on an element around it.  A group that
+    /// wraps nothing is dropped rather than emitted empty.
+    mutating func group(transform: String, _ body: (inout SVGBuilder) -> Void) {
+        let start = elements.count
+        body(&self)
+        guard elements.count > start else { return }
+        let inner = elements[start...].map { "  " + $0 }
+        elements.replaceSubrange(start..., with:
+            ["<g transform=\"\(esc(transform))\">"] + inner + ["</g>"])
+    }
+
     mutating func path(
         d: String,
         fill: String? = nil,
@@ -166,6 +221,31 @@ struct SVGBuilder: Sendable {
         elements.append("<text \(attrs)>\(esc(content))</text>")
     }
 
+    /// The `<text>` route for `stretchedText`: the run drawn at the origin of a group that
+    /// carries the placement and the stretch.  Identity factors would produce the element
+    /// `appendTextElement` writes on its own, wrapped in a group that does nothing, so they
+    /// take that path instead and the ordinary output is untouched.
+    private mutating func appendStretchedTextElement(
+        _ content: String, x: Double, y: Double,
+        fontFamily: String, fontSize: Double,
+        xScale: Double, yScale: Double,
+        fill: String, className: String?
+    ) {
+        guard xScale != 1 || yScale != 1 else {
+            appendTextElement(content, x: x, y: y, fontFamily: fontFamily, fontSize: fontSize,
+                              fill: fill, textAnchor: "start", fontStyle: nil,
+                              className: className)
+            return
+        }
+        let transform = "translate(\(fmt(x)) \(fmt(y))) " +
+                        "scale(\(fmtScale(xScale)) \(fmtScale(yScale)))"
+        group(transform: transform) {
+            $0.appendTextElement(content, x: 0, y: 0, fontFamily: fontFamily,
+                                 fontSize: fontSize, fill: fill, textAnchor: "start",
+                                 fontStyle: nil, className: className)
+        }
+    }
+
     /// Lays out `content` one glyph per Unicode scalar and emits a `<use>` per glyph.
     ///
     /// There is no shaping, kerning, or ligature substitution here. That is not a shortcut
@@ -175,9 +255,14 @@ struct SVGBuilder: Sendable {
     private mutating func appendOutlineRun(
         _ content: String, x: Double, y: Double,
         face: OutlineFontSet.FaceKey, font: OpenTypeFont,
-        fontSize: Double, fill: String, textAnchor: String, className: String?
+        fontSize: Double, fill: String, textAnchor: String, className: String?,
+        xScale: Double = 1, yScale: Double = 1
     ) {
         let scale = fontSize / font.unitsPerEm
+        // A `<use>` already carries a transform of its own, so an anisotropic stretch costs
+        // nothing here beyond the two factors: no wrapping group, and the same `<defs>`
+        // entry the glyph has at its natural size.
+        let (scaleX, scaleY) = (scale * xScale, scale * yScale)
         // An unencoded scalar falls back to glyph 0, whose .notdef box is what a rasteriser
         // would have drawn: a visible gap beats a run that silently shortens.
         let glyphs = content.unicodeScalars.map { font.glyphID(for: $0) ?? 0 }
@@ -186,9 +271,9 @@ struct SVGBuilder: Sendable {
         var penX = x
         switch textAnchor {
         case "middle":
-            penX -= glyphs.reduce(0) { $0 + font.advance(forGlyph: $1) } * scale / 2
+            penX -= glyphs.reduce(0) { $0 + font.advance(forGlyph: $1) } * scaleX / 2
         case "end":
-            penX -= glyphs.reduce(0) { $0 + font.advance(forGlyph: $1) } * scale
+            penX -= glyphs.reduce(0) { $0 + font.advance(forGlyph: $1) } * scaleX
         default:
             break
         }
@@ -197,12 +282,12 @@ struct SVGBuilder: Sendable {
             if let id = registerGlyph(face: face, glyph: glyph, font: font) {
                 var attrs = "href=\"#\(id)\" xlink:href=\"#\(id)\""
                 attrs += " transform=\"translate(\(fmt(penX)) \(fmt(y)))"
-                attrs += " scale(\(fmtScale(scale)) \(fmtScale(-scale)))\""
+                attrs += " scale(\(fmtScale(scaleX)) \(fmtScale(-scaleY)))\""
                 if fill != "black" { attrs += " fill=\"\(esc(fill))\"" }
                 if let cls = className { attrs += " class=\"\(esc(cls))\"" }
                 elements.append("<use \(attrs)/>")
             }
-            penX += font.advance(forGlyph: glyph) * scale
+            penX += font.advance(forGlyph: glyph) * scaleX
         }
     }
 

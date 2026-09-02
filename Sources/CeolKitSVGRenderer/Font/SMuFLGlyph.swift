@@ -20,6 +20,20 @@ public enum SMuFLGlyph: String, Sendable, CaseIterable {
     case cClef
     case unpitchedPercussionClef1
 
+    // Octave clefs (§4.6 `clef=treble-8`, `clef=bass+8`, …).  SMuFL draws the numeral as
+    // part of the glyph, so the octave form is a substitution for the plain one and needs
+    // no separate placement.  `cClef15ma`/`cClef15mb` and `fClef8vb`'s 15th are omitted
+    // where Bravura has no glyph for them; see `octaveClef(_:shift:)` in `SVGEmitter`.
+    case gClef8va
+    case gClef8vb
+    case gClef15ma
+    case gClef15mb
+    case fClef8va
+    case fClef8vb
+    case fClef15ma
+    case fClef15mb
+    case cClef8vb
+
     // Accidentals
     case accidentalSharp
     case accidentalFlat
@@ -68,6 +82,12 @@ public enum SMuFLGlyph: String, Sendable, CaseIterable {
     case fermataAbove
     case fermataBelow
 
+    // Staff brackets and braces
+    case bracketTop
+    case bracketBottom
+    /// Stretchy: drawn at whatever height the staves it joins span, not at its natural one.
+    case brace
+
     public var unicodeScalar: Unicode.Scalar {
         // swiftlint:disable:next force_unwrapping — all values are valid PUA codepoints
         Unicode.Scalar(codepoint)!
@@ -84,6 +104,15 @@ public enum SMuFLGlyph: String, Sendable, CaseIterable {
         case .fClef:                       return 0xE062
         case .cClef:                       return 0xE05C
         case .unpitchedPercussionClef1:    return 0xE069
+        case .gClef8va:                    return 0xE053
+        case .gClef8vb:                    return 0xE052
+        case .gClef15ma:                   return 0xE054
+        case .gClef15mb:                   return 0xE051
+        case .fClef8va:                    return 0xE065
+        case .fClef8vb:                    return 0xE064
+        case .fClef15ma:                   return 0xE066
+        case .fClef15mb:                   return 0xE063
+        case .cClef8vb:                    return 0xE05D
         case .accidentalSharp:             return 0xE262
         case .accidentalFlat:              return 0xE260
         case .accidentalNatural:           return 0xE261
@@ -118,6 +147,9 @@ public enum SMuFLGlyph: String, Sendable, CaseIterable {
         case .repeatDot:                   return 0xE044
         case .fermataAbove:                return 0xE4C0
         case .fermataBelow:                return 0xE4C1
+        case .bracketTop:                  return 0xE003
+        case .bracketBottom:               return 0xE004
+        case .brace:                       return 0xE000
         }
     }
 }

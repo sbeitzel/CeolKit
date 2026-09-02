@@ -17,19 +17,41 @@ public struct SizedMeasure: Sendable {
     /// following event.  The justifier keeps the gap within each such pair fixed so
     /// grace notes stay visually attached to their melody note when measures are stretched.
     public let graceEventIndices: Set<Int>
+    /// The voice each event came from, parallel to `eventOffsets`.
+    /// `eventVoiceIndices.count == eventOffsets.count`.
+    ///
+    /// The voice's position *within its own staff*, top to bottom — which staff that is, the
+    /// enclosing ``System`` already says.  A staff carrying one voice therefore tags every
+    /// event `0`; a shared staff (§11.1 `( … )`) is what makes this a per-event table rather
+    /// than a property of the measure, and what the opposed stems and per-voice beaming above
+    /// this pass read to tell its tenants apart.
+    public let eventVoiceIndices: [Int]
+    /// Non-nil where a `K:` moved the key before this measure, resolved against the key the
+    /// staff was in and the clef it carries — everything needed to engrave the change
+    /// (#129). `Measure.key` alone cannot say what to draw: the naturals that cancel the
+    /// outgoing signature depend on the key being left behind, which is not the measure's to
+    /// know.
+    public let keyChange: KeyChange?
 
     public init(
         measure: Measure,
         naturalWidth: Double,
         eventOffsets: [Double],
         unitNoteLength: Fraction = Fraction(numerator: 1, denominator: 8),
-        graceEventIndices: Set<Int> = []
+        graceEventIndices: Set<Int> = [],
+        eventVoiceIndices: [Int]? = nil,
+        keyChange: KeyChange? = nil
     ) {
         self.measure = measure
         self.naturalWidth = naturalWidth
         self.eventOffsets = eventOffsets
         self.unitNoteLength = unitNoteLength
         self.graceEventIndices = graceEventIndices
+        self.keyChange = keyChange
+        // Kept parallel by construction: a caller that says nothing about voices gets the
+        // single-voice answer rather than an array the rest of the pipeline has to test.
+        self.eventVoiceIndices = eventVoiceIndices
+            ?? Array(repeating: 0, count: eventOffsets.count)
     }
 }
 
@@ -49,6 +71,26 @@ public struct System: Sendable {
     public let keySignature: KeySignature?
     /// Non-nil only on the first system of a tune; time signatures do not repeat at line breaks.
     public let meter: Meter?
+    /// What this voice prints in the left gutter of *this* system: its `V:` `name=` on the
+    /// tune's first system, its `sname=` on every later one, and `nil` where it has none
+    /// (ABC v2.2 §4.1).  A voice with a name but no subname is therefore labelled once and
+    /// then not again, which is what abcm2ps does.
+    public let voiceLabel: String?
+    /// What each voice drawn on this staff asked for with `V:` `stem=` (§4.1, issue #74),
+    /// in staff order.  One entry per voice: a staff carrying one voice has one entry, and a
+    /// shared staff (§11.1 `( … )`) one per tenant.  `.auto` — the overwhelmingly common
+    /// case — means that voice asked for nothing, and its position on the staff, then the
+    /// document, then the note's own pitch decides (issue #77).
+    public let voiceStemDirections: [StemDirection]
+    /// Non-nil when a body `K:` lands on this system's *first* measure, so the head signature
+    /// is the change itself: the naturals cancelling the key being left behind, then the new
+    /// one.  It is drawn there and not again at the head of the bar — the opening measure is
+    /// sized without it for exactly that reason (#134).
+    public let headerKeyChange: KeyChange?
+
+    /// What the staff's *first* voice asked for.  That is the whole answer for a staff
+    /// carrying one voice, which is every staff until a `%%score` group shares one.
+    public var stemDirection: StemDirection { voiceStemDirections.first ?? .auto }
 
     public init(
         measures: [SizedMeasure],
@@ -57,7 +99,10 @@ public struct System: Sendable {
         staveWasSplit: Bool = false,
         clef: ClefSpec = ClefSpec(clef: .treble, octaveShift: 0),
         keySignature: KeySignature? = nil,
-        meter: Meter? = nil
+        meter: Meter? = nil,
+        voiceLabel: String? = nil,
+        voiceStemDirections: [StemDirection] = [],
+        headerKeyChange: KeyChange? = nil
     ) {
         self.measures = measures
         self.isLastSystem = isLastSystem
@@ -66,7 +111,82 @@ public struct System: Sendable {
         self.clef = clef
         self.keySignature = keySignature
         self.meter = meter
+        self.voiceLabel = voiceLabel
+        self.voiceStemDirections = voiceStemDirections
+        self.headerKeyChange = headerKeyChange
     }
+}
+
+/// The brace/bracket spans and continued bar-line boundaries of one system, expressed in
+/// *printed* staff indices — positions in ``SystemGroup/staves``.
+///
+/// `%%score` / `%%staves` states them over the staves of the *plan*, which are not the
+/// staves that get printed: a voice the body never wrote to is dropped, and a floating `*V`
+/// takes a staff of its own that the plan never counted.
+/// ``VoiceSelector`` translates them as it selects, so everything below this point can read
+/// the indices straight off.
+///
+/// `nil` on a group means the tune had no plan (or the selector fell back from one), and
+/// every stage behaves exactly as it did before plans existed.
+public struct StaffGrouping: Sendable {
+    /// Outermost first.  May be empty: a plan can order the voices without grouping them.
+    public let spans: [Span]
+    /// Printed staff `i` is joined to `i + 1` by a bar line that runs through the gap.
+    public let barlineJoins: Set<Int>
+
+    public init(spans: [Span], barlineJoins: Set<Int>) {
+        self.spans = spans
+        self.barlineJoins = barlineJoins
+    }
+
+    public struct Span: Hashable, Sendable {
+        public let bracket: StaffPlanBracket
+        /// Printed staff indices, inclusive.
+        public let staves: ClosedRange<Int>
+        /// 0 = outermost; drives sub-bracket thickness.
+        public let depth: Int
+
+        public init(bracket: StaffPlanBracket, staves: ClosedRange<Int>, depth: Int) {
+            self.bracket = bracket
+            self.staves = staves
+            self.depth = depth
+        }
+    }
+}
+
+/// One system's worth of unjustified music: the staves the voices active on the source line
+/// the system came from are drawn on, top to bottom.
+///
+/// One staff per voice, except where a `%%score ( … )` group put several on one — those are
+/// merged into a single staff before this point (see ``SharedStaffMerger``).  A single-voice
+/// tune produces groups of exactly one staff, which is the pre-grouping path unchanged:
+/// every stage below treats a one-staff group as an ordinary system.
+public struct SystemGroup: Sendable {
+    /// One entry per printed staff, top to bottom.  Never empty.
+    ///
+    /// Every staff holds the same number of measures and was broken at the same measure
+    /// index, because `VoiceAligner` padded the voices into agreement before the line
+    /// breaker ever saw them.
+    public let staves: [System]
+
+    /// The plan's spans and bar-line joins for this system, or `nil` when no plan governs
+    /// it.  Identical on every group of one plan region, and free to differ between regions:
+    /// a `%%score` in the tune body changes both the staves and how they are grouped (see
+    /// `PlanRegions`).
+    public let grouping: StaffGrouping?
+
+    public init(staves: [System], grouping: StaffGrouping? = nil) {
+        self.staves = staves
+        self.grouping = grouping
+    }
+
+    /// The properties the line breaker assigned to the group as a whole.  They are recorded
+    /// on every staff identically, so the first one speaks for all of them.
+    public var isLastSystem: Bool { staves[0].isLastSystem }
+    public var sourceForced: Bool { staves[0].sourceForced }
+    public var staveWasSplit: Bool { staves[0].staveWasSplit }
+    /// Number of measures in each staff — the group's column count.
+    public var columnCount: Int { staves[0].measures.count }
 }
 
 /// Groups the justified systems and optional title block for a single tune.
@@ -75,7 +195,8 @@ public struct System: Sendable {
 /// (i.e. `y = 0` origin). The layout engine adds the actual page y-origin when placing them,
 /// so the same `TuneBlock` can be positioned anywhere on a page.
 public struct TuneBlock: Sendable {
-    public let systems: [JustifiedSystem]
+    /// One entry per system, each holding one staff per voice.
+    public let systemGroups: [JustifiedSystemGroup]
     public let titleRows: [ResolvedTitleRow]
     public let titleBlockHeight: Double
     /// Multiplier applied to `SVGRenderConfig.staffSize` (and the inter-system/inter-tune gaps
@@ -88,18 +209,48 @@ public struct TuneBlock: Sendable {
     /// so the emitter has to draw with the same one.
     public let graceNoteSpacing: Double
 
-    public init(systems: [JustifiedSystem], titleRows: [ResolvedTitleRow] = [],
+    public init(systemGroups: [JustifiedSystemGroup], titleRows: [ResolvedTitleRow] = [],
                 titleBlockHeight: Double = 0, scale: Double = 1.0,
                 graceNoteSpacing: Double = SVGRenderConfig().graceNoteSpacing) {
-        self.systems = systems
+        self.systemGroups = systemGroups
         self.titleRows = titleRows
         self.titleBlockHeight = titleBlockHeight
         self.scale = scale
         self.graceNoteSpacing = graceNoteSpacing
     }
+
+    /// Convenience for single-voice music: each system becomes a group of one staff.
+    public init(systems: [JustifiedSystem], titleRows: [ResolvedTitleRow] = [],
+                titleBlockHeight: Double = 0, scale: Double = 1.0,
+                graceNoteSpacing: Double = SVGRenderConfig().graceNoteSpacing) {
+        self.init(systemGroups: systems.map { JustifiedSystemGroup(staves: [$0]) },
+                  titleRows: titleRows, titleBlockHeight: titleBlockHeight,
+                  scale: scale, graceNoteSpacing: graceNoteSpacing)
+    }
 }
 
 // MARK: - Pass 3 output
+
+/// A `SystemGroup` after justification.
+///
+/// Every staff carries the same per-column final widths, so a bar line at column *j* lands
+/// on the same x on all of them — which is the whole point of engraving voices in parallel.
+public struct JustifiedSystemGroup: Sendable {
+    /// One entry per voice, top to bottom.  Never empty.
+    public let staves: [JustifiedSystem]
+
+    /// Carried through from ``SystemGroup/grouping`` — justification changes x positions,
+    /// never which staves a brace or bracket covers.
+    public let grouping: StaffGrouping?
+
+    public init(staves: [JustifiedSystem], grouping: StaffGrouping? = nil) {
+        self.staves = staves
+        self.grouping = grouping
+    }
+
+    public var isLastSystem: Bool { staves[0].isLastSystem }
+    public var sourceForced: Bool { staves[0].sourceForced }
+}
 
 public struct JustifiedSystem: Sendable {
     public let measures: [JustifiedMeasure]
@@ -109,6 +260,20 @@ public struct JustifiedSystem: Sendable {
     public let keySignature: KeySignature?
     /// Non-nil only on the first system of a tune; time signatures do not repeat at line breaks.
     public let meter: Meter?
+    /// Carried through from ``System/voiceLabel`` — justification moves x positions, never
+    /// what a staff is called.
+    public let voiceLabel: String?
+    /// Carried through from ``System/voiceStemDirections`` — justification moves x
+    /// positions, never which way a voice's stems point.
+    public let voiceStemDirections: [StemDirection]
+    /// Non-nil when a body `K:` lands on this system's *first* measure, so the head signature
+    /// is the change itself: the naturals cancelling the key being left behind, then the new
+    /// one.  It is drawn there and not again at the head of the bar — the opening measure is
+    /// sized without it for exactly that reason (#134).
+    public let headerKeyChange: KeyChange?
+
+    /// What the staff's first voice asked for; see ``System/stemDirection``.
+    public var stemDirection: StemDirection { voiceStemDirections.first ?? .auto }
 
     public init(
         measures: [JustifiedMeasure],
@@ -116,7 +281,10 @@ public struct JustifiedSystem: Sendable {
         sourceForced: Bool,
         clef: ClefSpec = ClefSpec(clef: .treble, octaveShift: 0),
         keySignature: KeySignature? = nil,
-        meter: Meter? = nil
+        meter: Meter? = nil,
+        voiceLabel: String? = nil,
+        voiceStemDirections: [StemDirection] = [],
+        headerKeyChange: KeyChange? = nil
     ) {
         self.measures = measures
         self.isLastSystem = isLastSystem
@@ -124,6 +292,9 @@ public struct JustifiedSystem: Sendable {
         self.clef = clef
         self.keySignature = keySignature
         self.meter = meter
+        self.voiceLabel = voiceLabel
+        self.voiceStemDirections = voiceStemDirections
+        self.headerKeyChange = headerKeyChange
     }
 }
 
@@ -142,6 +313,15 @@ public struct JustifiedMeasure: Sendable {
         self.finalWidth = finalWidth
         self.eventOffsets = eventOffsets
     }
+
+    /// The voice tags of ``SizedMeasure/eventVoiceIndices``, still parallel to
+    /// ``eventOffsets``.  Justification moves events along the line; it never adds, drops or
+    /// reorders one, so the sizer's table is as valid after it as before.
+    public var eventVoiceIndices: [Int] { source.eventVoiceIndices }
+
+    /// The key change the sizer resolved for this bar, carried through unchanged:
+    /// justification moves x positions, never what a bar is written in.
+    public var keyChange: KeyChange? { source.keyChange }
 }
 
 // MARK: - Pass 4 output
@@ -205,6 +385,138 @@ public enum TextAnchor: String, Sendable {
     case start, middle, end
 }
 
+/// Where one staff sits inside a multi-staff system, and how far the furniture that belongs
+/// to the *group* rather than to this staff has to reach.
+///
+/// Present only when the system holds more than one voice.  A single-voice tune leaves
+/// ``ResolvedSystem/staffGroup`` nil and the emitter takes exactly the path it always did.
+public struct StaffGroup: Sendable {
+    /// 0-based position of this staff within its group, top to bottom.
+    public let index: Int
+    /// Number of staves in the group.  Always > 1 — a group of one is represented by `nil`.
+    public let count: Int
+    /// Absolute y of the *next* staff's top staff line, or `nil` on the group's last staff.
+    ///
+    /// Where ``continuesBarlineBelow`` is set, bar lines are drawn down to this instead of
+    /// stopping at their own staff, so the joined staves' bar lines read as one continuous
+    /// stroke.  Repeat dots still sit within the staff that owns them.
+    public let nextStaffTopY: Double?
+    /// Absolute y of the bottom staff line of the group's last staff — the foot of the
+    /// vertical line that joins the staves at the left edge.
+    public let bottomY: Double
+    /// The brace/bracket spans that *begin* at this staff, outermost first, resolved to
+    /// absolute y.  Empty on a staff no span starts at, and on every staff of a group whose
+    /// tune has no plan.
+    ///
+    /// Anchored on the first staff rather than listed on every staff it covers, because that
+    /// is the staff which draws the furniture spanning a group — see ``isGroupLeader``.  Two
+    /// spans can start on the same staff (`[{A B} C]`), so this is a list and not a single
+    /// bracket kind.
+    public let spans: [Span]
+    /// Whether the bar line at the boundary *below* this staff runs on into the next one.
+    /// Always `false` on the group's last staff.
+    ///
+    /// With no plan every boundary continues, which is the behaviour multi-voice systems
+    /// have had since they were introduced.  A plan states the boundaries it wants with `|`
+    /// and the rest stop at their own staff (issue #68).
+    public let continuesBarlineBelow: Bool
+
+    /// One brace or bracket, placed on the page.
+    public struct Span: Sendable {
+        public let bracket: StaffPlanBracket
+        /// Indices within the group, inclusive.  `lowerBound` is the staff carrying this span.
+        public let staves: ClosedRange<Int>
+        /// 0 = outermost; drives sub-bracket thickness.
+        public let depth: Int
+        /// Absolute x of the left edge of the span's vertical spine.  Left of the staves,
+        /// in the indent ``BracketColumns`` reserved for it — the deeper the span, the
+        /// closer to them.
+        public let x: Double
+        /// Absolute y of the top staff line of the span's first staff.
+        public let topY: Double
+        /// Absolute y of the bottom staff line of the span's last staff.
+        public let bottomY: Double
+
+        public init(bracket: StaffPlanBracket, staves: ClosedRange<Int>, depth: Int,
+                    x: Double, topY: Double, bottomY: Double) {
+            self.bracket = bracket
+            self.staves = staves
+            self.depth = depth
+            self.x = x
+            self.topY = topY
+            self.bottomY = bottomY
+        }
+    }
+
+    public init(index: Int, count: Int, nextStaffTopY: Double?, bottomY: Double,
+                spans: [Span] = [], continuesBarlineBelow: Bool = false) {
+        self.index = index
+        self.count = count
+        self.nextStaffTopY = nextStaffTopY
+        self.bottomY = bottomY
+        self.spans = spans
+        self.continuesBarlineBelow = continuesBarlineBelow
+    }
+
+    /// `true` on the staff that draws the furniture spanning the whole group.
+    public var isGroupLeader: Bool { index == 0 }
+}
+
+/// A voice's `V:` `name=` / `sname=`, placed on the page.
+///
+/// The text and its x arrive together because the x is not derived from the staff: it is
+/// the right edge of the gutter ``VoiceLabelGutter`` reserved for the *system*, which is
+/// as far left as the widest label in it reaches.  Every staff of a system shares that
+/// edge, so the labels right-align with each other rather than each ending where its own
+/// staff begins.
+public struct VoiceLabel: Sendable {
+    public let text: String
+    /// Absolute x the label is right-aligned against.
+    public let x: Double
+
+    public init(text: String, x: Double) {
+        self.text = text
+        self.x = x
+    }
+}
+
+/// One variant-ending bracket, placed on the page: the rule that runs above the staff over
+/// the measures of one pass through a repeat, the hooks that turn down from its ends, and the
+/// number(s) that say which pass it belongs to (ABC v2.2 §4.19: `|1`, `[2`, `|1,2`, `|1-3`).
+///
+/// Standing at the top of the staff's `extraAbove` band, above the ledger lines and
+/// annotations the rest of it was reserved for — see ``EndingBracketBand``, which both
+/// reserves the space and works out which measures each bracket covers.
+public struct EndingBracket: Sendable {
+    /// The number(s) printed inside the bracket's left hook, or `nil` where this is the
+    /// continuation of an ending that opened on an earlier system: the label is printed
+    /// once, where the ending begins.
+    public let label: String?
+    /// Absolute x of the bracket's left end — the bar line the ending opens at.
+    public let startX: Double
+    /// Absolute x of its right end — the bar line the ending closes at, or the right edge of
+    /// the system where it runs on into the next one.
+    public let endX: Double
+    /// Absolute y of the *centre* of the horizontal rule.
+    public let ruleY: Double
+    /// Whether the rule turns down at its left end.  False exactly where the ending was
+    /// carried over a system break.
+    public let hasStartHook: Bool
+    /// Whether it turns down at its right end: it does at the repeat bar that sends the
+    /// player back, and does not where the music runs on.
+    public let hasEndHook: Bool
+
+    public init(label: String?, startX: Double, endX: Double, ruleY: Double,
+                hasStartHook: Bool, hasEndHook: Bool) {
+        self.label = label
+        self.startX = startX
+        self.endX = endX
+        self.ruleY = ruleY
+        self.hasStartHook = hasStartHook
+        self.hasEndHook = hasEndHook
+    }
+}
+
 public struct ResolvedSystem: Sendable {
     public let origin: Point
     public let measures: [ResolvedMeasure]
@@ -231,7 +543,33 @@ public struct ResolvedSystem: Sendable {
     public let meter: Meter?
     /// 1-based ABC source line that first contributed content to this staff system.
     /// Used to emit scroll-sync anchor metadata (see `%%ceolkit` extension, issue #25).
+    ///
+    /// In a multi-voice system every staff reports the *group's* line — the first voice's —
+    /// rather than its own, so the anchor sequence down a page stays monotonic (issue #41).
     public let abcLine: Int
+    /// Non-nil when this staff is one of several in a system; see ``StaffGroup``.
+    public let staffGroup: StaffGroup?
+    /// The voice name drawn in this system's left gutter, already placed.  `nil` where the
+    /// voice has nothing to print on this system, which is every voice of every tune that
+    /// names none.
+    public let voiceLabel: VoiceLabel?
+    /// What each voice drawn on this staff asked for with `V:` `stem=`, in staff order —
+    /// one entry per voice, so its count is also how many voices share the staff.  A voice
+    /// that states a direction overrides both the automatic opposition of a shared staff and
+    /// `%%ceolkit:pipeformat`; `.auto` leaves the choice to the voice's position on the
+    /// staff, then the document, then the note's own staff position.
+    public let voiceStemDirections: [StemDirection]
+    /// The variant-ending brackets drawn above this staff, left to right.  Empty on every
+    /// staff of every tune that writes none, which reserves no space for them either.
+    public let endingBrackets: [EndingBracket]
+    /// Non-nil when a body `K:` lands on this system's *first* measure, so the head signature
+    /// is the change itself: the naturals cancelling the key being left behind, then the new
+    /// one.  It is drawn there and not again at the head of the bar — the opening measure is
+    /// sized without it for exactly that reason (#134).
+    public let headerKeyChange: KeyChange?
+
+    /// What the staff's first voice asked for; see ``System/stemDirection``.
+    public var stemDirection: StemDirection { voiceStemDirections.first ?? .auto }
 
     public init(
         origin: Point,
@@ -246,7 +584,12 @@ public struct ResolvedSystem: Sendable {
         clef: ClefSpec = ClefSpec(clef: .treble, octaveShift: 0),
         keySignature: KeySignature? = nil,
         meter: Meter? = nil,
-        abcLine: Int = 1
+        abcLine: Int = 1,
+        staffGroup: StaffGroup? = nil,
+        voiceLabel: VoiceLabel? = nil,
+        voiceStemDirections: [StemDirection] = [],
+        endingBrackets: [EndingBracket] = [],
+        headerKeyChange: KeyChange? = nil
     ) {
         self.origin = origin
         self.measures = measures
@@ -261,6 +604,11 @@ public struct ResolvedSystem: Sendable {
         self.keySignature = keySignature
         self.meter = meter
         self.abcLine = abcLine
+        self.staffGroup = staffGroup
+        self.voiceLabel = voiceLabel
+        self.voiceStemDirections = voiceStemDirections
+        self.endingBrackets = endingBrackets
+        self.headerKeyChange = headerKeyChange
     }
 }
 
@@ -276,6 +624,10 @@ public struct ResolvedMeasure: Sendable {
     /// Non-nil when an inline `[M:…]` changed the time signature before this measure.
     /// The emitter draws the corresponding glyph at `origin.x` before the first note.
     public let meter: Meter?
+    /// Non-nil when a `K:` changed the key before this measure. The emitter draws the
+    /// cancelling naturals and the new signature at `origin.x`, ahead of any time signature
+    /// changing in the same bar, in the space ``ColumnMetrics`` reserved for them.
+    public let keyChange: KeyChange?
 
     public init(
         origin: Point,
@@ -284,7 +636,8 @@ public struct ResolvedMeasure: Sendable {
         openingBar: ResolvedBarLine?,
         closingBar: ResolvedBarLine,
         unitNoteLength: Fraction = Fraction(numerator: 1, denominator: 8),
-        meter: Meter? = nil
+        meter: Meter? = nil,
+        keyChange: KeyChange? = nil
     ) {
         self.origin = origin
         self.width = width
@@ -293,6 +646,7 @@ public struct ResolvedMeasure: Sendable {
         self.closingBar = closingBar
         self.unitNoteLength = unitNoteLength
         self.meter = meter
+        self.keyChange = keyChange
     }
 }
 
@@ -311,10 +665,15 @@ public struct ResolvedEvent: Sendable {
     /// Absolute position in page coordinates; y is at the top staff line.
     public let origin: Point
     public let kind: ResolvedEventKind
+    /// The voice this event was written by, carried through from
+    /// ``SizedMeasure/eventVoiceIndices``: its position within the staff it is drawn on.
+    /// With one voice per staff every event is `0`; a shared staff is where they differ.
+    public let voiceIndex: Int
 
-    public init(origin: Point, kind: ResolvedEventKind) {
+    public init(origin: Point, kind: ResolvedEventKind, voiceIndex: Int = 0) {
         self.origin = origin
         self.kind = kind
+        self.voiceIndex = voiceIndex
     }
 }
 

@@ -1,7 +1,9 @@
 # Extensions
 
-This file documents formatting directives that are implemented in this project but
-which are not part of the ABC v2.2 [standard](https://abcnotation.com/wiki/abc:standard:v2.2).
+This file documents formatting behaviour that is implemented in this project but is
+not dictated by the ABC v2.2 [standard](https://abcnotation.com/wiki/abc:standard:v2.2):
+the `%%ceolkit:*` directives, which the standard does not define at all, and the choices
+CeolKit makes where the standard asks for an outcome but names no rule for reaching it.
 
 ---
 
@@ -474,3 +476,195 @@ to zero:
 
 A voice-level reset of `%%ceolkit:stemalignment 0` restores that voice to the global
 setting.
+
+---
+
+## Floating voices — how the staff is chosen
+
+**Applies to:** a voice marked `*` in `%%score` / `%%staves` (ABC v2.2 §11.1)
+
+### What the standard says, and does not say
+
+§11.1:
+
+> If a single voice surrounded by two voice groups is preceded by a star (`*`), the voice is
+> marked to be floating. This means that the voice won't be printed on its own staff; rather
+> the software should automatically determine, for each note of the voice, whether it should
+> be printed on the preceding staff or on the following staff.
+
+It names the outcome and no rule for reaching it, and it permits software to give up and
+print the whole voice on the preceding staff. CeolKit does the real thing, by the rule
+below. The rule is ours; a different program will make different choices, and both are
+conforming.
+
+### The rule
+
+**A split pitch.** Everything at or above the split goes to the staff above, everything
+below it to the staff below.
+
+- Where the voice states `V: … middle=`, that pitch **is** the split.
+- Otherwise the split is the diatonic midpoint between the bottom line of the staff above
+  and the top line of the staff below, each read through its own clef. For the
+  treble-over-bass grand staff the directive was invented for, that is middle C.
+
+An octave-shifted clef (`clef=treble+8`) does not move the split: the shift changes what the
+staff sounds, not where its notes are written, and this is a question about where the ink
+goes.
+
+**The atom, not the note, is what is assigned.** A beam group, a tuplet, a chord and a tie
+chain each go somewhere whole — a beam drawn half on one staff and half on the other is not
+merely ugly, it is undrawable. Within an atom the majority of the noteheads decides, and a
+tie is broken toward the atom's first note. A grace group goes wherever the note it
+ornaments goes, and contributes no vote of its own. A rest goes where the music around it
+went.
+
+**Hysteresis, so a melody on the split does not flicker.** An atom whose mean pitch lies
+within **one diatonic step** of the split stays on the staff the previous atom went to.
+Without it, a phrase sitting on the split changes staff every time it crosses by a step,
+which is unreadable however defensible each individual choice was. The first atom of a
+voice has nothing to hold it, so its pitch decides.
+
+**Only one neighbour.** A floating voice written at the top or the bottom of a plan — or one
+whose neighbour on one side prints nothing — has no choice left to make. It is printed on
+the staff it does have, throughout, and a `staffPlanNotFullyApplied` warning says so. The
+music is never dropped.
+
+### What this looks like on the page
+
+Each half of a floating voice joins its host staff as an ordinary extra voice, so everything
+a `( … )` shared staff already does applies to it: the two are merged onto a common onset
+grid, their stems are opposed, and unisons between them are pulled apart. The half stems
+away from the staff its music came from — down on the staff above, up on the staff below —
+unless the voice stated its own `V: … stem=`, which is always obeyed.
+
+The host staff's clef, key and name stay those of the voice written at the top of it. A
+floating voice is at the top of neither staff and never supplies them.
+
+A slur that opens on one staff and closes on the other is drawn as two dangling arcs, one to
+each system edge, the way any slur left open across a break is drawn.
+
+### Example
+
+```abc
+X:1
+T:Floating voice
+M:4/4
+L:1/8
+%%score {RH *M| LH}
+V:RH clef=treble
+V:M
+V:LH clef=bass
+K:C
+V:RH
+c2e2g2e2|
+V:M
+G2A2B2c2|
+V:LH
+C,4G,,4|
+```
+
+`M`'s notes sit above middle C, so they are drawn on the right hand's staff. Written an
+octave lower they would be drawn on the left hand's. To move the boundary without moving the
+music, give the voice a middle note of its own:
+
+```abc
+V:M middle=e
+```
+
+which puts the split at E5 and sends the same four notes downstairs.
+
+---
+
+## Voice overlay — where an `&` winds back to
+
+**Applies to:** the `&` operator in the tune body (ABC v2.2 §7.4)
+
+### What the standard says, and does not say
+
+§7.4:
+
+> The `&` operator may be used to temporarily overlay several voices within one measure. Each
+> `&` operator sets the time point of the music back by one bar line, and the notes which
+> follow it form a temporary voice in parallel with the preceding one. This may only be used
+> to add one complete bar's worth of music for each `&`.
+
+Two of its terms have to be pinned down before an implementation can exist, and the standard
+pins neither. CeolKit reads them as follows; the readings are ours, and they are what its own
+two examples need in order to work.
+
+### The rule
+
+**"Back by one bar line" means back to the last bar line crossed.** Where music has already
+been written in the bar now open, that is the head of *this* bar. Where none has — an `&` at
+the head of a line, or straight after a bar line — it is the head of the bar *before*. A run
+of `&`s winds back one further bar for each, so `&&` written at the head of a line overlays
+the two bars of the line above it, which is what the standard's own second example asks for.
+
+**An `&` layer lives for the rest of its source line.** A bar line does not close it: `&& (d8
+| c6) c2|` is one temporary voice across two bars, again per the second example. What ends it
+is the end of the line, and the first `&` of the next line reopens *the same* temporary
+voice — one `&` on each of two lines is two bars of one part, not two parts of one bar each.
+
+**A line that opens with `&` is a continuation of the line above.** It shares that line's
+stave — the overlay is printed on the same system as the music it overlays, not on the next
+one — and it leaves the lyric anchor alone, so a `w:` after it still matches the notes above.
+That is §7.4's own "disregarding any overlay in the accompanying music code", which CeolKit
+applies to `s:` lines equally.
+
+**A bar line closes the bar for every layer standing in it.** The bar line belongs to the
+staff, not to whichever layer was current when it was typed.
+
+**An overlay is a voice.** Its accidentals are scoped to its own bar (§4.2 scopes them to the
+voice that wrote them), its notes beam among themselves, and its ties and slurs pair only
+with its own. It is written in the key and against the unit note length of the voice it
+overlays, because it *is* that voice's music.
+
+### Recovery
+
+An overlay that supplies more bars than its `&`s wound back over breaks the standard's "one
+complete bar's worth of music for each `&`". CeolKit warns (`voiceOverlayTooLong`) and prints
+the extra bars anyway, giving the voice beneath them the empty bars it now needs: dropping
+music the author wrote to enforce a counting rule would be the worse failure.
+
+An `&` written where there is no bar to wind back to — at the very start of a voice — warns
+(`voiceOverlayWithoutBar`) and starts the overlay at the first bar.
+
+### What this looks like on the page
+
+Each layer joins its voice's staff as an ordinary extra voice, directly beneath it, so
+everything a `( … )` shared staff already does applies to it: the layers are merged onto a
+common onset grid, the outer two have their stems opposed, simultaneous rests are moved off
+centre, and unisons between them are pulled apart. A tune written with `&` and the same tune
+written as a `%%score ( … )` group of the same parts draw the same noteheads in the same
+places.
+
+The staff's clef, key and name stay those of the voice itself. An overlay never supplies
+them, and no `%%score` can name, place or leave one out: it belongs to its voice and goes
+wherever the plan sends that voice.
+
+### Example
+
+```abc
+X:1
+T:Voice overlay
+M:6/8
+L:1/8
+K:C
+A2 | cdefga &\
+     AAAAAA &\
+     FEDCB,A, |]
+```
+
+Three parts on one staff for the second bar, and one for the first. Written on separate
+lines instead, with the `&`s leading, it means the same thing:
+
+```abc
+X:1
+T:Voice overlay
+M:6/8
+L:1/8
+K:C
+A2 | cdefga |]
+   & AAAAAA |]
+   & FEDCB,A, |]
+```

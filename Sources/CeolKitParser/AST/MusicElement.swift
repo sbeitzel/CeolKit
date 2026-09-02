@@ -14,6 +14,7 @@ enum MusicElement {
     case decoration(DecorationToken, source: SourceRange)
     case inlineField(InformationField, source: SourceRange)
     case space(source: SourceRange)
+    case voiceOverlay(source: SourceRange)
     case brokenRhythm(count: Int, direction: BrokenDirection, source: SourceRange)
     case chordSymbol(String, source: SourceRange)
     case annotation(AnnotationPosition, String, source: SourceRange)

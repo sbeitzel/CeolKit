@@ -42,46 +42,85 @@ public struct Justifier: Sendable {
         justifyLastSystem: Bool,
         systemHeaderWidths: [Double] = []
     ) -> [JustifiedSystem] {
-        systems.enumerated().map { i, system in
+        justifyGroups(systems.map { SystemGroup(staves: [$0]) },
+                      usableWidth: usableWidth,
+                      justifyLastSystem: justifyLastSystem,
+                      systemHeaderWidths: systemHeaderWidths)
+            .map { $0.staves[0] }
+    }
+
+    /// Justifies `groups`, giving every staff of a group the same measure x-positions.
+    ///
+    /// A column's final width is derived once, from the widest staff's natural width for
+    /// that column, and handed to every staff in the group.  That is what makes the bar
+    /// lines line up vertically: a staff whose measure is narrower than the column simply
+    /// gets more slack distributed inside it.
+    ///
+    /// - Parameters:
+    ///   - groups: Pass 2 output.
+    ///   - usableWidth: Full available horizontal space (page width minus margins).
+    ///   - justifyLastSystem: When `true`, the last system is also stretched to fill the line.
+    ///   - systemHeaderWidths: Per-system width consumed by clef/key/time-sig headers —
+    ///     already the `max` across the group's voices, since its staves start at a common x.
+    /// Named rather than overloaded on the element type: `justify([])` would otherwise be
+    /// ambiguous, which is a trap for a call site that has nothing to justify.
+    public func justifyGroups(
+        _ groups: [SystemGroup],
+        usableWidth: Double,
+        justifyLastSystem: Bool,
+        systemHeaderWidths: [Double] = []
+    ) -> [JustifiedSystemGroup] {
+        groups.enumerated().map { i, group in
             let headerWidth = i < systemHeaderWidths.count ? systemHeaderWidths[i] : 0
             let targetWidth = usableWidth - headerWidth
-            let shouldStretch = !system.isLastSystem || justifyLastSystem
-            return justify(system, targetWidth: targetWidth, stretch: shouldStretch,
-                           capStretch: system.staveWasSplit)
+            let shouldStretch = !group.isLastSystem || justifyLastSystem
+            return justify(group, targetWidth: targetWidth, stretch: shouldStretch,
+                           capStretch: group.staveWasSplit)
         }
     }
 
     // MARK: - Private
 
-    private func justify(_ system: System, targetWidth: Double, stretch: Bool,
-                         capStretch: Bool) -> JustifiedSystem {
-        let naturalTotal = system.measures.reduce(0.0) { $0 + $1.naturalWidth }
+    private func justify(_ group: SystemGroup, targetWidth: Double, stretch: Bool,
+                         capStretch: Bool) -> JustifiedSystemGroup {
+        // A column is as wide as its widest staff needs; every staff is then drawn to that.
+        let columnWidths = (0..<group.columnCount).map { column in
+            group.staves.reduce(0.0) { max($0, $1.measures[column].naturalWidth) }
+        }
+        let naturalTotal = columnWidths.reduce(0, +)
         let finalTotal = resolvedWidth(naturalTotal: naturalTotal, targetWidth: targetWidth,
                                        stretch: stretch, capStretch: capStretch)
 
-        guard naturalTotal > 0, finalTotal != naturalTotal else {
+        let finalWidths: [Double]
+        if naturalTotal > 0 && finalTotal != naturalTotal {
+            let slack = finalTotal - naturalTotal
+            finalWidths = columnWidths.map { $0 + slack * ($0 / naturalTotal) }
+        } else {
             // Nothing to redistribute: keep natural widths (left-aligned).
-            let measures = system.measures.map { sized in
-                JustifiedMeasure(source: sized, finalWidth: sized.naturalWidth, eventOffsets: sized.eventOffsets)
-            }
-            return JustifiedSystem(measures: measures, isLastSystem: system.isLastSystem,
-                                   sourceForced: system.sourceForced, clef: system.clef,
-                                   keySignature: system.keySignature, meter: system.meter)
+            finalWidths = columnWidths
         }
 
-        let slack = finalTotal - naturalTotal
-        let measures = system.measures.map { sized -> JustifiedMeasure in
-            let share = slack * (sized.naturalWidth / naturalTotal)
-            let finalWidth = sized.naturalWidth + share
-            let offsets = stretchOffsets(sized.eventOffsets,
-                                         naturalWidth: sized.naturalWidth,
-                                         finalWidth: finalWidth,
-                                         graceIndices: sized.graceEventIndices)
-            return JustifiedMeasure(source: sized, finalWidth: finalWidth, eventOffsets: offsets)
+        let staves = group.staves.map { staff -> JustifiedSystem in
+            let measures = staff.measures.enumerated().map { column, sized -> JustifiedMeasure in
+                let finalWidth = finalWidths[column]
+                guard finalWidth != sized.naturalWidth else {
+                    return JustifiedMeasure(source: sized, finalWidth: finalWidth,
+                                            eventOffsets: sized.eventOffsets)
+                }
+                let offsets = stretchOffsets(sized.eventOffsets,
+                                             naturalWidth: sized.naturalWidth,
+                                             finalWidth: finalWidth,
+                                             graceIndices: sized.graceEventIndices)
+                return JustifiedMeasure(source: sized, finalWidth: finalWidth, eventOffsets: offsets)
+            }
+            return JustifiedSystem(measures: measures, isLastSystem: staff.isLastSystem,
+                                   sourceForced: staff.sourceForced, clef: staff.clef,
+                                   keySignature: staff.keySignature, meter: staff.meter,
+                                   voiceLabel: staff.voiceLabel,
+                                   voiceStemDirections: staff.voiceStemDirections,
+                                   headerKeyChange: staff.headerKeyChange)
         }
-        return JustifiedSystem(measures: measures, isLastSystem: system.isLastSystem,
-                               sourceForced: system.sourceForced, clef: system.clef,
-                               keySignature: system.keySignature, meter: system.meter)
+        return JustifiedSystemGroup(staves: staves, grouping: group.grouping)
     }
 
     /// The width the system's music is laid out to.
@@ -104,15 +143,24 @@ public struct Justifier: Sendable {
     /// `naturalWidth` minus the leading margin (`base`) and all fixed grace-to-note gaps
     /// (`fixedTotal`).  Grace events (identified by `graceIndices`) stay fixed relative to
     /// the note they precede; every other event is scaled proportionally.
+    ///
+    /// How much fixed width lies to an event's left is asked of the *offsets*, not of the
+    /// array order.  On a single-voice measure the two agree, because offsets only ever
+    /// increase.  A shared staff (§11.1 `( … )`) is where they part: its events are ordered
+    /// voice by voice within each onset so that no grace group is separated from its note,
+    /// which means the array steps backwards every time a new voice starts its run.
     private func stretchOffsets(_ offsets: [Double], naturalWidth: Double, finalWidth: Double,
                                  graceIndices: Set<Int>) -> [Double] {
         guard !offsets.isEmpty else { return offsets }
         let base = offsets[0]
 
-        // Total fixed gap = sum of (note_offset - grace_offset) for each grace+note pair.
-        let fixedTotal = graceIndices.reduce(0.0) { sum, i in
-            i + 1 < offsets.count ? sum + (offsets[i + 1] - offsets[i]) : sum
+        // One entry per grace+note pair: where its note sits, and the incompressible gap
+        // between the two.
+        let pairs: [(note: Int, x: Double, gap: Double)] = graceIndices.sorted().compactMap {
+            guard $0 + 1 < offsets.count else { return nil }
+            return (note: $0 + 1, x: offsets[$0 + 1], gap: offsets[$0 + 1] - offsets[$0])
         }
+        let fixedTotal = pairs.reduce(0.0) { $0 + $1.gap }
 
         let elasticNatural = naturalWidth - base - fixedTotal
         guard elasticNatural > 0 else { return offsets }
@@ -120,18 +168,26 @@ public struct Justifier: Sendable {
         // measure are incompressible, so there is nothing sane to do below that point.
         let elasticScale = max(0, (finalWidth - base - fixedTotal) / elasticNatural)
 
+        /// The fixed width of every grace pair that finishes to the left of event `i`.
+        /// Ties — a zero-width column, or a second voice sounding at the same x — are broken
+        /// by array position, which is what the single-voice walk this replaces did.
+        func fixedLeftOf(_ i: Int) -> Double {
+            pairs.reduce(0.0) { sum, pair in
+                guard pair.note != i, pair.note - 1 != i else { return sum }
+                let isLeft = pair.x < offsets[i] || (pair.x == offsets[i] && pair.note < i)
+                return isLeft ? sum + pair.gap : sum
+            }
+        }
+
         var result = [Double](repeating: 0, count: offsets.count)
-        var cumFixed = 0.0
         for i in 0..<offsets.count {
             if i > 0 && graceIndices.contains(i - 1) {
                 // Pair-follower: preserve the fixed gap from the preceding grace event.
-                let gap = offsets[i] - offsets[i - 1]
-                result[i] = result[i - 1] + gap
-                cumFixed += gap
+                result[i] = result[i - 1] + (offsets[i] - offsets[i - 1])
             } else {
                 // Elastic event: scale its position relative to the base.
-                let elasticOffset = offsets[i] - base - cumFixed
-                result[i] = base + cumFixed + elasticOffset * elasticScale
+                let fixed = fixedLeftOf(i)
+                result[i] = base + fixed + (offsets[i] - base - fixed) * elasticScale
             }
         }
         return result

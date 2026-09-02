@@ -6,6 +6,11 @@ This package is inspired by [abcm2ps](https://github.com/lewdlime/abcm2ps) and c
 sheet music for [Silicon Valley Pipe Band](https://siliconvalleypipeband.org). So, features and capabilities
 have largely been driven by the needs of the pipe band musicians.
 
+[CONFORMANCE.md](CONFORMANCE.md) covers how CeolKit reads the parts of the standard that
+leave a choice to the software — voice grouping (§11.1) above all — and where it diverges
+from `abcm2ps`. [EXTENSIONS.md](EXTENSIONS.md) documents the non-standard `%%ceolkit:*`
+directives.
+
 ## Libraries
 
 | Product | Purpose |

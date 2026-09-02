@@ -52,6 +52,7 @@ enum Token {
     // Structural
     case space                    // whitespace run
     case backslash                // \
+    case voiceOverlay             // &  (§7.4)
 
     // Chord/annotation
     case quotedString(String)     // "..."
@@ -70,4 +71,18 @@ enum Token {
 
     // Unknown
     case unknown(Character)
+}
+
+extension Token {
+    /// Whether this token is one of the bar lines.  Used by the lexer to decide that a
+    /// digit standing right after it opens a variant ending rather than starting a note.
+    var isBarLine: Bool {
+        switch self {
+        case .barSingle, .barDouble, .barFinal, .barSectionStart, .barRepeatStart,
+             .barRepeatEnd, .barRepeatBoth, .barSectionRepeatStart, .barRepeatEndSection:
+            true
+        default:
+            false
+        }
+    }
 }

@@ -13,6 +13,12 @@ public struct BravuraMetadata: Sendable {
         public let thickBarlineThickness: Double
         public let barlineSeparation: Double
         public let repeatBarlineDotSeparation: Double
+        /// Thickness of the vertical spine of a brace or bracket joining a group of staves.
+        public let bracketThickness: Double
+        /// Thickness of that spine where the span is nested inside another one.
+        public let subBracketThickness: Double
+        /// Thickness of the rule and hooks of a variant-ending bracket (`|1`, `|2`).
+        public let repeatEndingLineThickness: Double
         /// Thickness of a slur at its two ends; SMuFL models a slur as tapered, so this is
         /// the thinner of the pair.
         public let slurEndpointThickness: Double
@@ -75,10 +81,9 @@ private struct RawBBox: Decodable {
 /// falls back to `0`, as it did when these were dictionary lookups.
 ///
 /// The keys Bravura supplies that are deliberately *not* read describe notation this
-/// renderer does not yet draw: `bracketThickness`, `subBracketThickness`,
-/// `dashedBarlineDashLength`, `dashedBarlineGapLength`, `dashedBarlineThickness`,
-/// `hairpinThickness`, `octaveLineThickness`, `pedalLineThickness`,
-/// `repeatEndingLineThickness`, `textEnclosureThickness`, `tupletBracketThickness`,
+/// renderer does not yet draw: `dashedBarlineDashLength`, `dashedBarlineGapLength`,
+/// `dashedBarlineThickness`, `hairpinThickness`, `octaveLineThickness`, `pedalLineThickness`,
+/// `textEnclosureThickness`, `tupletBracketThickness`,
 /// `lyricLineThickness`, `arrowShaftThickness`, `hBarThickness`, `textFontFamily`.
 /// Each becomes worth decoding when the corresponding mark starts being emitted, not
 /// before — an unused property is a value nothing can hold the renderer to.
@@ -93,6 +98,9 @@ private struct RawEngravingDefaults: Decodable {
     let thickBarlineThickness: Double?
     let barlineSeparation: Double?
     let repeatBarlineDotSeparation: Double?
+    let bracketThickness: Double?
+    let subBracketThickness: Double?
+    let repeatEndingLineThickness: Double?
     let slurEndpointThickness: Double?
     let slurMidpointThickness: Double?
     let tieEndpointThickness: Double?
@@ -124,6 +132,13 @@ private extension BravuraMetadata {
             // it draws nothing at all, or stacks the repeat dots against the bar line. A face
             // omitting these gets Bravura's values, the reference face SMuFL publishes.
             repeatBarlineDotSeparation: ed.repeatBarlineDotSeparation ?? 0.16,
+            // Same reasoning: a bracket of thickness zero is an invisible bracket, and the
+            // staves it was meant to join read as unrelated.
+            bracketThickness:    ed.bracketThickness    ?? 0.5,
+            subBracketThickness: ed.subBracketThickness ?? 0.16,
+            // And again: a variant-ending bracket of thickness zero is an invisible one, and
+            // the reader is left with no way to tell the passes apart.
+            repeatEndingLineThickness: ed.repeatEndingLineThickness ?? 0.16,
             slurEndpointThickness: ed.slurEndpointThickness ?? 0.1,
             slurMidpointThickness: ed.slurMidpointThickness ?? 0.22,
             tieEndpointThickness:  ed.tieEndpointThickness  ?? 0.1,

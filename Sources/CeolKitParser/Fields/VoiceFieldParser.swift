@@ -16,6 +16,7 @@ enum VoiceFieldParser {
         var staffLines = 5
         var transposeSemitones = 0
         var transposeOctave = 0
+        var middleNote: Pitch? = nil
         var diagnostics: [Diagnostic] = []
 
         // key=value pairs
@@ -52,6 +53,21 @@ enum VoiceFieldParser {
                 if let n = lex.scanInt() { transposeOctave = sign * n }
             case "stafflines":
                 if let n = lex.scanInt() { staffLines = n }
+            case "middle", "m":
+                // A note in ABC pitch notation, so `middle=B` and `middle=d` are an octave
+                // apart and both say something the clef alone does not.
+                if let word = lex.scanWord() {
+                    if let pitch = parseMiddle(word) {
+                        middleNote = pitch
+                    } else {
+                        diagnostics.append(Diagnostic(
+                            severity: .warning,
+                            code: .malformedFieldPayload,
+                            message: "V: middle= expects a note, not '\(word)'",
+                            source: source
+                        ))
+                    }
+                }
             default:
                 _ = lex.scanWord()
                 diagnostics.append(Diagnostic(
@@ -71,8 +87,44 @@ enum VoiceFieldParser {
             name: name,
             subname: subname,
             stemDirection: stem,
-            middleNote: nil
+            middleNote: middleNote
         )
         return (id: id, props, diagnostics)
+    }
+
+    /// A `middle=` value read as an ABC pitch: an optional accidental, a letter, and octave
+    /// marks.  `C` is middle C, `c` the octave above it, `,` and `'` shift by an octave each.
+    ///
+    /// The accidental is kept because the value is a pitch and a pitch may be altered, but
+    /// nothing reads it yet: every use so far — the staff line the clef centres on, the split
+    /// a floating voice is assigned by (#80) — is a question about staff position, which is
+    /// diatonic.
+    private static func parseMiddle(_ text: String) -> Pitch? {
+        var rest = Substring(text)
+
+        var alteration = Alteration.natural
+        var accidentals = 0
+        while let ch = rest.first, ch == "^" || ch == "_" || ch == "=" {
+            switch ch {
+            case "^": accidentals += 1
+            case "_": accidentals -= 1
+            default:  accidentals = 0
+            }
+            rest = rest.dropFirst()
+        }
+        if accidentals != 0 { alteration = Alteration(numerator: accidentals, denominator: 1) }
+
+        guard let letter = rest.first, let step = diatonicStep(from: letter) else { return nil }
+        var octave = letter.isLowercase ? 5 : 4
+        rest = rest.dropFirst()
+
+        for ch in rest {
+            switch ch {
+            case ",":  octave -= 1
+            case "'":  octave += 1
+            default:   return nil
+            }
+        }
+        return Pitch(step: step, alteration: alteration, octave: octave)
     }
 }

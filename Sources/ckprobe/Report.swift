@@ -30,8 +30,18 @@ struct Report: Codable {
         let staves: [Stave]
     }
 
+    /// One `%%score` / `%%staves` and the stave it governs from, so that a body plan's
+    /// position can be read off without re-deriving it from the source.
+    struct StaffPlanChange: Codable {
+        let effectiveFromStave: Int
+        let line: Int
+        /// The voices of each staff, top to bottom.
+        let staves: [[String]]
+    }
+
     struct Tune: Codable {
         let directives: [String]
+        let staffPlans: [StaffPlanChange]
         let voices: [Voice]
     }
 
@@ -53,6 +63,13 @@ extension Report {
         self.tunes = score.tunes.map { tune in
             Tune(
                 directives: tune.directives.map { "\($0.directive) @\($0.scope)" },
+                staffPlans: tune.staffPlans.map { change in
+                    StaffPlanChange(
+                        effectiveFromStave: change.effectiveFromStave,
+                        line: change.source.line,
+                        staves: change.plan.layout.staves.map { $0.map(name) }
+                    )
+                },
                 voices: tune.voices.map { voice in
                     Voice(staves: voice.staves.map { stave in
                         Stave(measureCount: stave.measures.count,
@@ -84,6 +101,11 @@ extension Report {
         for (tuneIndex, tune) in tunes.enumerated() {
             for directive in tune.directives {
                 out.append("  tune[\(tuneIndex)] \(directive)")
+            }
+            for plan in tune.staffPlans {
+                let staves = plan.staves.map { $0.joined(separator: "+") }.joined(separator: " / ")
+                out.append("  tune[\(tuneIndex)] staffPlan from stave \(plan.effectiveFromStave)"
+                           + " (line \(plan.line)): \(staves)")
             }
             for (voiceIndex, voice) in tune.voices.enumerated() {
                 let counts = voice.staves.map(\.measureCount)
@@ -131,5 +153,14 @@ extension Report {
 
     private func fmt(_ value: Double) -> String {
         value == value.rounded() ? String(Int(value)) : String(format: "%.2f", value)
+    }
+}
+
+
+/// `VoiceId` printed the way the source wrote it.
+private func name(_ id: VoiceId) -> String {
+    switch id {
+    case .named(let n): return n
+    case .all:          return "*"
     }
 }

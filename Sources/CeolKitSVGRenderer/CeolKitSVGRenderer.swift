@@ -311,16 +311,40 @@ public struct SVGRenderer: CeolKitRenderer {
                                         graceNoteSpacing: graceNoteSpacing))
         }
 
+        let firstPageNumber = Self.firstPageNumber(of: score)
         let emitter = SVGEmitter(config: effectiveConfig, metadata: metadata,
-                                 stemDirection: documentStemDirection)
+                                 stemDirection: documentStemDirection,
+                                 firstPageNumber: firstPageNumber)
         let layout = engine.layout(tuneBlocks)
-        let finalLayout = attachFooters(layout, score: score, config: effectiveConfig)
+        let finalLayout = attachFooters(layout, score: score, config: effectiveConfig,
+                                        firstPageNumber: firstPageNumber)
         return try emitter.emit(finalLayout)
+    }
+
+    // MARK: - Page numbering
+
+    /// The number the document's first page prints, per `%%ceolkit:pagenumber` (issue #138).
+    ///
+    /// Last-wins, and read only from the first tune: the directive sets the number *before
+    /// any output has been produced*, so the file preamble and the first tune's header are
+    /// the only places it can mean anything, and the parser folds preamble directives into
+    /// the first tune's list in source order, which puts both in one place.  A copy in a
+    /// later tune's header would be asking to renumber pages already engraved — that is
+    /// `%%newpage`'s job, not this directive's — and is ignored.
+    ///
+    /// Defaults to 1, which is what every document that does not use the directive gets, so
+    /// the ordinary page number is `pageIndex + 1` exactly as it always was.
+    static func firstPageNumber(of score: Score) -> Int {
+        score.tunes.first?.directives.compactMap { scope -> Int? in
+            if case .pageNumber(let n) = scope.directive { return n }
+            return nil
+        }.last ?? 1
     }
 
     // MARK: - Footer
 
-    private func attachFooters(_ layout: ResolvedLayout, score: Score, config: SVGRenderConfig) -> ResolvedLayout {
+    private func attachFooters(_ layout: ResolvedLayout, score: Score, config: SVGRenderConfig,
+                               firstPageNumber: Int) -> ResolvedLayout {
         guard let template = score.footer, !template.isEmpty else { return layout }
         // Find the last %%dateformat directive (last-wins across preamble and tune header).
         let dateFormat = score.tunes.first?.directives.compactMap { scope -> String? in
@@ -329,7 +353,8 @@ public struct SVGRenderer: CeolKitRenderer {
         }.last
         let pageCount = layout.pages.count
         let updatedPages = layout.pages.enumerated().map { pageIndex, page -> ResolvedPage in
-            let rows = buildFooterRows(template: template, pageNumber: pageIndex + 1,
+            let rows = buildFooterRows(template: template,
+                                       pageNumber: firstPageNumber + pageIndex,
                                        pageCount: pageCount, score: score, config: config,
                                        dateFormat: dateFormat)
             return ResolvedPage(systems: page.systems, titleRows: page.titleRows, footerRows: rows)

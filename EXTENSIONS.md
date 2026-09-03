@@ -235,7 +235,23 @@ T:Continued
 ...
 ```
 
+### Where it is read
+
+The last statement of the directive wins, and only the **file preamble and the first
+tune's header** are read. The number is set *before any output has been produced*, so
+that is the only place it can mean anything; a copy in a later tune's header would be
+asking to renumber pages already engraved, and is ignored.
+
+The number reaches both the `$P` and `${pagenumber}` substitutions in the footer and
+the `page` field of the `ceolkit-meta` scroll-sync comment, so a consumer pairing a
+rendered page with what the reader sees on paper agrees with the printed footer.
+
 ### Interaction with `%%newpage`
+
+> **Not yet implemented.** `%%newpage` is not supported — it reports
+> `info: Unsupported stylesheet directive '%%newpage'` and no page break occurs. It is
+> requested as [#140](https://github.com/sbeitzel/CeolKit/issues/140); this section
+> describes what the two directives will mean together once it lands.
 
 `%%newpage N` also sets the page number as a side-effect of forcing a page
 break. `%%ceolkit:pagenumber N` sets the page number *without* starting a new page,

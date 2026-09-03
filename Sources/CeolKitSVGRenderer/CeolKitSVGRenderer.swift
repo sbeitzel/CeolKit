@@ -340,17 +340,14 @@ public struct SVGRenderer: CeolKitRenderer {
     private func buildFooterRows(template: String, pageNumber: Int, pageCount: Int,
                                   score: Score, config: SVGRenderConfig,
                                   dateFormat: String? = nil) -> [ResolvedTitleRow] {
-        let title   = score.tunes.first?.titles.first?.value ?? ""
-        let dateStr = Self.currentDateString(format: dateFormat)
+        let context = FooterContext(
+            pageNumber: pageNumber, pageCount: pageCount,
+            title: score.tunes.first?.titles.first?.value ?? "",
+            date: Self.currentDateString(format: dateFormat))
+        let columns = FooterTemplate.columns(FooterTemplate.segments(of: template,
+                                                                     context: context))
+            .map(FooterTemplate.trimmed)
 
-        var text = template
-            .replacing(/\$P/, with: String(pageNumber))
-            .replacing(/\$T/, with: title)
-            .replacing(/\$D/, with: dateStr)
-            .replacing(/\$d/, with: dateStr)
-        text = text.replacing(/\\t/, with: "\t")
-
-        let parts     = text.components(separatedBy: "\t")
         let fontSize  = 12.0
         // Shift baseline up by the descender depth so the bottom of descenders (p, g, y, …)
         // lands precisely at the bottom margin line, not below it.
@@ -360,29 +357,69 @@ public struct SVGRenderer: CeolKitRenderer {
         let centerX   = config.pageSize.width / 2.0
         let rightX    = config.pageSize.width - config.margins.right
 
-        var items: [ResolvedTitleRow.Item] = []
-        switch parts.count {
+        let placements: [(column: [FooterSegment], x: Double, anchor: TextAnchor)]
+        switch columns.count {
         case 1:
-            let t = parts[0].trimmingCharacters(in: .whitespaces)
-            if !t.isEmpty {
-                items.append(.init(text: t, x: centerX, baselineY: baselineY,
-                                   anchor: .middle, fontSize: fontSize))
-            }
+            placements = [(columns[0], centerX, .middle)]
         case 2:
-            let l = parts[0].trimmingCharacters(in: .whitespaces)
-            let r = parts[1].trimmingCharacters(in: .whitespaces)
-            if !l.isEmpty { items.append(.init(text: l, x: leftX,  baselineY: baselineY, anchor: .start, fontSize: fontSize)) }
-            if !r.isEmpty { items.append(.init(text: r, x: rightX, baselineY: baselineY, anchor: .end,   fontSize: fontSize)) }
+            placements = [(columns[0], leftX,  .start),
+                          (columns[1], rightX, .end)]
         default:
-            let l = parts[0].trimmingCharacters(in: .whitespaces)
-            let c = parts[1].trimmingCharacters(in: .whitespaces)
-            let r = parts[2].trimmingCharacters(in: .whitespaces)
-            if !l.isEmpty { items.append(.init(text: l, x: leftX,   baselineY: baselineY, anchor: .start,  fontSize: fontSize)) }
-            if !c.isEmpty { items.append(.init(text: c, x: centerX, baselineY: baselineY, anchor: .middle, fontSize: fontSize)) }
-            if !r.isEmpty { items.append(.init(text: r, x: rightX,  baselineY: baselineY, anchor: .end,    fontSize: fontSize)) }
+            placements = [(columns[0], leftX,   .start),
+                          (columns[1], centerX, .middle),
+                          (columns[2], rightX,  .end)]
         }
 
+        let items = placements.flatMap {
+            layOutFooterColumn($0.column, x: $0.x, anchor: $0.anchor,
+                               baselineY: baselineY, fontSize: fontSize)
+        }
         return items.isEmpty ? [] : [ResolvedTitleRow(items: items)]
+    }
+
+    /// Places one footer column, splitting it into separate items only where the author
+    /// marked a `${…}` span.
+    ///
+    /// A column carrying no mark is laid out exactly as it always was — one item at the
+    /// column's own anchor — so ordinary footers are byte-for-byte unchanged and no font is
+    /// read to produce them.
+    private func layOutFooterColumn(_ segments: [FooterSegment], x: Double, anchor: TextAnchor,
+                                     baselineY: Double, fontSize: Double)
+    -> [ResolvedTitleRow.Item] {
+        let text = segments.map(\.text).joined()
+        func wholeColumn(tag: String? = nil) -> [ResolvedTitleRow.Item] {
+            guard tag != nil || !text.isEmpty else { return [] }
+            return [.init(text: text, x: x, baselineY: baselineY, anchor: anchor,
+                          fontSize: fontSize, tag: tag)]
+        }
+
+        guard segments.contains(where: { $0.tagName != nil }) else { return wholeColumn() }
+        // A column that is nothing *but* the mark keeps the column's own anchor, so a
+        // consumer stamping a wider string over it grows the way the column does — leftwards
+        // at the right margin, outwards from the centre — instead of running off the page.
+        if segments.count == 1, let name = segments[0].tagName { return wholeColumn(tag: name) }
+
+        // A mark mixed in with other text has to become an element of its own, which means
+        // measuring what precedes it. Without the bundled face there is nothing to measure
+        // with, so the column falls back to one untagged run: the default text, correctly
+        // drawn, and no substitution point — better than a footer laid out by guesswork.
+        guard let face = OutlineFontSet.textFace() else { return wholeColumn() }
+        var penX: Double
+        switch anchor {
+        case .start:  penX = x
+        case .middle: penX = x - face.width(of: text, fontSize: fontSize) / 2
+        case .end:    penX = x - face.width(of: text, fontSize: fontSize)
+        }
+
+        var items: [ResolvedTitleRow.Item] = []
+        for segment in segments {
+            if segment.tagName != nil || !segment.text.isEmpty {
+                items.append(.init(text: segment.text, x: penX, baselineY: baselineY,
+                                   anchor: .start, fontSize: fontSize, tag: segment.tagName))
+            }
+            penX += face.width(of: segment.text, fontSize: fontSize)
+        }
+        return items
     }
 
     private static func currentDateString(format: String? = nil, date: Date = Date()) -> String {

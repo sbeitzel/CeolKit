@@ -356,17 +356,39 @@ struct SVGEmitter: Sendable {
     private func emitFooterBlock(_ rows: [ResolvedTitleRow], builder: inout SVGBuilder) {
         for row in rows {
             for item in row.items {
-                builder.text(
-                    item.text,
+                guard let tag = item.tag else {
+                    emitFooterItem(item, builder: &builder)
+                    continue
+                }
+                // A `${…}` span the author marked for a downstream consumer (issue #137).
+                // CeolKit draws its own value inside the group exactly as it would have
+                // drawn it loose, so a standalone render is unchanged; the group is what
+                // makes the span findable and replaceable in every rendering mode.
+                builder.tagGroup(
+                    name: tag,
                     x: item.x,
                     y: item.baselineY,
                     fontFamily: "Libertinus Serif",
                     fontSize: item.fontSize,
-                    textAnchor: item.anchor.rawValue,
-                    className: "footer"
-                )
+                    textAnchor: item.anchor.rawValue
+                ) {
+                    guard !item.text.isEmpty else { return }
+                    emitFooterItem(item, builder: &$0)
+                }
             }
         }
+    }
+
+    private func emitFooterItem(_ item: ResolvedTitleRow.Item, builder: inout SVGBuilder) {
+        builder.text(
+            item.text,
+            x: item.x,
+            y: item.baselineY,
+            fontFamily: "Libertinus Serif",
+            fontSize: item.fontSize,
+            textAnchor: item.anchor.rawValue,
+            className: "footer"
+        )
     }
 
     // MARK: - System

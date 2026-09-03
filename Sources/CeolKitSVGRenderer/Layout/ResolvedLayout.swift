@@ -362,15 +362,23 @@ public struct ResolvedTitleRow: Sendable {
         public let anchor: TextAnchor
         public let fontSize: Double
         public let isItalic: Bool
+        /// The name of the `${…}` mark this item stands for, or `nil` on ordinary text.
+        ///
+        /// Set only on footer items.  ``text`` is then CeolKit's own value for the mark —
+        /// what gets drawn where nobody replaces it — and the emitter wraps the item in a
+        /// group a downstream consumer can find and redraw (issue #137).
+        public let tag: String?
 
         public init(text: String, x: Double, baselineY: Double,
-                    anchor: TextAnchor, fontSize: Double, isItalic: Bool = false) {
+                    anchor: TextAnchor, fontSize: Double, isItalic: Bool = false,
+                    tag: String? = nil) {
             self.text = text
             self.x = x
             self.baselineY = baselineY
             self.anchor = anchor
             self.fontSize = fontSize
             self.isItalic = isItalic
+            self.tag = tag
         }
     }
 

@@ -146,6 +146,62 @@ it belongs to its voice and goes wherever that voice goes.
 
 ---
 
+## §11.4.7 Page breaks — `%%newpage`
+
+**Syntax:** `%%newpage [<int>]` — start a new page, optionally renumbering it from `<int>`.
+
+§11.4.7 lists `%%newpage` among the separation directives and §11.6 leaves the parameters to
+the implementation; `abcm2ps` and `abc2svg` both answer to it, and CeolKit uses their
+spelling — unprefixed, and with the same optional integer. §11.0.1 asks that a directive
+implemented in more than one program converge rather than fork, and a file that page-breaks
+correctly in `abcm2ps` should not need editing to page-break here.
+
+### Where it may be written
+
+| Written in | Breaks before |
+| --- | --- |
+| the file header | the first tune — which prints no break, since nothing has been engraved yet |
+| the gap between two tunes | the tune below it |
+| a tune header | that tune |
+| the tune body | the stave it stands above |
+| below a tune's last stave | whatever follows the tune |
+
+Like a staff plan, a break in the body takes effect from the start of the **stave** (one
+source line of music) it is written in, and one written part-way through a stave — between
+the voices of a multi-voice system, say — snaps back to the start of it with a
+`pageBreakSnappedToStave` warning. A page break is a system break, and the staves of a
+system are laid out together, so it cannot fall part-way through one.
+
+A `%%newpage` past the last tune in the file has nothing left to move onto a fresh page. It
+is dropped, with a `pageBreakAfterLastTune` info diagnostic, rather than leaving a blank
+page behind it — and for the same reason one at the very top of a file breaks nothing: an
+empty page is not something to break away from.
+
+### The optional page number
+
+`%%newpage N` renumbers the page it opens to `N`, and the count carries on from there, so
+the page after a `%%newpage 20` is 21. `N` must be an integer of 1 or more.
+
+An argument that is not one — `%%newpage frog`, `%%newpage 0` — produces an
+`invalidPageNumber` warning and **the page break still happens**; only the renumbering is
+dropped. The argument is optional, so a bad one is a mistyped option on a directive that is
+otherwise perfectly clear, and refusing to break the page would lose the part the author got
+right.
+
+The number reaches the `$P` and `${pagenumber}` footer substitutions and the `page` field of
+the `ceolkit-meta` scroll-sync comment, exactly as
+[`%%ceolkit:pagenumber`](EXTENSIONS.md#ceolkitpagenumber) does. The two compose: that
+directive names the document's opening page, and each `%%newpage N` renames the one it
+opens.
+
+### What CeolKit does not do
+
+`%%newpage` is the only one of §11.4.7's separation directives CeolKit implements. `%%sep`
+and `%%vskip` are still reported as unsupported and ignored, which is what §11.0.2 asks of a
+directive an application does not recognise.
+
+---
+
 ## Worked examples in the test suite
 
 The standard's own multi-voice examples are checked in end to end, parser and renderer, so

@@ -248,15 +248,28 @@ rendered page with what the reader sees on paper agrees with the printed footer.
 
 ### Interaction with `%%newpage`
 
-> **Not yet implemented.** `%%newpage` is not supported — it reports
-> `info: Unsupported stylesheet directive '%%newpage'` and no page break occurs. It is
-> requested as [#140](https://github.com/sbeitzel/CeolKit/issues/140); this section
-> describes what the two directives will mean together once it lands.
+`%%newpage N` also sets the page number, as a side-effect of forcing a page break —
+see [CONFORMANCE.md → `%%newpage`](CONFORMANCE.md#1147-page-breaks--newpage).
+`%%ceolkit:pagenumber N` sets the page number *without* starting a new page, so it is
+only meaningful before any output has been produced (i.e., in the file preamble or at
+the very start of a tune header).
 
-`%%newpage N` also sets the page number as a side-effect of forcing a page
-break. `%%ceolkit:pagenumber N` sets the page number *without* starting a new page,
-so it is only meaningful before any output has been produced (i.e., in the
-file preamble or at the very start of a tune header).
+The two compose rather than competing: `%%ceolkit:pagenumber` names the opening page and
+each `%%newpage N` renames the one it opens, with the count carrying on from there.
+
+```abc
+%%ceolkit:pagenumber 3
+%%footer "$P"
+X:1
+...
+
+%%newpage 20
+X:2
+...
+```
+
+Page 1 of the output prints "3"; the page tune 2 starts on prints "20", and the page after
+that "21".
 
 ---
 

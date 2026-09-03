@@ -80,6 +80,13 @@ public enum DiagnosticCode: String, Codable, Sendable {
     /// change without splitting the system.  It takes effect from the start of the stave
     /// enclosing it instead — see `StaffPlanChange`.
     case staffPlanSnappedToStave
+    /// A `%%newpage` was written part-way through a stave, where a page cannot break without
+    /// splitting the system.  It takes effect from the start of the stave enclosing it
+    /// instead — see `PageBreak`.
+    case pageBreakSnappedToStave
+    /// A `%%newpage` stands after the last tune in the file, so there is nothing left for it
+    /// to move onto a fresh page.  It is dropped.
+    case pageBreakAfterLastTune
     /// A `%%score` / `%%staves` names a voice the tune does not declare anywhere.  The rest
     /// of the plan is honoured.
     case staffPlanVoiceNotFound

@@ -129,7 +129,11 @@ struct SVGEmitter: Sendable {
         var documents: [String] = []
         documents.reserveCapacity(layout.pages.count)
         for (pageIndex, page) in layout.pages.enumerated() {
-            let document = emitPage(page, pageNumber: firstPageNumber + pageIndex, layout: layout,
+            // The engine stamped the number as it decided where the page fell — a
+            // `%%newpage N` both breaks and renumbers (#140).  Counting from
+            // `firstPageNumber` is the fallback for a layout assembled by hand.
+            let document = emitPage(page, pageNumber: page.pageNumber ?? firstPageNumber + pageIndex,
+                                     layout: layout,
                                      embeddedFaces: embeddedFaces, fonts: fonts,
                                      pendingTies: &pendingTies, pendingSlurs: &pendingSlurs)
             documents.append(document)

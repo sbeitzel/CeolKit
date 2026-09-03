@@ -39,9 +39,19 @@ struct Report: Codable {
         let staves: [[String]]
     }
 
+    /// One `%%newpage` and the stave it breaks before, so that a body break's position can
+    /// be read off without re-deriving it from the source.
+    struct PageBreak: Codable {
+        let beforeStave: Int
+        let line: Int
+        /// The number the new page prints, or `nil` where the directive carried none.
+        let restartingAt: Int?
+    }
+
     struct Tune: Codable {
         let directives: [String]
         let staffPlans: [StaffPlanChange]
+        let pageBreaks: [PageBreak]
         let voices: [Voice]
     }
 
@@ -69,6 +79,10 @@ extension Report {
                         line: change.source.line,
                         staves: change.plan.layout.staves.map { $0.map(name) }
                     )
+                },
+                pageBreaks: tune.pageBreaks.map {
+                    PageBreak(beforeStave: $0.beforeStave, line: $0.source.line,
+                              restartingAt: $0.restartingAt)
                 },
                 voices: tune.voices.map { voice in
                     Voice(staves: voice.staves.map { stave in
@@ -106,6 +120,11 @@ extension Report {
                 let staves = plan.staves.map { $0.joined(separator: "+") }.joined(separator: " / ")
                 out.append("  tune[\(tuneIndex)] staffPlan from stave \(plan.effectiveFromStave)"
                            + " (line \(plan.line)): \(staves)")
+            }
+            for pageBreak in tune.pageBreaks {
+                let restart = pageBreak.restartingAt.map { ", renumbering from \($0)" } ?? ""
+                out.append("  tune[\(tuneIndex)] newpage before stave \(pageBreak.beforeStave)"
+                           + " (line \(pageBreak.line))\(restart)")
             }
             for (voiceIndex, voice) in tune.voices.enumerated() {
                 let counts = voice.staves.map(\.measureCount)

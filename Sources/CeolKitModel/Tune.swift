@@ -29,6 +29,14 @@ public struct Tune: Sendable {
     /// plan both govern from stave 0 — and the later one wins, as it does for every other
     /// directive.
     public let staffPlans: [StaffPlanChange]
+    /// Every `%%newpage` that reaches this tune, in source order, each paired with the stave
+    /// it breaks before — see ``PageBreak``.  Empty when the tune asks for no page break,
+    /// which is almost every tune.
+    ///
+    /// Unlike ``directives``, these are not also stored as ``CeolKitDirective`` values: a
+    /// page break has no meaning apart from where it falls, so the positional view is the
+    /// only one.
+    public let pageBreaks: [PageBreak]
     public let source: SourceRange
 
     public init(
@@ -45,6 +53,7 @@ public struct Tune: Sendable {
         macros: [MacroDefinition],
         directives: [CeolKitDirectiveScope],
         staffPlans: [StaffPlanChange] = [],
+        pageBreaks: [PageBreak] = [],
         source: SourceRange
     ) {
         self.reference = reference
@@ -60,6 +69,7 @@ public struct Tune: Sendable {
         self.macros = macros
         self.directives = directives
         self.staffPlans = staffPlans
+        self.pageBreaks = pageBreaks
         self.source = source
     }
 

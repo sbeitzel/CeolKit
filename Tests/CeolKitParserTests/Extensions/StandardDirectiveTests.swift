@@ -316,6 +316,65 @@ struct StandardDirectiveTests {
         #expect(result.score.footer == "left\\tcenter\\tright")
     }
 
+    // MARK: %%footer placeholders (issue #141)
+
+    @Test("Every recognised $ placeholder passes without a warning")
+    func footerKnownPlaceholdersSilent() {
+        let abc = "%%footer \"$T\\t$P of $D\\t$d\"\nX:1\nT:T\nM:4/4\nL:1/4\nK:C\nC|"
+        let result = parse(abc)
+        #expect(result.score.diagnostics.allSatisfy { $0.code != .unknownFooterPlaceholder })
+    }
+
+    @Test("An unrecognised $ token warns and names itself")
+    func footerUnknownPlaceholderWarns() {
+        let abc = "%%footer \"$Q\"\nX:1\nT:T\nM:4/4\nL:1/4\nK:C\nC|"
+        let result = parse(abc)
+        let warnings = result.score.diagnostics.filter { $0.code == .unknownFooterPlaceholder }
+        #expect(warnings.count == 1)
+        #expect(warnings.first?.severity == .warning)
+        #expect(warnings.first?.message.contains("$Q") == true)
+    }
+
+    @Test("A typo differing only in case is caught")
+    func footerPlaceholderCaseTypoWarns() {
+        let abc = "%%footer \"Page $p\"\nX:1\nT:T\nM:4/4\nL:1/4\nK:C\nC|"
+        let result = parse(abc)
+        let warnings = result.score.diagnostics.filter { $0.code == .unknownFooterPlaceholder }
+        #expect(warnings.count == 1)
+        #expect(warnings.first?.message.contains("$p") == true)
+    }
+
+    @Test("A repeated unknown token warns once, distinct ones once each")
+    func footerUnknownPlaceholdersDeduplicated() {
+        let abc = "%%footer \"$X $X $V\"\nX:1\nT:T\nM:4/4\nL:1/4\nK:C\nC|"
+        let result = parse(abc)
+        let warnings = result.score.diagnostics.filter { $0.code == .unknownFooterPlaceholder }
+        #expect(warnings.count == 2)
+    }
+
+    @Test("A $ that is not followed by a letter is ordinary text")
+    func footerBareDollarNotDiagnosed() {
+        let abc = "%%footer \"Price: $5, or $\"\nX:1\nT:T\nM:4/4\nL:1/4\nK:C\nC|"
+        let result = parse(abc)
+        #expect(result.score.diagnostics.allSatisfy { $0.code != .unknownFooterPlaceholder })
+    }
+
+    @Test("A ${name} span is not mistaken for a placeholder")
+    func footerTagSpanNotDiagnosed() {
+        let abc = "%%footer \"${bindername}\\t${pagenumber}\"\nX:1\nT:T\nM:4/4\nL:1/4\nK:C\nC|"
+        let result = parse(abc)
+        #expect(result.score.diagnostics.allSatisfy { $0.code != .unknownFooterPlaceholder })
+    }
+
+    @Test("An unrecognised $ token in a tune header warns too")
+    func footerUnknownPlaceholderInTuneHeaderWarns() {
+        let abc = "X:1\nT:T\n%%footer \"$F\"\nM:4/4\nL:1/4\nK:C\nC|"
+        let result = parse(abc)
+        let warnings = result.score.diagnostics.filter { $0.code == .unknownFooterPlaceholder }
+        #expect(warnings.count == 1)
+        #expect(warnings.first?.message.contains("$F") == true)
+    }
+
     // MARK: %%dateformat
 
     @Test("%%dateformat does not emit unknownDirective warning")

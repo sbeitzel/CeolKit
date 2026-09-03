@@ -192,9 +192,9 @@ The value must be a positive integer (≥ 1). If the argument is missing, zero,
 negative, or non-numeric, an error message is emitted and the directive is
 ignored.
 
-Page number substitution in headers and footers uses the `$P` placeholder
-(current page) and `$Q` placeholder (non-resetting page counter). Only `$P`
-is affected by `%%ceolkit:pagenumber`; `$Q` always starts at 1 and is never reset.
+Page number substitution in the footer uses the `$P` placeholder, which is the token
+this directive sets. It is one of four — see
+[`%%footer` placeholders](#footer-placeholders).
 
 This directive fixes the number **at authoring time**, which is what a multi-file
 *score* needs — the file that continues a piece knows where the previous file
@@ -257,6 +257,45 @@ rendered page with what the reader sees on paper agrees with the printed footer.
 break. `%%ceolkit:pagenumber N` sets the page number *without* starting a new page,
 so it is only meaningful before any output has been produced (i.e., in the
 file preamble or at the very start of a tune header).
+
+---
+
+## `%%footer` placeholders
+
+**Syntax:** `$<letter>` inside a `%%footer` template
+
+**Scope:** the footer template it is written in
+
+### Description
+
+CeolKit substitutes exactly four `$` placeholders:
+
+| Placeholder | Value |
+|-------------|-------|
+| `$P` | the current page number, as set by [`%%ceolkit:pagenumber`](#ceolkitpagenumber) |
+| `$T` | the first tune's title |
+| `$D` | the render date, formatted by `%%dateformat` |
+| `$d` | the same as `$D` |
+
+That set is deliberately narrower than abcm2ps's, which also defines `$F`, `$I<x>`,
+`$V`, `$P0` and `$P1`. None of those are implemented here, and neither is anything
+outside the table above.
+
+### Anything else is engraved literally, and diagnosed
+
+A `$` followed by any other letter is not a placeholder. It stays in the literal text
+and is engraved as written — under the default `TextRendering.outlines` as artwork, with
+nothing downstream able to tell what was meant — so the parser emits a warning for each
+distinct one:
+
+```
+warning: '$X' is not a footer placeholder; it will be engraved literally
+```
+
+That covers both an abcm2ps placeholder CeolKit does not implement and a typo such as
+`$p`. Two things are *not* diagnosed, because neither is a token: a `$` not followed by
+a letter (`$5`, a trailing `$`) is ordinary text, and `${name}` is a
+[consumer-substitutable span](#consumer-substitutable-footer-spans).
 
 ---
 

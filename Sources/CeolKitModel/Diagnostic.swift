@@ -68,6 +68,11 @@ public enum DiagnosticCode: String, Codable, Sendable {
     // Directives
     case unknownDirective
     case redundantDirective
+    /// A `%%footer` template contains a `$`-token CeolKit does not substitute — an
+    /// abcm2ps placeholder that is not implemented here, or a typo such as `$p`.  The
+    /// characters are engraved literally, and under the default outline mode they are
+    /// engraved as artwork, so nothing downstream can tell what was meant.
+    case unknownFooterPlaceholder
     /// A `%%score` / `%%staves` payload did not parse (ABC v2.2 §11.1).  The whole
     /// directive is dropped rather than stored as a partial tree.
     case invalidStaffPlan

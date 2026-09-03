@@ -18,7 +18,9 @@ struct SemanticPass {
         for line in file.filePreamble {
             if case .directive(let name, let payload, let src) = line {
                 if name == "footer" {
-                    currentFooter = stripQuotes(payload.trimmingCharacters(in: .whitespaces))
+                    let footer = stripQuotes(payload.trimmingCharacters(in: .whitespaces))
+                    diagnoseFooterPlaceholders(footer, source: src, into: &diagnostics)
+                    currentFooter = footer
                 } else if isCeolKitDirective(name) || isStandardDirective(name) {
                     var tempDiags: [Diagnostic] = []
                     if let d = parseCeolKitDirective(name: name, payload: payload, source: src, diagnostics: &tempDiags) {
@@ -52,8 +54,10 @@ struct SemanticPass {
         var tunes: [Tune] = []
         for (idx, abcTune) in file.tunes.enumerated() {
             // Update footer from tune header directives (last-wins across document).
-            for (name, payload, _) in abcTune.headerDirectives where name == "footer" {
-                currentFooter = stripQuotes(payload.trimmingCharacters(in: .whitespaces))
+            for (name, payload, src) in abcTune.headerDirectives where name == "footer" {
+                let footer = stripQuotes(payload.trimmingCharacters(in: .whitespaces))
+                diagnoseFooterPlaceholders(footer, source: src, into: &diagnostics)
+                currentFooter = footer
             }
             let (tune, tuneDiags) = buildTune(abcTune, dialect: dialect)
             diagnostics += tuneDiags
@@ -1193,6 +1197,38 @@ struct SemanticPass {
             return nil
         default:
             return nil
+        }
+    }
+
+    /// The `$`-tokens a `%%footer` template may use.  `$d` is a second spelling of `$D`.
+    private static let footerPlaceholders: Set<Character> = ["P", "T", "D", "d"]
+
+    /// Warns about every other `$`-token in a `%%footer` template (issue #141).
+    ///
+    /// The renderer substitutes `footerPlaceholders` and leaves the rest of the template in
+    /// the literal text, so `%%footer "$X"` engraves the characters `$X` — and under the
+    /// default `TextRendering.outlines` it engraves them as artwork, which nothing downstream
+    /// can read back.  Parse time is the only place anyone gets told.  This catches both an
+    /// abcm2ps placeholder CeolKit does not implement (`$F`, `$V`, `$P0`) and a typo such as
+    /// `$p`; a `$` not followed by a letter (`$5`, a trailing `$`) is ordinary text, and
+    /// `${name}` is a consumer-substitutable span, so neither is a token at all.
+    ///
+    /// One warning per distinct token: every occurrence shares the directive's source range,
+    /// so repeating them would be noise pointing at the same line.
+    private func diagnoseFooterPlaceholders(_ template: String, source: SourceRange,
+                                            into diagnostics: inout [Diagnostic]) {
+        var seen: Set<Character> = []
+        for match in template.matches(of: /\$([A-Za-z])/) {
+            guard let token = match.1.first,
+                  !Self.footerPlaceholders.contains(token),
+                  seen.insert(token).inserted else { continue }
+            diagnostics.append(Diagnostic(
+                severity: .warning,
+                code: .unknownFooterPlaceholder,
+                message: "'$\(token)' is not a footer placeholder; it will be engraved literally",
+                source: source,
+                hint: "CeolKit substitutes $P, $T, $D and $d in %%footer."
+            ))
         }
     }
 

@@ -672,6 +672,9 @@ struct BodyContext {
     /// `%%score` / `%%staves` met in the body, in source order, each already carrying the
     /// stave it governs from.
     var bodyStaffPlans: [StaffPlanChange] = []
+    /// `%%newpage` met in the body, in source order, each already carrying the stave it
+    /// breaks before.
+    var bodyPageBreaks: [PageBreak] = []
     var hasExplicitVoice: Bool = false
     /// The `&` that opened each temporary voice (§7.4).  Its presence is also what says a
     /// layer exists at all: the states themselves live in `voices`, keyed by `VoiceKey`.

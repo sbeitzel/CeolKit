@@ -99,6 +99,11 @@ public struct SVGRenderer: CeolKitRenderer {
             // boundary is always a system break; a staff plan cannot change mid-system.
             var groups: [SystemGroup] = []
             var headerWidths: [Double] = []
+            // The tune stave each system came from, parallel to `groups`.  `%%newpage` is
+            // written against a stave — one source line of music — and pagination happens in
+            // systems, so this is where the two are reconciled: it is the last point that
+            // still knows which systems the packer made out of which stave.
+            var staveOfGroup: [Int] = []
             // The key each voice is standing in, threaded across the regions: a `%%score` in
             // the body cuts the tune but does not reset it, so the region after one opens in
             // whatever key the music before it reached (#134).  Empty until a body `K:` moves
@@ -282,6 +287,15 @@ public struct SVGRenderer: CeolKitRenderer {
                          group.staves[staffIndex].headerKeyChange)
                     }
                 }
+                // Every stave but the region's last ends on a `.hard` break, which the
+                // breaker stamps on the last system it packed out of that stave.  Walking
+                // the systems it produced therefore recovers the stave each one came from,
+                // without the breaker having to carry the number through justification.
+                var stave = region.staves.lowerBound
+                for group in regionGroups {
+                    staveOfGroup.append(stave)
+                    if group.sourceForced { stave += 1 }
+                }
                 groups += regionGroups
             }
 
@@ -308,17 +322,38 @@ public struct SVGRenderer: CeolKitRenderer {
             ).build()
             tuneBlocks.append(TuneBlock(systemGroups: tuneGroups, titleRows: titleRows,
                                         titleBlockHeight: titleBlockHeight, scale: scale,
-                                        graceNoteSpacing: graceNoteSpacing))
+                                        graceNoteSpacing: graceNoteSpacing,
+                                        pageBreaks: Self.forcedPageBreaks(
+                                            tune.pageBreaks, staveOfGroup: staveOfGroup)))
         }
 
         let firstPageNumber = Self.firstPageNumber(of: score)
         let emitter = SVGEmitter(config: effectiveConfig, metadata: metadata,
                                  stemDirection: documentStemDirection,
                                  firstPageNumber: firstPageNumber)
-        let layout = engine.layout(tuneBlocks)
+        let layout = engine.layout(tuneBlocks, firstPageNumber: firstPageNumber)
         let finalLayout = attachFooters(layout, score: score, config: effectiveConfig,
                                         firstPageNumber: firstPageNumber)
         return try emitter.emit(finalLayout)
+    }
+
+    // MARK: - Page breaks
+
+    /// Resolves the tune's `%%newpage` directives from the staves they were written against
+    /// to the systems they stand in front of (issue #140).
+    ///
+    /// A break lands on the first system of its stave.  Where that stave produced no system
+    /// at all — a `%%score` region whose plan selects nothing is dropped whole — the break
+    /// moves down to the next system there is, which keeps the music the author wanted on a
+    /// fresh page on one.  A break past every system is kept, addressed one past the end:
+    /// there is nothing left in this tune to move, so what it moves is the next tune.
+    static func forcedPageBreaks(_ breaks: [PageBreak],
+                                 staveOfGroup: [Int]) -> [ForcedPageBreak] {
+        breaks.map { pageBreak in
+            let group = staveOfGroup.firstIndex { $0 >= pageBreak.beforeStave }
+                ?? staveOfGroup.count
+            return ForcedPageBreak(beforeGroup: group, pageNumber: pageBreak.restartingAt)
+        }
     }
 
     // MARK: - Page numbering
@@ -354,10 +389,11 @@ public struct SVGRenderer: CeolKitRenderer {
         let pageCount = layout.pages.count
         let updatedPages = layout.pages.enumerated().map { pageIndex, page -> ResolvedPage in
             let rows = buildFooterRows(template: template,
-                                       pageNumber: firstPageNumber + pageIndex,
+                                       pageNumber: page.pageNumber ?? firstPageNumber + pageIndex,
                                        pageCount: pageCount, score: score, config: config,
                                        dateFormat: dateFormat)
-            return ResolvedPage(systems: page.systems, titleRows: page.titleRows, footerRows: rows)
+            return ResolvedPage(systems: page.systems, titleRows: page.titleRows,
+                                footerRows: rows, pageNumber: page.pageNumber)
         }
         return ResolvedLayout(pageSize: layout.pageSize, margins: layout.margins, pages: updatedPages)
     }

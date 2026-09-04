@@ -68,6 +68,11 @@ public enum DiagnosticCode: String, Codable, Sendable {
     // Directives
     case unknownDirective
     case redundantDirective
+    /// A `%%footer` template contains a `$`-token CeolKit does not substitute — an
+    /// abcm2ps placeholder that is not implemented here, or a typo such as `$p`.  The
+    /// characters are engraved literally, and under the default outline mode they are
+    /// engraved as artwork, so nothing downstream can tell what was meant.
+    case unknownFooterPlaceholder
     /// A `%%score` / `%%staves` payload did not parse (ABC v2.2 §11.1).  The whole
     /// directive is dropped rather than stored as a partial tree.
     case invalidStaffPlan
@@ -75,6 +80,13 @@ public enum DiagnosticCode: String, Codable, Sendable {
     /// change without splitting the system.  It takes effect from the start of the stave
     /// enclosing it instead — see `StaffPlanChange`.
     case staffPlanSnappedToStave
+    /// A `%%newpage` was written part-way through a stave, where a page cannot break without
+    /// splitting the system.  It takes effect from the start of the stave enclosing it
+    /// instead — see `PageBreak`.
+    case pageBreakSnappedToStave
+    /// A `%%newpage` stands after the last tune in the file, so there is nothing left for it
+    /// to move onto a fresh page.  It is dropped.
+    case pageBreakAfterLastTune
     /// A `%%score` / `%%staves` names a voice the tune does not declare anywhere.  The rest
     /// of the plan is honoured.
     case staffPlanVoiceNotFound

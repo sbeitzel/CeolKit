@@ -111,15 +111,47 @@ public struct VerticalLayoutEngine: Sendable {
     /// Lays out a sequence of tune blocks, each with its own optional title block.
     ///
     /// Tunes share pages when they fit; a new page opens only when the current page
-    /// cannot accommodate a tune's title block and its first system together.
+    /// cannot accommodate a tune's title block and its first system together, or when a
+    /// `%%newpage` in the source demands one (issue #140).
     /// Each tune's title rows are offset from their tune-relative `baselineY` values
     /// by the actual page y-origin at the moment they are placed.
-    public func layout(_ tuneBlocks: [TuneBlock]) -> ResolvedLayout {
+    ///
+    /// - Parameter firstPageNumber: what the document's opening page is called, from
+    ///   `%%ceolkit:pagenumber`.  Every page is stamped with the number it prints as it is
+    ///   closed, because a `%%newpage N` renumbers *and* breaks, and only the walk that
+    ///   decides where the pages fall can honour both at once.
+    public func layout(_ tuneBlocks: [TuneBlock], firstPageNumber: Int = 1) -> ResolvedLayout {
         var pages: [ResolvedPage] = []
         var pageSystems: [ResolvedSystem] = []
         var pageTitleRows: [ResolvedTitleRow] = []
         var y = config.margins.top
         var previousAbcLine: Int?
+        var pageNumber = firstPageNumber
+
+        /// Closes the page being built and opens an empty one below it.
+        func flushPage() {
+            pages.append(ResolvedPage(systems: pageSystems, titleRows: pageTitleRows,
+                                      pageNumber: pageNumber))
+            pageNumber += 1
+            pageSystems = []
+            pageTitleRows = []
+            y = config.margins.top
+        }
+
+        /// Applies whatever `%%newpage` stands in front of system `gi` of `block`.
+        ///
+        /// A break onto a page nothing has been drawn on yet is not a break: there is
+        /// nothing to move.  `%%newpage N` at the head of a document therefore renames the
+        /// page it already opens rather than leaving a blank one behind it — which is also
+        /// what makes it agree with `%%ceolkit:pagenumber` written in the same place.
+        func applyForcedBreak(before gi: Int, of block: TuneBlock) {
+            let landing = block.pageBreaks.filter { $0.beforeGroup == gi }
+            guard !landing.isEmpty else { return }
+            if !pageSystems.isEmpty || !pageTitleRows.isEmpty { flushPage() }
+            // Several can land on one system — one in the gap before a tune and another in
+            // its header — and the last number written wins, as it does for every directive.
+            if let restart = landing.compactMap(\.pageNumber).last { pageNumber = restart }
+        }
 
         for block in tuneBlocks {
             let groups = block.systemGroups
@@ -136,6 +168,10 @@ public struct VerticalLayoutEngine: Sendable {
             let systemGap   = tuneConfig.systemGap
             let tuneGap     = tuneConfig.tuneGap
 
+            // A `%%newpage` standing before the tune moves its title block too, so it is
+            // honoured ahead of everything else this block does.
+            applyForcedBreak(before: 0, of: block)
+
             // If the current page already has content, check whether the entire tune
             // fits in the remaining space. If not, close the current page. Tunes that
             // are taller than a full page are still forced to a fresh page here; the
@@ -143,10 +179,7 @@ public struct VerticalLayoutEngine: Sendable {
             if !pageSystems.isEmpty {
                 let tuneH = totalHeight(of: block, endingRuns: endingRuns)
                 if y + tuneH > config.pageSize.height - config.margins.bottom {
-                    pages.append(ResolvedPage(systems: pageSystems, titleRows: pageTitleRows))
-                    pageSystems = []
-                    pageTitleRows = []
-                    y = config.margins.top
+                    flushPage()
                 }
             }
 
@@ -164,13 +197,14 @@ public struct VerticalLayoutEngine: Sendable {
                 let metrics = groupMetrics(of: group, config: tuneConfig,
                                            endingRuns: endingRuns[gi])
 
+                // The tune's own breaks, resolved to the system each stands in front of.
+                // Group 0 was dealt with above, before the title block was placed.
+                if gi > 0 { applyForcedBreak(before: gi, of: block) }
+
                 // A group breaks to the next page whole: splitting it would separate staves
                 // that only mean anything read together.
                 if !pageSystems.isEmpty && y + metrics.totalHeight > config.pageSize.height - config.margins.bottom {
-                    pages.append(ResolvedPage(systems: pageSystems, titleRows: pageTitleRows))
-                    pageSystems = []
-                    pageTitleRows = []
-                    y = config.margins.top
+                    flushPage()
                 }
 
                 // Every staff in the group reports the group's line, so the anchor sequence
@@ -186,10 +220,14 @@ public struct VerticalLayoutEngine: Sendable {
                 let isLastInBlock = gi == groups.count - 1
                 y += metrics.totalHeight + (isLastInBlock ? tuneGap : systemGap)
             }
+
+            // A `%%newpage` written past the tune's last stave — at the foot of its body
+            // rather than in the gap below it — puts whatever follows on a fresh page.
+            if !groups.isEmpty { applyForcedBreak(before: groups.count, of: block) }
         }
 
         if !pageSystems.isEmpty || !pageTitleRows.isEmpty {
-            pages.append(ResolvedPage(systems: pageSystems, titleRows: pageTitleRows))
+            flushPage()
         }
 
         return ResolvedLayout(

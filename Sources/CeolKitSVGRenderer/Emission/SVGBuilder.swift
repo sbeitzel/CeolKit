@@ -31,6 +31,9 @@ struct SVGBuilder: Sendable {
     /// Ids of the non-empty glyphs, in the order they were first drawn, so that the
     /// emitted `<defs>` block is stable rather than dictionary-ordered.
     private var glyphOrder: [String] = []
+    /// How many times each `${…}` mark has been wrapped in this document, so repeats of one
+    /// name still get unique `id`s — see ``tagGroup(name:x:y:fontFamily:fontSize:textAnchor:_:)``.
+    private var tagCounts: [String: Int] = [:]
 
     init(textRendering: TextRendering = .fontFace, fonts: OutlineFontSet? = nil) {
         self.textRendering = textRendering
@@ -131,6 +134,52 @@ struct SVGBuilder: Sendable {
         let inner = elements[start...].map { "  " + $0 }
         elements.replaceSubrange(start..., with:
             ["<g transform=\"\(esc(transform))\">"] + inner + ["</g>"])
+    }
+
+    /// Wraps everything `body` draws in a `<g>` that names a consumer-substitutable span
+    /// and advertises how CeolKit drew it (issue #137).
+    ///
+    /// The `data-*` attributes are the contract with a downstream consumer; the group's
+    /// contents are CeolKit's own rendering of the span's default value, in whatever mode
+    /// the document is being emitted. A consumer that ignores the group gets exactly the
+    /// output it always got; one that means to substitute empties the group and draws its
+    /// own text at the advertised anchor, which needs the position, size and anchor rather
+    /// than the face — the point of the mark, since `.outlines` leaves no text to rewrite.
+    ///
+    /// Unlike ``group(transform:)`` this is emitted even when it wraps nothing: an author
+    /// who marked a name CeolKit has no value for still gets the positioned, empty group a
+    /// consumer needs to stamp into.
+    mutating func tagGroup(
+        name: String,
+        x: Double, y: Double,
+        fontFamily: String,
+        fontSize: Double,
+        textAnchor: String,
+        _ body: (inout SVGBuilder) -> Void
+    ) {
+        var attrs = "id=\"\(esc(tagID(for: name)))\" class=\"ceolkit-tag\""
+        attrs += " data-ceolkit-tag=\"\(esc(name))\""
+        attrs += " data-x=\"\(fmt(x))\" data-y=\"\(fmt(y))\""
+        attrs += " data-font-size=\"\(fmt(fontSize))\""
+        attrs += " data-font-family=\"\(esc(fontFamily))\""
+        attrs += " data-text-anchor=\"\(esc(textAnchor))\""
+        let start = elements.count
+        body(&self)
+        let inner = elements[start...].map { "  " + $0 }
+        elements.replaceSubrange(start..., with: ["<g \(attrs)>"] + inner + ["</g>"])
+    }
+
+    /// A document-unique `id` for a mark.
+    ///
+    /// Nothing stops a template from marking the same name twice — a page number at both
+    /// margins, say — and duplicate `id`s would make the document ill-formed. The first
+    /// occurrence gets the plain id a consumer would guess; later ones are suffixed.
+    /// `data-ceolkit-tag` carries the name unchanged on every one of them, so a consumer
+    /// keying off that finds them all.
+    private mutating func tagID(for name: String) -> String {
+        let count = (tagCounts[name] ?? 0) + 1
+        tagCounts[name] = count
+        return count == 1 ? "ceolkit-tag-\(name)" : "ceolkit-tag-\(name)-\(count)"
     }
 
     mutating func path(

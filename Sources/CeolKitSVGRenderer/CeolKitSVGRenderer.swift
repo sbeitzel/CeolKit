@@ -99,6 +99,11 @@ public struct SVGRenderer: CeolKitRenderer {
             // boundary is always a system break; a staff plan cannot change mid-system.
             var groups: [SystemGroup] = []
             var headerWidths: [Double] = []
+            // The tune stave each system came from, parallel to `groups`.  `%%newpage` is
+            // written against a stave — one source line of music — and pagination happens in
+            // systems, so this is where the two are reconciled: it is the last point that
+            // still knows which systems the packer made out of which stave.
+            var staveOfGroup: [Int] = []
             // The key each voice is standing in, threaded across the regions: a `%%score` in
             // the body cuts the tune but does not reset it, so the region after one opens in
             // whatever key the music before it reached (#134).  Empty until a body `K:` moves
@@ -282,6 +287,15 @@ public struct SVGRenderer: CeolKitRenderer {
                          group.staves[staffIndex].headerKeyChange)
                     }
                 }
+                // Every stave but the region's last ends on a `.hard` break, which the
+                // breaker stamps on the last system it packed out of that stave.  Walking
+                // the systems it produced therefore recovers the stave each one came from,
+                // without the breaker having to carry the number through justification.
+                var stave = region.staves.lowerBound
+                for group in regionGroups {
+                    staveOfGroup.append(stave)
+                    if group.sourceForced { stave += 1 }
+                }
                 groups += regionGroups
             }
 
@@ -308,19 +322,64 @@ public struct SVGRenderer: CeolKitRenderer {
             ).build()
             tuneBlocks.append(TuneBlock(systemGroups: tuneGroups, titleRows: titleRows,
                                         titleBlockHeight: titleBlockHeight, scale: scale,
-                                        graceNoteSpacing: graceNoteSpacing))
+                                        graceNoteSpacing: graceNoteSpacing,
+                                        pageBreaks: Self.forcedPageBreaks(
+                                            tune.pageBreaks, staveOfGroup: staveOfGroup)))
         }
 
+        let firstPageNumber = Self.firstPageNumber(of: score)
         let emitter = SVGEmitter(config: effectiveConfig, metadata: metadata,
-                                 stemDirection: documentStemDirection)
-        let layout = engine.layout(tuneBlocks)
-        let finalLayout = attachFooters(layout, score: score, config: effectiveConfig)
+                                 stemDirection: documentStemDirection,
+                                 firstPageNumber: firstPageNumber)
+        let layout = engine.layout(tuneBlocks, firstPageNumber: firstPageNumber)
+        let finalLayout = attachFooters(layout, score: score, config: effectiveConfig,
+                                        firstPageNumber: firstPageNumber)
         return try emitter.emit(finalLayout)
+    }
+
+    // MARK: - Page breaks
+
+    /// Resolves the tune's `%%newpage` directives from the staves they were written against
+    /// to the systems they stand in front of (issue #140).
+    ///
+    /// A break lands on the first system of its stave.  Where that stave produced no system
+    /// at all — a `%%score` region whose plan selects nothing is dropped whole — the break
+    /// moves down to the next system there is, which keeps the music the author wanted on a
+    /// fresh page on one.  A break past every system is kept, addressed one past the end:
+    /// there is nothing left in this tune to move, so what it moves is the next tune.
+    static func forcedPageBreaks(_ breaks: [PageBreak],
+                                 staveOfGroup: [Int]) -> [ForcedPageBreak] {
+        breaks.map { pageBreak in
+            let group = staveOfGroup.firstIndex { $0 >= pageBreak.beforeStave }
+                ?? staveOfGroup.count
+            return ForcedPageBreak(beforeGroup: group, pageNumber: pageBreak.restartingAt)
+        }
+    }
+
+    // MARK: - Page numbering
+
+    /// The number the document's first page prints, per `%%ceolkit:pagenumber` (issue #138).
+    ///
+    /// Last-wins, and read only from the first tune: the directive sets the number *before
+    /// any output has been produced*, so the file preamble and the first tune's header are
+    /// the only places it can mean anything, and the parser folds preamble directives into
+    /// the first tune's list in source order, which puts both in one place.  A copy in a
+    /// later tune's header would be asking to renumber pages already engraved — that is
+    /// `%%newpage`'s job, not this directive's — and is ignored.
+    ///
+    /// Defaults to 1, which is what every document that does not use the directive gets, so
+    /// the ordinary page number is `pageIndex + 1` exactly as it always was.
+    static func firstPageNumber(of score: Score) -> Int {
+        score.tunes.first?.directives.compactMap { scope -> Int? in
+            if case .pageNumber(let n) = scope.directive { return n }
+            return nil
+        }.last ?? 1
     }
 
     // MARK: - Footer
 
-    private func attachFooters(_ layout: ResolvedLayout, score: Score, config: SVGRenderConfig) -> ResolvedLayout {
+    private func attachFooters(_ layout: ResolvedLayout, score: Score, config: SVGRenderConfig,
+                               firstPageNumber: Int) -> ResolvedLayout {
         guard let template = score.footer, !template.isEmpty else { return layout }
         // Find the last %%dateformat directive (last-wins across preamble and tune header).
         let dateFormat = score.tunes.first?.directives.compactMap { scope -> String? in
@@ -329,10 +388,12 @@ public struct SVGRenderer: CeolKitRenderer {
         }.last
         let pageCount = layout.pages.count
         let updatedPages = layout.pages.enumerated().map { pageIndex, page -> ResolvedPage in
-            let rows = buildFooterRows(template: template, pageNumber: pageIndex + 1,
+            let rows = buildFooterRows(template: template,
+                                       pageNumber: page.pageNumber ?? firstPageNumber + pageIndex,
                                        pageCount: pageCount, score: score, config: config,
                                        dateFormat: dateFormat)
-            return ResolvedPage(systems: page.systems, titleRows: page.titleRows, footerRows: rows)
+            return ResolvedPage(systems: page.systems, titleRows: page.titleRows,
+                                footerRows: rows, pageNumber: page.pageNumber)
         }
         return ResolvedLayout(pageSize: layout.pageSize, margins: layout.margins, pages: updatedPages)
     }
@@ -340,17 +401,14 @@ public struct SVGRenderer: CeolKitRenderer {
     private func buildFooterRows(template: String, pageNumber: Int, pageCount: Int,
                                   score: Score, config: SVGRenderConfig,
                                   dateFormat: String? = nil) -> [ResolvedTitleRow] {
-        let title   = score.tunes.first?.titles.first?.value ?? ""
-        let dateStr = Self.currentDateString(format: dateFormat)
+        let context = FooterContext(
+            pageNumber: pageNumber, pageCount: pageCount,
+            title: score.tunes.first?.titles.first?.value ?? "",
+            date: Self.currentDateString(format: dateFormat))
+        let columns = FooterTemplate.columns(FooterTemplate.segments(of: template,
+                                                                     context: context))
+            .map(FooterTemplate.trimmed)
 
-        var text = template
-            .replacing(/\$P/, with: String(pageNumber))
-            .replacing(/\$T/, with: title)
-            .replacing(/\$D/, with: dateStr)
-            .replacing(/\$d/, with: dateStr)
-        text = text.replacing(/\\t/, with: "\t")
-
-        let parts     = text.components(separatedBy: "\t")
         let fontSize  = 12.0
         // Shift baseline up by the descender depth so the bottom of descenders (p, g, y, …)
         // lands precisely at the bottom margin line, not below it.
@@ -360,29 +418,69 @@ public struct SVGRenderer: CeolKitRenderer {
         let centerX   = config.pageSize.width / 2.0
         let rightX    = config.pageSize.width - config.margins.right
 
-        var items: [ResolvedTitleRow.Item] = []
-        switch parts.count {
+        let placements: [(column: [FooterSegment], x: Double, anchor: TextAnchor)]
+        switch columns.count {
         case 1:
-            let t = parts[0].trimmingCharacters(in: .whitespaces)
-            if !t.isEmpty {
-                items.append(.init(text: t, x: centerX, baselineY: baselineY,
-                                   anchor: .middle, fontSize: fontSize))
-            }
+            placements = [(columns[0], centerX, .middle)]
         case 2:
-            let l = parts[0].trimmingCharacters(in: .whitespaces)
-            let r = parts[1].trimmingCharacters(in: .whitespaces)
-            if !l.isEmpty { items.append(.init(text: l, x: leftX,  baselineY: baselineY, anchor: .start, fontSize: fontSize)) }
-            if !r.isEmpty { items.append(.init(text: r, x: rightX, baselineY: baselineY, anchor: .end,   fontSize: fontSize)) }
+            placements = [(columns[0], leftX,  .start),
+                          (columns[1], rightX, .end)]
         default:
-            let l = parts[0].trimmingCharacters(in: .whitespaces)
-            let c = parts[1].trimmingCharacters(in: .whitespaces)
-            let r = parts[2].trimmingCharacters(in: .whitespaces)
-            if !l.isEmpty { items.append(.init(text: l, x: leftX,   baselineY: baselineY, anchor: .start,  fontSize: fontSize)) }
-            if !c.isEmpty { items.append(.init(text: c, x: centerX, baselineY: baselineY, anchor: .middle, fontSize: fontSize)) }
-            if !r.isEmpty { items.append(.init(text: r, x: rightX,  baselineY: baselineY, anchor: .end,    fontSize: fontSize)) }
+            placements = [(columns[0], leftX,   .start),
+                          (columns[1], centerX, .middle),
+                          (columns[2], rightX,  .end)]
         }
 
+        let items = placements.flatMap {
+            layOutFooterColumn($0.column, x: $0.x, anchor: $0.anchor,
+                               baselineY: baselineY, fontSize: fontSize)
+        }
         return items.isEmpty ? [] : [ResolvedTitleRow(items: items)]
+    }
+
+    /// Places one footer column, splitting it into separate items only where the author
+    /// marked a `${…}` span.
+    ///
+    /// A column carrying no mark is laid out exactly as it always was — one item at the
+    /// column's own anchor — so ordinary footers are byte-for-byte unchanged and no font is
+    /// read to produce them.
+    private func layOutFooterColumn(_ segments: [FooterSegment], x: Double, anchor: TextAnchor,
+                                     baselineY: Double, fontSize: Double)
+    -> [ResolvedTitleRow.Item] {
+        let text = segments.map(\.text).joined()
+        func wholeColumn(tag: String? = nil) -> [ResolvedTitleRow.Item] {
+            guard tag != nil || !text.isEmpty else { return [] }
+            return [.init(text: text, x: x, baselineY: baselineY, anchor: anchor,
+                          fontSize: fontSize, tag: tag)]
+        }
+
+        guard segments.contains(where: { $0.tagName != nil }) else { return wholeColumn() }
+        // A column that is nothing *but* the mark keeps the column's own anchor, so a
+        // consumer stamping a wider string over it grows the way the column does — leftwards
+        // at the right margin, outwards from the centre — instead of running off the page.
+        if segments.count == 1, let name = segments[0].tagName { return wholeColumn(tag: name) }
+
+        // A mark mixed in with other text has to become an element of its own, which means
+        // measuring what precedes it. Without the bundled face there is nothing to measure
+        // with, so the column falls back to one untagged run: the default text, correctly
+        // drawn, and no substitution point — better than a footer laid out by guesswork.
+        guard let face = OutlineFontSet.textFace() else { return wholeColumn() }
+        var penX: Double
+        switch anchor {
+        case .start:  penX = x
+        case .middle: penX = x - face.width(of: text, fontSize: fontSize) / 2
+        case .end:    penX = x - face.width(of: text, fontSize: fontSize)
+        }
+
+        var items: [ResolvedTitleRow.Item] = []
+        for segment in segments {
+            if segment.tagName != nil || !segment.text.isEmpty {
+                items.append(.init(text: segment.text, x: penX, baselineY: baselineY,
+                                   anchor: .start, fontSize: fontSize, tag: segment.tagName))
+            }
+            penX += face.width(of: segment.text, fontSize: fontSize)
+        }
+        return items
     }
 
     private static func currentDateString(format: String? = nil, date: Date = Date()) -> String {

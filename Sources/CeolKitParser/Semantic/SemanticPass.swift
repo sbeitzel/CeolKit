@@ -14,11 +14,23 @@ struct SemanticPass {
         // filePreamble contains both the initial preamble and any inter-tune gaps (lines between
         // tunes that fall outside any tune header), so scanning it here covers both.
         var preambleCeolKitDirectives: [CeolKitDirectiveScope] = []
+        // `%%newpage` met outside any tune, in source order.  Unlike everything else in the
+        // preamble these are *not* promoted to the first tune: a break written in the gap
+        // between two tunes belongs to the one that follows it, so each is matched to its
+        // tune by source line in the walk below.
+        var preambleBreaks: [PageBreak] = []
         var currentFooter: String? = nil
         for line in file.filePreamble {
             if case .directive(let name, let payload, let src) = line {
                 if name == "footer" {
-                    currentFooter = stripQuotes(payload.trimmingCharacters(in: .whitespaces))
+                    let footer = stripQuotes(payload.trimmingCharacters(in: .whitespaces))
+                    diagnoseFooterPlaceholders(footer, source: src, into: &diagnostics)
+                    currentFooter = footer
+                } else if name == "newpage" {
+                    preambleBreaks.append(PageBreak(
+                        beforeStave: 0,
+                        restartingAt: parseNewPage(payload, source: src, diagnostics: &diagnostics),
+                        source: src))
                 } else if isCeolKitDirective(name) || isStandardDirective(name) {
                     var tempDiags: [Diagnostic] = []
                     if let d = parseCeolKitDirective(name: name, payload: payload, source: src, diagnostics: &tempDiags) {
@@ -50,14 +62,25 @@ struct SemanticPass {
         let fileSource = file.tunes.first?.source ?? .emptySourceRange
 
         var tunes: [Tune] = []
+        var previousTuneLine = Int.min
         for (idx, abcTune) in file.tunes.enumerated() {
             // Update footer from tune header directives (last-wins across document).
-            for (name, payload, _) in abcTune.headerDirectives where name == "footer" {
-                currentFooter = stripQuotes(payload.trimmingCharacters(in: .whitespaces))
+            for (name, payload, src) in abcTune.headerDirectives where name == "footer" {
+                let footer = stripQuotes(payload.trimmingCharacters(in: .whitespaces))
+                diagnoseFooterPlaceholders(footer, source: src, into: &diagnostics)
+                currentFooter = footer
             }
+            // The preamble breaks standing between the previous tune and this one: they move
+            // *this* tune onto a fresh page, so they are its own, at stave 0.
+            let tuneLine = abcTune.source.line
+            let ownedBreaks = preambleBreaks.filter {
+                $0.source.line > previousTuneLine && $0.source.line < tuneLine
+            }
+            previousTuneLine = tuneLine
             let (tune, tuneDiags) = buildTune(abcTune, dialect: dialect)
             diagnostics += tuneDiags
-            if idx == 0 && !preambleCeolKitDirectives.isEmpty {
+            let extraDirectives = idx == 0 ? preambleCeolKitDirectives : []
+            if !extraDirectives.isEmpty || !ownedBreaks.isEmpty {
                 tunes.append(Tune(
                     reference: tune.reference,
                     titles: tune.titles,
@@ -70,13 +93,23 @@ struct SemanticPass {
                     voices: tune.voices,
                     userSymbols: tune.userSymbols,
                     macros: tune.macros,
-                    directives: preambleCeolKitDirectives + tune.directives,
-                    staffPlans: initialStaffPlans(from: preambleCeolKitDirectives) + tune.staffPlans,
+                    directives: extraDirectives + tune.directives,
+                    staffPlans: initialStaffPlans(from: extraDirectives) + tune.staffPlans,
+                    pageBreaks: ownedBreaks + tune.pageBreaks,
                     source: tune.source
                 ))
             } else {
                 tunes.append(tune)
             }
+        }
+
+        // A `%%newpage` past the last tune has nothing left to move onto a fresh page.
+        for orphan in preambleBreaks where orphan.source.line > previousTuneLine {
+            diagnostics.append(Diagnostic(
+                severity: .info, code: .pageBreakAfterLastTune,
+                message: "%%newpage after the last tune has nothing to break before; ignored",
+                source: orphan.source
+            ))
         }
 
         // Redundancy: %%flatbeams true is implied by %%ceolkit:pipeformat true.
@@ -136,7 +169,28 @@ struct SemanticPass {
         name == "landscape" || name == "flatbeams" || name == "writefields"
             || name == "dateformat" || name == "footer"
             || name == "straightflags" || name == "graceslurs"
-            || name == "score" || name == "staves"
+            || name == "score" || name == "staves" || name == "newpage"
+    }
+
+    /// The argument of a `%%newpage` (ABC v2.2 §11.4.7, issue #140): the number the new page
+    /// is to print, or `nil` for the bare directive, which leaves the count alone.
+    ///
+    /// The argument is optional, so a payload that does not parse is a bad *option* on a
+    /// directive that is otherwise perfectly clear.  The break is kept and only the
+    /// renumbering dropped — the author unmistakably asked for a page break, and refusing to
+    /// draw one because the number beside it was mistyped would lose the part they got right.
+    private func parseNewPage(_ payload: String, source: SourceRange,
+                              diagnostics: inout [Diagnostic]) -> Int? {
+        let trimmed = payload.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return nil }
+        if let n = Int(trimmed), n >= 1 { return n }
+        diagnostics.append(Diagnostic(
+            severity: .warning, code: .invalidPageNumber,
+            message: "%%newpage expects no argument or an integer ≥ 1 (got '\(trimmed)'); "
+                   + "the page break stands and the numbering is left alone",
+            source: source
+        ))
+        return nil
     }
 
     // MARK: - Tune builder
@@ -161,6 +215,16 @@ struct SemanticPass {
 
         // Process header directives (%%ceolkit:* etc.)
         let tuneDirectives = processDirectives(abcTune.headerDirectives, scope: .tuneGlobal, diagnostics: &diagnostics)
+
+        // A `%%newpage` in the header breaks before the tune's first stave — the whole tune
+        // starts a fresh page.
+        var headerBreaks: [PageBreak] = []
+        for (name, payload, src) in abcTune.headerDirectives where name == "newpage" {
+            headerBreaks.append(PageBreak(
+                beforeStave: 0,
+                restartingAt: parseNewPage(payload, source: src, diagnostics: &diagnostics),
+                source: src))
+        }
 
         // Resolve unitNoteLength from meter if not explicit
         if ctx.unitNoteLength == nil {
@@ -218,6 +282,7 @@ struct SemanticPass {
             macros: ctx.macros,
             directives: tuneDirectives + bodyCtx.bodyTuneDirectives,
             staffPlans: initialStaffPlans(from: tuneDirectives) + bodyCtx.bodyStaffPlans,
+            pageBreaks: headerBreaks + bodyCtx.bodyPageBreaks,
             source: abcTune.source
         )
         return (tune, diagnostics)
@@ -838,6 +903,21 @@ struct SemanticPass {
                 }
             }
             diagnostics += tempDiags
+        case "newpage":
+            // §11.4.7: the music from here on starts a fresh page.  Like a staff plan, and
+            // for the same reason — the staves of a system are laid out together — a break
+            // written part-way through one snaps back to the start of the stave enclosing it.
+            if ctx.hasStaveInProgress {
+                diagnostics.append(Diagnostic(
+                    severity: .warning, code: .pageBreakSnappedToStave,
+                    message: "%%newpage inside a stave takes effect from the start of that stave",
+                    source: source
+                ))
+            }
+            ctx.bodyPageBreaks.append(PageBreak(
+                beforeStave: ctx.currentStaveIndex,
+                restartingAt: parseNewPage(payload, source: source, diagnostics: &diagnostics),
+                source: source))
         case "landscape", "flatbeams", "ceolkit:justifylast", "ceolkit:scale",
              "ceolkit:gracenotespacing", "writefields",
              "dateformat", "footer", "straightflags", "graceslurs":
@@ -1193,6 +1273,38 @@ struct SemanticPass {
             return nil
         default:
             return nil
+        }
+    }
+
+    /// The `$`-tokens a `%%footer` template may use.  `$d` is a second spelling of `$D`.
+    private static let footerPlaceholders: Set<Character> = ["P", "T", "D", "d"]
+
+    /// Warns about every other `$`-token in a `%%footer` template (issue #141).
+    ///
+    /// The renderer substitutes `footerPlaceholders` and leaves the rest of the template in
+    /// the literal text, so `%%footer "$X"` engraves the characters `$X` — and under the
+    /// default `TextRendering.outlines` it engraves them as artwork, which nothing downstream
+    /// can read back.  Parse time is the only place anyone gets told.  This catches both an
+    /// abcm2ps placeholder CeolKit does not implement (`$F`, `$V`, `$P0`) and a typo such as
+    /// `$p`; a `$` not followed by a letter (`$5`, a trailing `$`) is ordinary text, and
+    /// `${name}` is a consumer-substitutable span, so neither is a token at all.
+    ///
+    /// One warning per distinct token: every occurrence shares the directive's source range,
+    /// so repeating them would be noise pointing at the same line.
+    private func diagnoseFooterPlaceholders(_ template: String, source: SourceRange,
+                                            into diagnostics: inout [Diagnostic]) {
+        var seen: Set<Character> = []
+        for match in template.matches(of: /\$([A-Za-z])/) {
+            guard let token = match.1.first,
+                  !Self.footerPlaceholders.contains(token),
+                  seen.insert(token).inserted else { continue }
+            diagnostics.append(Diagnostic(
+                severity: .warning,
+                code: .unknownFooterPlaceholder,
+                message: "'$\(token)' is not a footer placeholder; it will be engraved literally",
+                source: source,
+                hint: "CeolKit substitutes $P, $T, $D and $d in %%footer."
+            ))
         }
     }
 

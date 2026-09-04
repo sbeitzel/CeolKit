@@ -126,6 +126,30 @@ public enum Dialect {
 ```
 Dialect is fixed after stage 2 (from the version line / `I:abc-version`), except individual tunes may override it. It controls whether legacy syntax produces warnings vs. errors.
 
+## Release process
+
+Work lands on `develop`; `main` is the release branch and carries the tags. A release is
+five steps, and **the last one is not optional**:
+
+1. Verify `develop`: clean tree, `swift build`, `swift test`, CI green on the tip.
+2. Open a PR `develop` → `main` titled `Release X.Y.Z`, and merge it with a **merge commit**
+   (not squash, not rebase — the tags and the merge-back both depend on the shared history).
+3. Tag `main`: `git tag -a vX.Y.Z -m "Release X.Y.Z"` and push the tag.
+4. `gh release create vX.Y.Z --title "X.Y[.Z]" --notes-file <notes> --verify-tag`, then
+   append the generated PR list (`gh api -X POST repos/sbeitzel/CeolKit/releases/generate-notes
+   -f tag_name=vX.Y.Z -f previous_tag_name=<prev>`) above the `## Upgrading` section.
+5. **Merge `main` back into `develop` and push.** The release merge commit exists only on
+   `main`, so without this `develop` falls behind, and branch protection then refuses the
+   *next* release PR as "head branch is not up to date". Skipping it is what makes step 2
+   fail later, not now.
+
+Two notes on the mechanics:
+
+- Issues fixed on `develop` stay **open** until step 2 — GitHub only auto-closes
+  `Fix #NN` references when they reach the default branch. Do not close them by hand.
+- Version numbers live only in the git tag and the GitHub release. Nothing in `Package.swift`
+  or the sources needs editing.
+
 ## Open Questions (from spec §10)
 
 1. File-global directive bag shape on `Score` — flat array vs. dedicated `FilePreamble` struct

@@ -192,9 +192,17 @@ The value must be a positive integer (≥ 1). If the argument is missing, zero,
 negative, or non-numeric, an error message is emitted and the directive is
 ignored.
 
-Page number substitution in headers and footers uses the `$P` placeholder
-(current page) and `$Q` placeholder (non-resetting page counter). Only `$P`
-is affected by `%%ceolkit:pagenumber`; `$Q` always starts at 1 and is never reset.
+Page number substitution in the footer uses the `$P` placeholder, which is the token
+this directive sets. It is one of four — see
+[`%%footer` placeholders](#footer-placeholders).
+
+This directive fixes the number **at authoring time**, which is what a multi-file
+*score* needs — the file that continues a piece knows where the previous file
+stopped. It cannot help a multi-file *compilation*: a tune assembled into a binder
+alongside others sits at a different offset in every binder it appears in, and the
+offsets shift whenever any of the tunes before it gains or loses a page. For that,
+mark the span and let the tool building the binder fill it in — see
+[Consumer-substitutable footer spans](#consumer-substitutable-footer-spans).
 
 ### Examples
 
@@ -227,12 +235,201 @@ T:Continued
 ...
 ```
 
+### Where it is read
+
+The last statement of the directive wins, and only the **file preamble and the first
+tune's header** are read. The number is set *before any output has been produced*, so
+that is the only place it can mean anything; a copy in a later tune's header would be
+asking to renumber pages already engraved, and is ignored.
+
+The number reaches both the `$P` and `${pagenumber}` substitutions in the footer and
+the `page` field of the `ceolkit-meta` scroll-sync comment, so a consumer pairing a
+rendered page with what the reader sees on paper agrees with the printed footer.
+
 ### Interaction with `%%newpage`
 
-`%%newpage N` also sets the page number as a side-effect of forcing a page
-break. `%%ceolkit:pagenumber N` sets the page number *without* starting a new page,
-so it is only meaningful before any output has been produced (i.e., in the
-file preamble or at the very start of a tune header).
+`%%newpage N` also sets the page number, as a side-effect of forcing a page break —
+see [CONFORMANCE.md → `%%newpage`](CONFORMANCE.md#1147-page-breaks--newpage).
+`%%ceolkit:pagenumber N` sets the page number *without* starting a new page, so it is
+only meaningful before any output has been produced (i.e., in the file preamble or at
+the very start of a tune header).
+
+The two compose rather than competing: `%%ceolkit:pagenumber` names the opening page and
+each `%%newpage N` renames the one it opens, with the count carrying on from there.
+
+```abc
+%%ceolkit:pagenumber 3
+%%footer "$P"
+X:1
+...
+
+%%newpage 20
+X:2
+...
+```
+
+Page 1 of the output prints "3"; the page tune 2 starts on prints "20", and the page after
+that "21".
+
+---
+
+## `%%footer` placeholders
+
+**Syntax:** `$<letter>` inside a `%%footer` template
+
+**Scope:** the footer template it is written in
+
+### Description
+
+CeolKit substitutes exactly four `$` placeholders:
+
+| Placeholder | Value |
+|-------------|-------|
+| `$P` | the current page number, as set by [`%%ceolkit:pagenumber`](#ceolkitpagenumber) |
+| `$T` | the first tune's title |
+| `$D` | the render date, formatted by `%%dateformat` |
+| `$d` | the same as `$D` |
+
+That set is deliberately narrower than abcm2ps's, which also defines `$F`, `$I<x>`,
+`$V`, `$P0` and `$P1`. None of those are implemented here, and neither is anything
+outside the table above.
+
+### Anything else is engraved literally, and diagnosed
+
+A `$` followed by any other letter is not a placeholder. It stays in the literal text
+and is engraved as written — under the default `TextRendering.outlines` as artwork, with
+nothing downstream able to tell what was meant — so the parser emits a warning for each
+distinct one:
+
+```
+warning: '$X' is not a footer placeholder; it will be engraved literally
+```
+
+That covers both an abcm2ps placeholder CeolKit does not implement and a typo such as
+`$p`. Two things are *not* diagnosed, because neither is a token: a `$` not followed by
+a letter (`$5`, a trailing `$`) is ordinary text, and `${name}` is a
+[consumer-substitutable span](#consumer-substitutable-footer-spans).
+
+---
+
+## Consumer-substitutable footer spans
+
+**Syntax:** `${<name>}` inside a `%%footer` template
+
+**Scope:** the footer template it is written in
+
+### Description
+
+`${name}` marks a span of the footer as *substitutable*: CeolKit still lays out and
+draws its own value there, but the renderer emits that span as one findable,
+self-describing SVG element instead of as loose text or loose glyphs, so a downstream
+tool can replace it.
+
+This exists because outlining is a one-way door. Under the default
+`TextRendering.outlines` a footer reading `Page 1` leaves the renderer as six `<use>`
+elements and no text anywhere in the document — there is nothing left for a
+post-processor to rewrite, and only CeolKit still has the font, the metrics and the
+layout needed to draw a different string in that spot. The mark is how an author says
+in the ABC source that a particular span is somebody else's to fill in.
+
+The motivating case is a binder: a server renders each tune's `.abc` on its own and
+concatenates the pages, so page 1 of the third tune has to print `17`. No value of
+[`%%ceolkit:pagenumber`](#ceolkitpagenumber) is right for that, because the offset is
+not knowable when the ABC is written.
+
+`${…}` is a CeolKit extension. It is not part of the ABC v2.2 header/footer
+substitution set, and it is understood only in `%%footer`.
+
+### What is emitted
+
+Each marked span becomes a group wrapping CeolKit's own rendering of the default value:
+
+```xml
+<g id="ceolkit-tag-pagenumber" class="ceolkit-tag" data-ceolkit-tag="pagenumber"
+   data-x="306" data-y="753.048" data-font-size="12"
+   data-font-family="Libertinus Serif" data-text-anchor="middle">
+  <!-- CeolKit's own rendering of the default value: outlined or <text>, per mode -->
+</g>
+```
+
+The `data-*` attributes are the contract; the group's contents are CeolKit's. A
+consumer substitutes by emptying the group and drawing its own text at the advertised
+anchor — position, size and anchor are what a stamping API needs, not the face.
+
+Three properties follow, and all three are deliberate:
+
+- **It carries its own default.** A standalone render is unchanged and correct, and a
+  consumer that ignores the group gets exactly the output it always got.
+- **It is mode-independent.** `.outlines`, `.fontFace` and `.both` all wrap the same
+  way, so a consumer never has to care which mode produced the file — and `.outlines`
+  stays the default, with no hole in the guarantee it exists to give.
+- **`id` is unique, `data-ceolkit-tag` is not.** Nothing stops a template from marking
+  one name twice; the first gets `ceolkit-tag-<name>` and later ones are suffixed
+  `-2`, `-3`, … . `data-ceolkit-tag` carries the name unchanged on every one, so a
+  consumer keying off that finds them all.
+
+### Names
+
+A name is a letter followed by letters, digits, `_`, `.` or `-`. Anything else —
+`${1st}`, an unclosed `${`, a bare `${}` — is not a mark and is engraved literally,
+which is what an author who did not mean a mark expects to see.
+
+Four names carry a value CeolKit knows:
+
+| Name | Default value |
+|------|---------------|
+| `${pagenumber}` | the current page number — the same value as `$P` |
+| `${pagecount}` | the number of pages in this render |
+| `${title}` | the first tune's title — the same value as `$T` |
+| `${date}` | the render date, formatted by `%%dateformat` — the same value as `$D` |
+
+Any other name is a mark CeolKit has no value for. It draws nothing and emits an
+empty group at the right spot, which is exactly what a consumer that means to stamp
+its own text there wants: a binder name or a section title is not CeolKit's to invent.
+
+### Layout and overflow
+
+A substituted string is usually a different width from the default (`9` becomes
+`117`). CeolKit reserves the width of its own default and advertises the anchor;
+the consumer owns the overflow. Two rules make that workable:
+
+- A column that is **nothing but the mark** keeps that column's own anchor, so a wider
+  replacement grows the way the column does — leftwards from the right margin,
+  outwards from the centre — and stays on the page.
+- A mark **mixed with other text** is placed after the text it follows, at
+  `text-anchor="start"`. A longer replacement then overflows to the right of the mark,
+  over whatever follows it in that column.
+
+So for a page number that a consumer will rewrite, give it a column of its own.
+
+### Examples
+
+#### A page number a binder compiler fills in
+
+```abc
+%%footer "$T\t\t${pagenumber}"
+X:1
+T:My Tune
+M:4/4
+L:1/8
+K:G
+GABG|DEFD|GABG|D4|
+```
+
+The rendered page reads `My Tune` at the left margin and `1` at the right. The `1`
+sits inside `<g id="ceolkit-tag-pagenumber" … data-text-anchor="end">`, so a binder
+compiler replaces it with `17` — right-aligned at the same margin — without knowing
+anything about the font.
+
+#### A name CeolKit has no value for
+
+```abc
+%%footer "${bindername}\t$T\t${pagenumber}"
+```
+
+The centre column engraves the tune title as usual. The left column is an empty group
+at the left margin waiting for the compiler's binder name, and the right column is the
+page number as above.
 
 ---
 

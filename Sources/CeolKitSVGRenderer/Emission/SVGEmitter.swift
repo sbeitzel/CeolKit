@@ -80,6 +80,9 @@ struct SVGEmitter: Sendable {
     /// order — carried from ``ResolvedSystem/voiceStemDirections``, so its count is how many
     /// voices share the staff.  Empty on the page-level emitter, which draws nothing itself.
     let voiceStemDirections: [StemDirection]
+    /// The number the first page prints, per `%%ceolkit:pagenumber` (issue #138).  1 for a
+    /// document that does not use the directive, which numbers pages from 1 as before.
+    let firstPageNumber: Int
     let accidentalMetrics: AccidentalMetrics
     /// Resolves the notehead, dot and accidental collisions of one column of a shared staff
     /// (issue #79).  Consulted only where a staff carries more than one voice.
@@ -88,12 +91,14 @@ struct SVGEmitter: Sendable {
     init(config: SVGRenderConfig, metadata: BravuraMetadata,
          stemDirection: StemDirection = .auto,
          systemStemDirection: StemDirection? = nil,
-         voiceStemDirections: [StemDirection] = []) {
+         voiceStemDirections: [StemDirection] = [],
+         firstPageNumber: Int = 1) {
         self.config = config
         self.metadata = metadata
         self.documentStemDirection = stemDirection
         self.stemDirection = systemStemDirection ?? stemDirection
         self.voiceStemDirections = voiceStemDirections
+        self.firstPageNumber = firstPageNumber
         let accidentalMetrics = AccidentalMetrics(config: config, metadata: metadata)
         self.accidentalMetrics = accidentalMetrics
         self.collisions = NoteheadCollisions(
@@ -124,7 +129,11 @@ struct SVGEmitter: Sendable {
         var documents: [String] = []
         documents.reserveCapacity(layout.pages.count)
         for (pageIndex, page) in layout.pages.enumerated() {
-            let document = emitPage(page, pageNumber: pageIndex + 1, layout: layout,
+            // The engine stamped the number as it decided where the page fell — a
+            // `%%newpage N` both breaks and renumbers (#140).  Counting from
+            // `firstPageNumber` is the fallback for a layout assembled by hand.
+            let document = emitPage(page, pageNumber: page.pageNumber ?? firstPageNumber + pageIndex,
+                                     layout: layout,
                                      embeddedFaces: embeddedFaces, fonts: fonts,
                                      pendingTies: &pendingTies, pendingSlurs: &pendingSlurs)
             documents.append(document)
@@ -183,7 +192,8 @@ struct SVGEmitter: Sendable {
         systemConfig.graceNoteSpacing = system.graceNoteSpacing
         return SVGEmitter(config: systemConfig, metadata: metadata,
                           stemDirection: documentStemDirection, systemStemDirection: systemStem,
-                          voiceStemDirections: system.voiceStemDirections)
+                          voiceStemDirections: system.voiceStemDirections,
+                          firstPageNumber: firstPageNumber)
     }
 
     // MARK: - Voices on a staff
@@ -321,6 +331,11 @@ struct SVGEmitter: Sendable {
     /// originating ABC source line and page Y coordinate, so editor consumers
     /// (e.g. ScoreEdit) can synchronise scroll position with the source.
     ///
+    /// `page` is the number the page *prints* — the same value `$P` engraves into the footer,
+    /// offset by `%%ceolkit:pagenumber` where the document sets one (issue #138) — so a
+    /// consumer pairing a rendered page with what the reader sees on paper agrees with the
+    /// footer instead of drifting from it.
+    ///
     /// One anchor per staff drawn, including each staff of a multi-voice system — the
     /// geometry reader pairs anchors with staves positionally, so the two counts have to
     /// match.  The staves of a system all carry the system's line, which leaves the
@@ -356,17 +371,39 @@ struct SVGEmitter: Sendable {
     private func emitFooterBlock(_ rows: [ResolvedTitleRow], builder: inout SVGBuilder) {
         for row in rows {
             for item in row.items {
-                builder.text(
-                    item.text,
+                guard let tag = item.tag else {
+                    emitFooterItem(item, builder: &builder)
+                    continue
+                }
+                // A `${…}` span the author marked for a downstream consumer (issue #137).
+                // CeolKit draws its own value inside the group exactly as it would have
+                // drawn it loose, so a standalone render is unchanged; the group is what
+                // makes the span findable and replaceable in every rendering mode.
+                builder.tagGroup(
+                    name: tag,
                     x: item.x,
                     y: item.baselineY,
                     fontFamily: "Libertinus Serif",
                     fontSize: item.fontSize,
-                    textAnchor: item.anchor.rawValue,
-                    className: "footer"
-                )
+                    textAnchor: item.anchor.rawValue
+                ) {
+                    guard !item.text.isEmpty else { return }
+                    emitFooterItem(item, builder: &$0)
+                }
             }
         }
+    }
+
+    private func emitFooterItem(_ item: ResolvedTitleRow.Item, builder: inout SVGBuilder) {
+        builder.text(
+            item.text,
+            x: item.x,
+            y: item.baselineY,
+            fontFamily: "Libertinus Serif",
+            fontSize: item.fontSize,
+            textAnchor: item.anchor.rawValue,
+            className: "footer"
+        )
     }
 
     // MARK: - System

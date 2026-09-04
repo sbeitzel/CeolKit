@@ -189,6 +189,28 @@ public struct SystemGroup: Sendable {
     public var columnCount: Int { staves[0].measures.count }
 }
 
+/// A `%%newpage` that reached the layout, resolved from the stave it was written against to
+/// the system it stands in front of (issue #140).
+///
+/// ``CeolKitModel/PageBreak`` counts staves, which is the unit the *source* breaks in; by the
+/// time a tune is a `TuneBlock` it has been packed into systems, and a system is the unit a
+/// *page* breaks in.  The renderer resolves one to the other while it still knows which
+/// systems came from which stave.
+public struct ForcedPageBreak: Hashable, Sendable {
+    /// Index into ``TuneBlock/systemGroups`` of the system this break falls in front of.
+    /// Equal to the group count for a break past the end of the tune, which puts it between
+    /// this tune and whatever follows.
+    public let beforeGroup: Int
+
+    /// The number the new page prints, from `%%newpage N`, or `nil` to carry on counting.
+    public let pageNumber: Int?
+
+    public init(beforeGroup: Int, pageNumber: Int?) {
+        self.beforeGroup = beforeGroup
+        self.pageNumber = pageNumber
+    }
+}
+
 /// Groups the justified systems and optional title block for a single tune.
 ///
 /// `titleRows` use `baselineY` values relative to the top of the tune's title area
@@ -208,24 +230,30 @@ public struct TuneBlock: Sendable {
     /// carried through unmultiplied.  The sizer reserved the group's width with this value,
     /// so the emitter has to draw with the same one.
     public let graceNoteSpacing: Double
+    /// The `%%newpage` breaks this tune asks for, in system order (issue #140).  Empty for
+    /// almost every tune, and an empty list is the pagination this engine has always done.
+    public let pageBreaks: [ForcedPageBreak]
 
     public init(systemGroups: [JustifiedSystemGroup], titleRows: [ResolvedTitleRow] = [],
                 titleBlockHeight: Double = 0, scale: Double = 1.0,
-                graceNoteSpacing: Double = SVGRenderConfig().graceNoteSpacing) {
+                graceNoteSpacing: Double = SVGRenderConfig().graceNoteSpacing,
+                pageBreaks: [ForcedPageBreak] = []) {
         self.systemGroups = systemGroups
         self.titleRows = titleRows
         self.titleBlockHeight = titleBlockHeight
         self.scale = scale
         self.graceNoteSpacing = graceNoteSpacing
+        self.pageBreaks = pageBreaks
     }
 
     /// Convenience for single-voice music: each system becomes a group of one staff.
     public init(systems: [JustifiedSystem], titleRows: [ResolvedTitleRow] = [],
                 titleBlockHeight: Double = 0, scale: Double = 1.0,
-                graceNoteSpacing: Double = SVGRenderConfig().graceNoteSpacing) {
+                graceNoteSpacing: Double = SVGRenderConfig().graceNoteSpacing,
+                pageBreaks: [ForcedPageBreak] = []) {
         self.init(systemGroups: systems.map { JustifiedSystemGroup(staves: [$0]) },
                   titleRows: titleRows, titleBlockHeight: titleBlockHeight,
-                  scale: scale, graceNoteSpacing: graceNoteSpacing)
+                  scale: scale, graceNoteSpacing: graceNoteSpacing, pageBreaks: pageBreaks)
     }
 }
 
@@ -344,12 +372,20 @@ public struct ResolvedPage: Sendable {
     public let titleRows: [ResolvedTitleRow]
     /// Pre-positioned footer rows; present on every page that has a %%footer template.
     public let footerRows: [ResolvedTitleRow]
+    /// The number this page prints, once something has decided what it is.
+    ///
+    /// Pagination and numbering are the same walk — `%%newpage N` both breaks the page and
+    /// says what the new one is called (issue #140) — so the engine that makes the pages is
+    /// the only thing in a position to number them.  `nil` on a layout assembled by hand,
+    /// where the emitter falls back to counting from its own `firstPageNumber`.
+    public let pageNumber: Int?
 
     public init(systems: [ResolvedSystem], titleRows: [ResolvedTitleRow] = [],
-                footerRows: [ResolvedTitleRow] = []) {
+                footerRows: [ResolvedTitleRow] = [], pageNumber: Int? = nil) {
         self.systems = systems
         self.titleRows = titleRows
         self.footerRows = footerRows
+        self.pageNumber = pageNumber
     }
 }
 
@@ -362,15 +398,23 @@ public struct ResolvedTitleRow: Sendable {
         public let anchor: TextAnchor
         public let fontSize: Double
         public let isItalic: Bool
+        /// The name of the `${…}` mark this item stands for, or `nil` on ordinary text.
+        ///
+        /// Set only on footer items.  ``text`` is then CeolKit's own value for the mark —
+        /// what gets drawn where nobody replaces it — and the emitter wraps the item in a
+        /// group a downstream consumer can find and redraw (issue #137).
+        public let tag: String?
 
         public init(text: String, x: Double, baselineY: Double,
-                    anchor: TextAnchor, fontSize: Double, isItalic: Bool = false) {
+                    anchor: TextAnchor, fontSize: Double, isItalic: Bool = false,
+                    tag: String? = nil) {
             self.text = text
             self.x = x
             self.baselineY = baselineY
             self.anchor = anchor
             self.fontSize = fontSize
             self.isItalic = isItalic
+            self.tag = tag
         }
     }
 

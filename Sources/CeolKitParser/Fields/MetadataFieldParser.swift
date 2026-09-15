@@ -3,7 +3,8 @@ import Foundation
 
 enum MetadataFieldParser {
     static func parse(code: Character, payload: String, source: SourceRange) -> (InformationField, [Diagnostic]) {
-        let text = TextString(value: stripComment(payload), source: source)
+        let stripped = stripFieldComment(payload).trimmingCharacters(in: .whitespaces)
+        let text = TextString(value: decodeTextEscapes(stripped), source: source)
         switch code {
         case "T": return (.title(text), [])
         case "C": return (.composer(text), [])
@@ -14,7 +15,9 @@ enum MetadataFieldParser {
         case "F": return (.fileUrl(text), [])
         case "G": return (.group(text), [])
         case "H": return (.history(text), [])
-        case "I": return (.instruction(text), [])
+        // §4.4: `I:name payload` is the directive `%%name payload`, whose payload is read
+        // verbatim — so the escapes stay for the directive to interpret, as they do there.
+        case "I": return (.instruction(TextString(value: stripped, source: source)), [])
         case "N": return (.notes(text), [])
         case "S": return (.sourceText(text), [])
         case "R": return (.rhythm(text), [])
@@ -152,14 +155,6 @@ enum MetadataFieldParser {
         default:  return .unknown(String(ch))
         }
     }
-}
-
-private func stripComment(_ s: String) -> String {
-    // Strip inline ABC comment: % starts a comment; strip it and trim whitespace.
-    if let idx = s.firstIndex(of: "%") {
-        return String(s[..<idx]).trimmingCharacters(in: .whitespaces)
-    }
-    return s.trimmingCharacters(in: .whitespaces)
 }
 
 private func malformed(_ msg: String, _ source: SourceRange) -> Diagnostic {

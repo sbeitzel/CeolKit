@@ -5,6 +5,8 @@ not dictated by the ABC v2.2 [standard](https://abcnotation.com/wiki/abc:standar
 the `%%ceolkit:*` directives, which the standard does not define at all, and the choices
 CeolKit makes where the standard asks for an outcome but names no rule for reaching it.
 
+[TOC]
+
 ---
 
 ## `%%ceolkit:gracenotespacing`

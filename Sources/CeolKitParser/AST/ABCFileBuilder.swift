@@ -18,7 +18,7 @@ struct ABCFileBuilder {
         var diagnostics = preDiagnostics
 
         var tuneHeader: [InformationField] = []
-        var tuneDirectives: [(name: String, payload: String, source: SourceRange)] = []
+        var tuneDirectives: [StylesheetDirective] = []
         var tuneMusicBody: [[MusicElement]] = []
         var tuneStartSource: SourceRange? = nil
         var missingRefNumber = false
@@ -52,6 +52,12 @@ struct ABCFileBuilder {
                 return field
             }
             tuneHeader = promotableFields
+            // A promoted `I:` directive leaves the preamble with the rest, so it joins the
+            // header's directives rather than being lost between the two.
+            tuneDirectives = promotableFields.compactMap { field in
+                guard case .instruction(let text) = field else { return nil }
+                return stylesheetDirective(fromInstruction: text)
+            }
             tuneStartSource = source
             missingRefNumber = true
             // filePreamble entries consumed into header; keep non-field entries
@@ -117,6 +123,12 @@ struct ABCFileBuilder {
                         let (field, diags) = parseField(code: code, payload: payload, source: source)
                         diagnostics += diags
                         tuneHeader.append(field)
+                        // Collected alongside the `%%` lines so the two spellings of a
+                        // directive resolve by source order.
+                        if case .instruction(let text) = field,
+                           let directive = stylesheetDirective(fromInstruction: text) {
+                            tuneDirectives.append(directive)
+                        }
                         if code == "K" { state = .body }
                     }
                 case .directive(let name, let payload, let source):

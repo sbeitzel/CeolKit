@@ -20,33 +20,44 @@ struct SemanticPass {
         // tune by source line in the walk below.
         var preambleBreaks: [PageBreak] = []
         var currentFooter: String? = nil
-        for line in file.filePreamble {
-            if case .directive(let name, let payload, let src) = line {
-                if name == "footer" {
-                    let footer = stripQuotes(payload.trimmingCharacters(in: .whitespaces))
-                    diagnoseFooterPlaceholders(footer, source: src, into: &diagnostics)
-                    currentFooter = footer
-                } else if name == "newpage" {
-                    preambleBreaks.append(PageBreak(
-                        beforeStave: 0,
-                        restartingAt: parseNewPage(payload, source: src, diagnostics: &diagnostics),
-                        source: src))
-                } else if isCeolKitDirective(name) || isStandardDirective(name) {
-                    var tempDiags: [Diagnostic] = []
-                    if let d = parseCeolKitDirective(name: name, payload: payload, source: src, diagnostics: &tempDiags) {
-                        preambleCeolKitDirectives.append(
-                            CeolKitDirectiveScope(directive: d, scope: .fileGlobal, source: src)
-                        )
-                    }
-                    diagnostics += tempDiags
-                } else {
-                    diagnostics.append(Diagnostic(
-                        severity: .info,
-                        code: .unknownDirective,
-                        message: "Unsupported stylesheet directive '%%\(name)'",
-                        source: src
-                    ))
+        let preambleDirectives = file.filePreamble.compactMap { line -> StylesheetDirective? in
+            switch line {
+            case .directive(let name, let payload, let src):
+                return (name: name, payload: payload, source: src)
+            case .informationField(let code, let payload, let src) where code == "I":
+                // §3.1.19: `I:name payload` in the file header is `%%name payload` there.
+                guard case .instruction(let text) = parseField(code: code, payload: payload, source: src).0
+                else { return nil }
+                return stylesheetDirective(fromInstruction: text)
+            default:
+                return nil
+            }
+        }
+        for (name, payload, src) in preambleDirectives {
+            if name == "footer" {
+                let footer = stripQuotes(payload.trimmingCharacters(in: .whitespaces))
+                diagnoseFooterPlaceholders(footer, source: src, into: &diagnostics)
+                currentFooter = footer
+            } else if name == "newpage" {
+                preambleBreaks.append(PageBreak(
+                    beforeStave: 0,
+                    restartingAt: parseNewPage(payload, source: src, diagnostics: &diagnostics),
+                    source: src))
+            } else if isCeolKitDirective(name) || isStandardDirective(name) {
+                var tempDiags: [Diagnostic] = []
+                if let d = parseCeolKitDirective(name: name, payload: payload, source: src, diagnostics: &tempDiags) {
+                    preambleCeolKitDirectives.append(
+                        CeolKitDirectiveScope(directive: d, scope: .fileGlobal, source: src)
+                    )
                 }
+                diagnostics += tempDiags
+            } else {
+                diagnostics.append(Diagnostic(
+                    severity: .info,
+                    code: .unknownDirective,
+                    message: "Unsupported stylesheet directive '%%\(name)'",
+                    source: src
+                ))
             }
         }
 
@@ -823,12 +834,9 @@ struct SemanticPass {
             // line interrupting a `\\` continuation is spliced in as one of these, and a
             // source may write one directly.  The instructions that configure the *parser*
             // are not stylesheet directives and are handled (or ignored) elsewhere.
-            let value = t.value.trimmingCharacters(in: .whitespaces)
-            let parts = value.split(separator: " ", maxSplits: 1)
-            let name = parts.first.map(String.init) ?? value
-            guard !Self.parserInstructions.contains(name.lowercased()) else { break }
+            guard let directive = stylesheetDirective(fromInstruction: t) else { break }
             applyBodyDirective(
-                name: name, payload: parts.count > 1 ? String(parts[1]) : "",
+                name: directive.name, payload: directive.payload,
                 source: source, voice: voice.base, ctx: &ctx, diagnostics: &diagnostics
             )
         case .unknown(let code, let payload, let src) where String(code) == "%":
@@ -844,12 +852,6 @@ struct SemanticPass {
             break
         }
     }
-
-    /// §4.4 instructions that configure the parser rather than the stylesheet.  They are not
-    /// `%%` directives, so they must not be reported as unsupported ones.
-    private static let parserInstructions: Set<String> = [
-        "abc-version", "abc-charset", "abc-creator", "abc-include", "linebreak", "decoration",
-    ]
 
     private func applyBodyDirective(
         name: String,

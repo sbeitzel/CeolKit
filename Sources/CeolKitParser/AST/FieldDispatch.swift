@@ -55,13 +55,6 @@ func parseField(
     }
 }
 
-private func stripFieldComment(_ s: String) -> String {
-    if let idx = s.firstIndex(of: "%") {
-        return String(s[..<idx])
-    }
-    return s
-}
-
 private func malformed(_ msg: String, _ source: SourceRange) -> Diagnostic {
     Diagnostic(severity: .warning, code: .malformedFieldPayload, message: msg,
                source: source, related: [], hint: nil)

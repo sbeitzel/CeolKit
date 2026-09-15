@@ -135,4 +135,6 @@ public enum CeolKitFonts {
 public enum CeolKitFontsError: Error, Equatable {
     /// The face's OTF is missing from the module bundle.
     case resourceNotFound(CeolKitFonts.Face)
+    /// The face's OTF is in the bundle but could not be read or parsed.
+    case unreadable(CeolKitFonts.Face)
 }

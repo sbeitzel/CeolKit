@@ -97,6 +97,10 @@ struct OpenTypeFont: Sendable {
 
     /// Design units per em, from `head`. Both bundled faces use 1000.
     let unitsPerEm: Double
+    /// The face's typographic ascender in font units, positive above the baseline.
+    let ascender: Double
+    /// The face's typographic descender in font units, negative below the baseline.
+    let descender: Double
 
     private let cmap: [UInt32: Int]
     private let advances: [Double]
@@ -124,11 +128,25 @@ struct OpenTypeFont: Sendable {
         guard let hmtx = tables["hmtx"] else { throw OpenTypeError.missingTable("hmtx") }
         let advances = try readAdvances(bytes, hhea: hhea, hmtx: hmtx, numGlyphs: numGlyphs)
 
+        // OS/2 `sTypoAscender`/`sTypoDescender` are the values `LibertinusSerifMetrics`
+        // records. `OS/2` is optional in a CFF face; `hhea` carries the same pair, and is
+        // what a face without one is laid out with.
+        let (ascender, descender): (Int, Int)
+        if let os2 = tables["OS/2"] {
+            ascender = try bytes.i16(os2 + 68, "OS/2")
+            descender = try bytes.i16(os2 + 70, "OS/2")
+        } else {
+            ascender = try bytes.i16(hhea + 4, "hhea")
+            descender = try bytes.i16(hhea + 6, "hhea")
+        }
+
         guard let cffOffset = tables["CFF "] else { throw OpenTypeError.missingTable("CFF ") }
         let cff = try CFFTable(bytes: bytes, offset: cffOffset)
 
         return OpenTypeFont(
             unitsPerEm: Double(unitsPerEm),
+            ascender: Double(ascender),
+            descender: Double(descender),
             cmap: cmap,
             advances: advances,
             charstrings: Type2Interpreter(cff: cff)
@@ -274,12 +292,50 @@ struct OpenTypeFont: Sendable {
 
     /// How wide `text` is drawn at `fontSize`, in points.
     ///
-    /// Summed nominal advances, one glyph per Unicode scalar, which is exactly what
-    /// ``SVGBuilder`` lays a run out with — so a caller reserving space from this measure
-    /// and the emitter drawing into it cannot disagree.  An unencoded scalar falls back to
-    /// glyph 0, whose `.notdef` box is what gets drawn for it.
+    /// Summed nominal advances of the ``OutlineRun`` that ``SVGBuilder`` and
+    /// ``TextOutliner`` both draw `text` as — so a caller reserving space from this measure
+    /// and the emitter drawing into it cannot disagree.
     func width(of text: String, fontSize: Double) -> Double {
-        let units = text.unicodeScalars.reduce(0.0) { $0 + advance(forGlyph: glyphID(for: $1) ?? 0) }
-        return units * fontSize / unitsPerEm
+        OutlineRun(text, font: self).advanceUnits * fontSize / unitsPerEm
+    }
+}
+
+// MARK: - Run layout
+
+/// A run of text laid out the one way this module lays text out: one glyph per Unicode
+/// scalar at its nominal advance.
+///
+/// There is no shaping, kerning, or ligature substitution. That is not a shortcut taken
+/// against the `<text>` path outlines replace — a rasteriser handed the same string and
+/// these faces applies no `GPOS`/`GSUB` either unless it runs a full shaper, so nominal
+/// advances are what the font-face route was already producing.
+///
+/// The emitter, ``OpenTypeFont/width(of:fontSize:)`` and the public ``TextOutliner`` all go
+/// through this, which is what keeps a run measured one way from being drawn another.
+struct OutlineRun: Sendable {
+    let font: OpenTypeFont
+    /// Glyph indices in drawing order. An unencoded scalar falls back to glyph 0, whose
+    /// `.notdef` box is what a rasteriser would have drawn: a visible gap beats a run that
+    /// silently shortens.
+    let glyphs: [Int]
+
+    init(_ text: String, font: OpenTypeFont) {
+        self.font = font
+        self.glyphs = text.unicodeScalars.map { font.glyphID(for: $0) ?? 0 }
+    }
+
+    /// The run's total advance, in font units.
+    var advanceUnits: Double {
+        glyphs.reduce(0) { $0 + font.advance(forGlyph: $1) }
+    }
+
+    /// Each glyph paired with the pen position it is drawn at, starting from `startX` and
+    /// advancing by `scaleX` page units per font unit.
+    func placements(startX: Double, scaleX: Double) -> [(glyph: Int, penX: Double)] {
+        var penX = startX
+        return glyphs.map { glyph in
+            defer { penX += font.advance(forGlyph: glyph) * scaleX }
+            return (glyph, penX)
+        }
     }
 }

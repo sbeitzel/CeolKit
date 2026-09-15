@@ -18,7 +18,7 @@ directives.
 | `CeolKitModel` | The domain model — `Score`, `Tune`, `Voice`, `Measure`, `Event`. |
 | `CeolKitParser` | ABC source → `Score`, with diagnostics. |
 | `CeolKitRenderer` | The renderer protocol and shared rendering utilities. |
-| `CeolKitSVGRenderer` | Engraves a `Score` as one SVG string per page. |
+| `CeolKitSVGRenderer` | Engraves a `Score` as one SVG string per page. `TextOutliner` outlines free-standing text in the bundled faces. |
 | `CeolKitSVGGeometry` | Reads emitted SVG back into layout geometry. |
 
 ## ckprobe

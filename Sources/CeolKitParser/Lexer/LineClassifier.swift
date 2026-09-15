@@ -208,6 +208,10 @@ struct LineClassifier {
 
         if str.hasPrefix("%%") {
             let rest = String(str.dropFirst(2))
+            // A bare `%%` names no directive, so it is what its `%` makes it: a comment.
+            if rest.allSatisfy({ $0 == " " || $0 == "\t" }) {
+                return .comment(text: String(str.dropFirst()), source: source)
+            }
             if let spaceIdx = rest.firstIndex(of: " ") {
                 let name = String(rest[rest.startIndex..<spaceIdx])
                 let payload = String(rest[rest.index(after: spaceIdx)...])

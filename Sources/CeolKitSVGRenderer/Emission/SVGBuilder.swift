@@ -295,12 +295,7 @@ struct SVGBuilder: Sendable {
         }
     }
 
-    /// Lays out `content` one glyph per Unicode scalar and emits a `<use>` per glyph.
-    ///
-    /// There is no shaping, kerning, or ligature substitution here. That is not a shortcut
-    /// taken against the `<text>` path this replaces — a rasteriser handed the same string
-    /// and these faces applies no `GPOS`/`GSUB` either unless it runs a full shaper, so
-    /// nominal advances are what the font-face route was already producing.
+    /// Lays out `content` as an ``OutlineRun`` and emits a `<use>` per glyph.
     private mutating func appendOutlineRun(
         _ content: String, x: Double, y: Double,
         face: OutlineFontSet.FaceKey, font: OpenTypeFont,
@@ -312,31 +307,27 @@ struct SVGBuilder: Sendable {
         // nothing here beyond the two factors: no wrapping group, and the same `<defs>`
         // entry the glyph has at its natural size.
         let (scaleX, scaleY) = (scale * xScale, scale * yScale)
-        // An unencoded scalar falls back to glyph 0, whose .notdef box is what a rasteriser
-        // would have drawn: a visible gap beats a run that silently shortens.
-        let glyphs = content.unicodeScalars.map { font.glyphID(for: $0) ?? 0 }
-        guard !glyphs.isEmpty else { return }
+        let run = OutlineRun(content, font: font)
+        guard !run.glyphs.isEmpty else { return }
 
-        var penX = x
+        var startX = x
         switch textAnchor {
         case "middle":
-            penX -= glyphs.reduce(0) { $0 + font.advance(forGlyph: $1) } * scaleX / 2
+            startX -= run.advanceUnits * scaleX / 2
         case "end":
-            penX -= glyphs.reduce(0) { $0 + font.advance(forGlyph: $1) } * scaleX
+            startX -= run.advanceUnits * scaleX
         default:
             break
         }
 
-        for glyph in glyphs {
-            if let id = registerGlyph(face: face, glyph: glyph, font: font) {
-                var attrs = "href=\"#\(id)\" xlink:href=\"#\(id)\""
-                attrs += " transform=\"translate(\(fmt(penX)) \(fmt(y)))"
-                attrs += " scale(\(fmtScale(scaleX)) \(fmtScale(-scaleY)))\""
-                if fill != "black" { attrs += " fill=\"\(esc(fill))\"" }
-                if let cls = className { attrs += " class=\"\(esc(cls))\"" }
-                elements.append("<use \(attrs)/>")
-            }
-            penX += font.advance(forGlyph: glyph) * scaleX
+        for (glyph, penX) in run.placements(startX: startX, scaleX: scaleX) {
+            guard let id = registerGlyph(face: face, glyph: glyph, font: font) else { continue }
+            var attrs = "href=\"#\(id)\" xlink:href=\"#\(id)\""
+            attrs += " transform=\"translate(\(fmt(penX)) \(fmt(y)))"
+            attrs += " scale(\(fmtScale(scaleX)) \(fmtScale(-scaleY)))\""
+            if fill != "black" { attrs += " fill=\"\(esc(fill))\"" }
+            if let cls = className { attrs += " class=\"\(esc(cls))\"" }
+            elements.append("<use \(attrs)/>")
         }
     }
 
@@ -357,30 +348,40 @@ struct SVGBuilder: Sendable {
 
     // MARK: - Helpers
 
-    func fmt(_ v: Double) -> String {
+    func fmt(_ v: Double) -> String { SVGFormat.coordinate(v) }
+    func fmtScale(_ v: Double) -> String { SVGFormat.scale(v) }
+    func esc(_ s: String) -> String { SVGFormat.escape(s) }
+}
+
+/// How numbers and strings are written into SVG markup, shared by ``SVGBuilder`` and
+/// ``TextOutliner`` so the two produce the same bytes for the same geometry.
+enum SVGFormat {
+    /// A page coordinate, to a thousandth of a unit with trailing zeros removed.
+    static func coordinate(_ v: Double) -> String {
         trimmed(String(format: "%.3f", v))
     }
 
     /// Glyph scale factors are ratios like `24/1000`, so page-coordinate precision would
     /// quantise them to whole percents — a 2% size error on every glyph. Six decimals keeps
     /// the error below a millionth of an em.
-    func fmtScale(_ v: Double) -> String {
+    static func scale(_ v: Double) -> String {
         trimmed(String(format: "%.6f", v))
     }
 
-    private func trimmed(_ formatted: String) -> String {
+    /// `s` escaped for use as attribute or character data.
+    static func escape(_ s: String) -> String {
+        s.replacing("&", with: "&amp;")
+         .replacing("<", with: "&lt;")
+         .replacing(">", with: "&gt;")
+         .replacing("\"", with: "&quot;")
+    }
+
+    private static func trimmed(_ formatted: String) -> String {
         var s = formatted
         if s.contains(".") {
             while s.hasSuffix("0") { s.removeLast() }
             if s.hasSuffix(".") { s.removeLast() }
         }
         return s
-    }
-
-    func esc(_ s: String) -> String {
-        s.replacing("&", with: "&amp;")
-         .replacing("<", with: "&lt;")
-         .replacing(">", with: "&gt;")
-         .replacing("\"", with: "&quot;")
     }
 }

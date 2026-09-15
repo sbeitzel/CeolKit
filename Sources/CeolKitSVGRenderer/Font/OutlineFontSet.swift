@@ -14,6 +14,14 @@ struct OutlineFontSet: Sendable {
         case bravura
         case libertinusSerif
         case libertinusSerifItalic
+
+        init(_ face: CeolKitFonts.Face) {
+            switch face {
+            case .bravura:                self = .bravura
+            case .libertinusSerifRegular: self = .libertinusSerif
+            case .libertinusSerifItalic:  self = .libertinusSerifItalic
+            }
+        }
     }
 
     private let fonts: [FaceKey: OpenTypeFont]
@@ -29,24 +37,45 @@ struct OutlineFontSet: Sendable {
 
     private static let cached: Result<OutlineFontSet, OpenTypeError> = {
         var fonts: [FaceKey: OpenTypeFont] = [:]
-        for (key, face) in [
-            (FaceKey.bravura, CeolKitFonts.Face.bravura),
-            (FaceKey.libertinusSerif, CeolKitFonts.Face.libertinusSerifRegular),
-            (FaceKey.libertinusSerifItalic, CeolKitFonts.Face.libertinusSerifItalic)
-        ] {
-            guard let data = try? CeolKitFonts.data(for: face) else {
-                return .failure(.faceUnavailable(face.rawValue))
-            }
-            do {
-                fonts[key] = try OpenTypeFont.parse(data)
-            } catch let error as OpenTypeError {
-                return .failure(error)
-            } catch {
-                return .failure(.faceUnavailable(face.rawValue))
+        for face in CeolKitFonts.Face.allCases {
+            switch parsed[face] ?? .failure(.faceUnavailable(face.rawValue)) {
+            case .success(let font): fonts[FaceKey(face)] = font
+            case .failure(let error): return .failure(error)
             }
         }
         return .success(OutlineFontSet(fonts: fonts))
     }()
+
+    /// Each bundled face parsed on its own, so a caller asking for one face by name
+    /// (``TextOutliner``) is not failed by a problem with another.
+    private static let parsed: [CeolKitFonts.Face: Result<OpenTypeFont, OpenTypeError>] = {
+        var parsed: [CeolKitFonts.Face: Result<OpenTypeFont, OpenTypeError>] = [:]
+        for face in CeolKitFonts.Face.allCases {
+            guard let data = try? CeolKitFonts.data(for: face) else {
+                parsed[face] = .failure(.faceUnavailable(face.rawValue))
+                continue
+            }
+            do {
+                parsed[face] = .success(try OpenTypeFont.parse(data))
+            } catch let error as OpenTypeError {
+                parsed[face] = .failure(error)
+            } catch {
+                parsed[face] = .failure(.faceUnavailable(face.rawValue))
+            }
+        }
+        return parsed
+    }()
+
+    /// One bundled face, parsed once per process.
+    ///
+    /// - Throws: ``CeolKitFontsError/resourceNotFound(_:)`` if the face is missing from the
+    ///   bundle, or ``CeolKitFontsError/unreadable(_:)`` if it is present but cannot be
+    ///   read or parsed.
+    static func font(for face: CeolKitFonts.Face) throws -> OpenTypeFont {
+        if case .success(let font) = parsed[face] { return font }
+        _ = try CeolKitFonts.url(for: face)
+        throw CeolKitFontsError.unreadable(face)
+    }
 
     /// The face every run of ordinary text is set in — titles, footers, voice labels.
     ///

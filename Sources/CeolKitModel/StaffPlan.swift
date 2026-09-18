@@ -99,3 +99,29 @@ public struct StaffPlanVoice: Hashable, Sendable {
         hasher.combine(isFloating)
     }
 }
+
+public extension StaffPlan {
+
+    /// Every voice the plan names, in written order, whatever delimiters it is nested in and
+    /// whether or not it floats.
+    ///
+    /// This is the plan read as a *question about a tune*: does the tune it is about to
+    /// govern have the voices it talks about?  ``StaffPlanLayout`` answers the layout
+    /// questions instead, and drops a floating voice out of `staves` precisely because it has
+    /// no staff of its own — which makes it the wrong list to ask this of.  Duplicates are
+    /// kept: a plan naming a voice twice named it twice.
+    var namedVoices: [VoiceId] {
+        Self.voices(in: root)
+    }
+
+    private static func voices(in branch: StaffPlanBranch) -> [VoiceId] {
+        branch.nodes.flatMap { node -> [VoiceId] in
+            switch node {
+            case .voice(let voice):
+                return [voice.id]
+            case .shared(let inner), .brace(let inner), .bracket(let inner):
+                return voices(in: inner)
+            }
+        }
+    }
+}

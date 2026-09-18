@@ -7,6 +7,7 @@
 
 import CeolKitModel
 import CeolKitSVGGeometry
+import CeolKitSVGRenderer
 import Foundation
 
 /// Everything one run of the probe has to say.
@@ -55,16 +56,28 @@ struct Report: Codable {
         let voices: [Voice]
     }
 
+    /// Where one tune came out once the document was packed (CeolKit #152).  Not derivable
+    /// from the emitted SVG: tunes share pages, so the page a tune starts on is a fact only
+    /// the layout holds.
+    struct Placement: Codable {
+        let tuneIndex: Int
+        let pageIndex: Int
+        let printedPageNumber: Int
+        let topY: Double
+    }
+
     let file: String
     let diagnostics: [Diagnostic]
     let tunes: [Tune]
+    let placements: [Placement]
     let pages: [PageGeometry]
 }
 
 // MARK: - Building
 
 extension Report {
-    init(file: URL, score: Score, diagnostics: [CeolKitModel.Diagnostic], pages: [PageGeometry]) {
+    init(file: URL, score: Score, diagnostics: [CeolKitModel.Diagnostic],
+         placements: [TunePlacement], pages: [PageGeometry]) {
         self.file = file.lastPathComponent
         self.diagnostics = diagnostics.map {
             Diagnostic(severity: "\($0.severity)", code: "\($0.code)",
@@ -91,6 +104,10 @@ extension Report {
                     })
                 }
             )
+        }
+        self.placements = placements.map {
+            Placement(tuneIndex: $0.tuneIndex, pageIndex: $0.pageIndex,
+                      printedPageNumber: $0.printedPageNumber, topY: $0.topY)
         }
         self.pages = pages
     }
@@ -132,6 +149,15 @@ extension Report {
                 for (staveIndex, stave) in voice.staves.enumerated() {
                     out.append("    stave[\(staveIndex)] measure source lines: \(stave.measureSourceLines)")
                 }
+            }
+        }
+
+        if !placements.isEmpty {
+            out.append("")
+            out.append("placements:")
+            for placement in placements {
+                out.append("  tune[\(placement.tuneIndex)] page[\(placement.pageIndex)]"
+                           + " printed \(placement.printedPageNumber), topY \(fmt(placement.topY))")
             }
         }
 

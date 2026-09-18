@@ -138,10 +138,17 @@ five steps, and **the last one is not optional**:
 4. `gh release create vX.Y.Z --title "X.Y[.Z]" --notes-file <notes> --verify-tag`, then
    append the generated PR list (`gh api -X POST repos/sbeitzel/CeolKit/releases/generate-notes
    -f tag_name=vX.Y.Z -f previous_tag_name=<prev>`) above the `## Upgrading` section.
-5. **Merge `main` back into `develop` and push.** The release merge commit exists only on
-   `main`, so without this `develop` falls behind, and branch protection then refuses the
+5. **Merge `main` back into `develop` and push.** Step 2 puts a merge commit on `main` that
+   is not on `develop` — `develop` is an ancestor of `main`, but not the reverse — so without
+   this `develop` is behind by exactly that commit, and branch protection then refuses the
    *next* release PR as "head branch is not up to date". Skipping it is what makes step 2
    fail later, not now.
+
+   Usually nothing has landed on `develop` since the release PR, so this fast-forwards and
+   writes no new commit; `git merge main` reports `Fast-forward` rather than making a merge
+   commit. That is the step working, not skipping — **the push is still required**, because
+   what matters is that `origin/develop` reaches the release merge commit. Where work *has*
+   landed on `develop` meanwhile, the same command makes a real merge commit instead.
 
 Two notes on the mechanics:
 

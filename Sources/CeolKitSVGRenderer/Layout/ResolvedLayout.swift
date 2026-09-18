@@ -239,6 +239,16 @@ public struct TuneBlock: Sendable {
     /// direction standing: what a `TuneBlock` assembled by hand has always got.  `.auto` is
     /// a statement rather than an absence — it is what `%%ceolkit:pipeformat false` asks for.
     public let stemDirection: StemDirection?
+    /// Whether this tune's flags are drawn as straight lines, from `%%straightflags`.
+    /// Travels with the tune for the same reason `stemDirection` does: it is a tune-header
+    /// directive, and one page can hold systems from several tunes (issue #156).
+    ///
+    /// `nil` means this block states nothing, which leaves the emitter's own document value
+    /// standing — what a `TuneBlock` assembled by hand has always got.
+    public let straightFlags: Bool?
+    /// Whether this tune's grace groups are slurred to the notes they decorate, from
+    /// `%%graceslurs`.  Scoped and carried exactly like ``straightFlags`` (issue #156).
+    public let graceSlurs: Bool?
     /// The `%%newpage` breaks this tune asks for, in system order (issue #140).  Empty for
     /// almost every tune, and an empty list is the pagination this engine has always done.
     public let pageBreaks: [ForcedPageBreak]
@@ -247,6 +257,8 @@ public struct TuneBlock: Sendable {
                 titleBlockHeight: Double = 0, scale: Double = 1.0,
                 graceNoteSpacing: Double = SVGRenderConfig().graceNoteSpacing,
                 stemDirection: StemDirection? = nil,
+                straightFlags: Bool? = nil,
+                graceSlurs: Bool? = nil,
                 pageBreaks: [ForcedPageBreak] = []) {
         self.systemGroups = systemGroups
         self.titleRows = titleRows
@@ -254,6 +266,8 @@ public struct TuneBlock: Sendable {
         self.scale = scale
         self.graceNoteSpacing = graceNoteSpacing
         self.stemDirection = stemDirection
+        self.straightFlags = straightFlags
+        self.graceSlurs = graceSlurs
         self.pageBreaks = pageBreaks
     }
 
@@ -262,11 +276,14 @@ public struct TuneBlock: Sendable {
                 titleBlockHeight: Double = 0, scale: Double = 1.0,
                 graceNoteSpacing: Double = SVGRenderConfig().graceNoteSpacing,
                 stemDirection: StemDirection? = nil,
+                straightFlags: Bool? = nil,
+                graceSlurs: Bool? = nil,
                 pageBreaks: [ForcedPageBreak] = []) {
         self.init(systemGroups: systems.map { JustifiedSystemGroup(staves: [$0]) },
                   titleRows: titleRows, titleBlockHeight: titleBlockHeight,
                   scale: scale, graceNoteSpacing: graceNoteSpacing,
-                  stemDirection: stemDirection, pageBreaks: pageBreaks)
+                  stemDirection: stemDirection, straightFlags: straightFlags,
+                  graceSlurs: graceSlurs, pageBreaks: pageBreaks)
     }
 }
 
@@ -610,6 +627,18 @@ public struct ResolvedSystem: Sendable {
     /// `.auto` is the statement `%%ceolkit:pipeformat false` makes.  Either way a voice's own
     /// `V:` `stem=` in ``voiceStemDirections`` outranks it.
     public let tuneStemDirection: StemDirection?
+    /// Whether the flags in this system are drawn as straight lines rather than the curved
+    /// Bravura glyphs — `%%straightflags`, carried from ``TuneBlock/straightFlags``.
+    /// Travels with the system for the same reason `graceNoteSpacing` does: it is set per
+    /// tune, and one page can hold systems from several (issue #156).
+    ///
+    /// `nil` means the system states nothing and the emitter's document value stands, which
+    /// is what a layout assembled by hand has always got.
+    public let straightFlags: Bool?
+    /// Whether this system's grace groups are slurred to the notes they decorate —
+    /// `%%graceslurs`, carried from ``TuneBlock/graceSlurs`` and scoped exactly like
+    /// ``straightFlags`` (issue #156).
+    public let graceSlurs: Bool?
     /// Space above the top staff line (ledger lines, chord symbols, annotations).
     public let extraAbove: Double
     /// Space below the bottom staff line (ledger lines, lyrics).
@@ -658,6 +687,8 @@ public struct ResolvedSystem: Sendable {
         staffHeight: Double,
         graceNoteSpacing: Double = SVGRenderConfig().graceNoteSpacing,
         tuneStemDirection: StemDirection? = nil,
+        straightFlags: Bool? = nil,
+        graceSlurs: Bool? = nil,
         extraAbove: Double,
         extraBelow: Double,
         totalHeight: Double,
@@ -678,6 +709,8 @@ public struct ResolvedSystem: Sendable {
         self.staffHeight = staffHeight
         self.graceNoteSpacing = graceNoteSpacing
         self.tuneStemDirection = tuneStemDirection
+        self.straightFlags = straightFlags
+        self.graceSlurs = graceSlurs
         self.extraAbove = extraAbove
         self.extraBelow = extraBelow
         self.totalHeight = totalHeight

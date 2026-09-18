@@ -285,8 +285,8 @@ struct StandardDirectiveTests {
         #expect(unknown.isEmpty)
     }
 
-    @Test("Last %%footer wins across preamble and tune headers")
-    func footerLastWins() {
+    @Test("%%footer is scoped: the file header's is the score's, each tune header's is its own")
+    func footerIsScopedPerTune() {
         let abc = """
         %%footer "first"
         X:1
@@ -306,7 +306,92 @@ struct StandardDirectiveTests {
         GABC|
         """
         let result = parse(abc)
-        #expect(result.score.footer == "third")
+        // The file header's footer is the document's, not whichever tune wrote one last.
+        #expect(result.score.footer == "first")
+        #expect(result.score.tunes.count == 2)
+        #expect(result.score.tunes.first?.footer == "second")
+        #expect(result.score.tunes.last?.footer == "third")
+    }
+
+    @Test("A tune stating no %%footer of its own inherits the file header's")
+    func footerInheritedFromFileHeader() {
+        let abc = """
+        %%footer "book"
+        X:1
+        T:Tune 1
+        M:4/4
+        L:1/4
+        K:C
+        CDEF|
+
+        X:2
+        T:Tune 2
+        %%footer "own"
+        M:4/4
+        L:1/4
+        K:G
+        GABC|
+
+        X:3
+        T:Tune 3
+        M:4/4
+        L:1/4
+        K:D
+        DEFG|
+        """
+        let result = parse(abc)
+        #expect(result.score.footer == "book")
+        let footers = result.score.tunes.map(\.footer)
+        #expect(footers == ["book", "own", "book"])
+    }
+
+    @Test("%%footer written between two tunes governs the tunes that follow it")
+    func footerBetweenTunesGovernsWhatFollows() {
+        let abc = """
+        X:1
+        T:Tune 1
+        M:4/4
+        L:1/4
+        K:C
+        CDEF|
+
+        %%footer "from here on"
+        X:2
+        T:Tune 2
+        M:4/4
+        L:1/4
+        K:G
+        GABC|
+        """
+        let result = parse(abc)
+        // Nothing stood in the file header, so the score names no footer at all.
+        #expect(result.score.footer == nil)
+        #expect(result.score.tunes.first?.footer == nil)
+        #expect(result.score.tunes.last?.footer == "from here on")
+    }
+
+    @Test(#"%%footer "" in a tune header suppresses the file header's footer"#)
+    func emptyTuneFooterSuppressesFileFooter() {
+        let abc = """
+        %%footer "book"
+        X:1
+        T:Tune 1
+        M:4/4
+        L:1/4
+        K:C
+        CDEF|
+
+        X:2
+        T:Tune 2
+        %%footer ""
+        M:4/4
+        L:1/4
+        K:G
+        GABC|
+        """
+        let result = parse(abc)
+        #expect(result.score.footer == "book")
+        #expect(result.score.tunes.last?.footer == "")
     }
 
     @Test("%%footer with \\t column separators is stored verbatim")

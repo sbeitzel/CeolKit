@@ -67,9 +67,10 @@ private struct SlurAnchor {
 struct SVGEmitter: Sendable {
     let config: SVGRenderConfig
     let metadata: BravuraMetadata
-    /// What `%%ceolkit:pipeformat` asked of the whole document.  A voice that states its own
-    /// `V:` `stem=` overrides it (issue #74), so this is the fallback rather than the answer
-    /// — see ``configured(for:)``.
+    /// What `%%ceolkit:pipeformat` asked at file-preamble scope, and the fallback for a
+    /// system that carries no ``ResolvedSystem/tuneStemDirection`` of its own.  A tune header
+    /// overrides it (issue #153) and a voice's own `V:` `stem=` overrides both (issue #74),
+    /// so this is the last word rather than the first — see ``configured(for:)``.
     let documentStemDirection: StemDirection
     /// The direction in force for the staff being emitted, where its voices state none of
     /// their own: the lead voice's where it stated one, ``documentStemDirection`` where it
@@ -178,20 +179,28 @@ struct SVGEmitter: Sendable {
     /// would touch the whole emission tree to say one thing.  The voice's `V:` `stem=` beats
     /// `%%ceolkit:pipeformat`, which beats the note's own staff position (issue #74).
     ///
+    /// `%%ceolkit:pipeformat` is resolved here too, and per *tune* rather than per document:
+    /// it is a tune-header directive, so systems on one page can disagree about it the same
+    /// way they disagree about scale (issue #153).  ``ResolvedSystem/tuneStemDirection``
+    /// carries the tune's answer, and `nil` there — a layout assembled by hand — leaves this
+    /// emitter's own document direction standing.
+    ///
     /// Always called on the page-level emitter, whose ``stemDirection`` is still the
     /// document's — resolving from ``documentStemDirection`` rather than from
     /// ``stemDirection`` keeps that from mattering.
     private func configured(for system: ResolvedSystem) -> SVGEmitter {
-        let systemStem = system.stemDirection != .auto ? system.stemDirection : documentStemDirection
+        let tuneStem = system.tuneStemDirection ?? documentStemDirection
+        let systemStem = system.stemDirection != .auto ? system.stemDirection : tuneStem
         guard system.staffSize != config.staffSize
                 || system.graceNoteSpacing != config.graceNoteSpacing
+                || tuneStem != documentStemDirection
                 || systemStem != stemDirection
                 || system.voiceStemDirections != voiceStemDirections else { return self }
         var systemConfig = config
         systemConfig.staffSize = system.staffSize
         systemConfig.graceNoteSpacing = system.graceNoteSpacing
         return SVGEmitter(config: systemConfig, metadata: metadata,
-                          stemDirection: documentStemDirection, systemStemDirection: systemStem,
+                          stemDirection: tuneStem, systemStemDirection: systemStem,
                           voiceStemDirections: system.voiceStemDirections,
                           firstPageNumber: firstPageNumber)
     }

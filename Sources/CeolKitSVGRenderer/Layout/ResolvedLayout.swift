@@ -230,6 +230,15 @@ public struct TuneBlock: Sendable {
     /// carried through unmultiplied.  The sizer reserved the group's width with this value,
     /// so the emitter has to draw with the same one.
     public let graceNoteSpacing: Double
+    /// Which way this tune's stems point where its voices ask for nothing, from
+    /// `%%ceolkit:pipeformat`.  Travels with the tune for the same reason `scale` does — it
+    /// is set per tune and one page can hold systems from several (issue #153) — and a voice
+    /// that states its own `V:` `stem=` still outranks it (issue #74).
+    ///
+    /// `nil` means this block states nothing, which leaves the emitter's own document
+    /// direction standing: what a `TuneBlock` assembled by hand has always got.  `.auto` is
+    /// a statement rather than an absence — it is what `%%ceolkit:pipeformat false` asks for.
+    public let stemDirection: StemDirection?
     /// The `%%newpage` breaks this tune asks for, in system order (issue #140).  Empty for
     /// almost every tune, and an empty list is the pagination this engine has always done.
     public let pageBreaks: [ForcedPageBreak]
@@ -237,12 +246,14 @@ public struct TuneBlock: Sendable {
     public init(systemGroups: [JustifiedSystemGroup], titleRows: [ResolvedTitleRow] = [],
                 titleBlockHeight: Double = 0, scale: Double = 1.0,
                 graceNoteSpacing: Double = SVGRenderConfig().graceNoteSpacing,
+                stemDirection: StemDirection? = nil,
                 pageBreaks: [ForcedPageBreak] = []) {
         self.systemGroups = systemGroups
         self.titleRows = titleRows
         self.titleBlockHeight = titleBlockHeight
         self.scale = scale
         self.graceNoteSpacing = graceNoteSpacing
+        self.stemDirection = stemDirection
         self.pageBreaks = pageBreaks
     }
 
@@ -250,10 +261,12 @@ public struct TuneBlock: Sendable {
     public init(systems: [JustifiedSystem], titleRows: [ResolvedTitleRow] = [],
                 titleBlockHeight: Double = 0, scale: Double = 1.0,
                 graceNoteSpacing: Double = SVGRenderConfig().graceNoteSpacing,
+                stemDirection: StemDirection? = nil,
                 pageBreaks: [ForcedPageBreak] = []) {
         self.init(systemGroups: systems.map { JustifiedSystemGroup(staves: [$0]) },
                   titleRows: titleRows, titleBlockHeight: titleBlockHeight,
-                  scale: scale, graceNoteSpacing: graceNoteSpacing, pageBreaks: pageBreaks)
+                  scale: scale, graceNoteSpacing: graceNoteSpacing,
+                  stemDirection: stemDirection, pageBreaks: pageBreaks)
     }
 }
 
@@ -575,6 +588,15 @@ public struct ResolvedSystem: Sendable {
     /// `%%ceolkit:gracenotespacing`.  Travels with the system for the same reason
     /// `staffSize` does: it is set per tune, and one page can hold systems from several.
     public let graceNoteSpacing: Double
+    /// Which way the stems of the *tune* this system came from point, where the system's own
+    /// voices ask for nothing — `%%ceolkit:pipeformat`, carried from
+    /// ``TuneBlock/stemDirection``.  Travels with the system for the same reason
+    /// `graceNoteSpacing` does (issue #153).
+    ///
+    /// `nil` means the system states nothing and the emitter's document direction stands;
+    /// `.auto` is the statement `%%ceolkit:pipeformat false` makes.  Either way a voice's own
+    /// `V:` `stem=` in ``voiceStemDirections`` outranks it.
+    public let tuneStemDirection: StemDirection?
     /// Space above the top staff line (ledger lines, chord symbols, annotations).
     public let extraAbove: Double
     /// Space below the bottom staff line (ledger lines, lyrics).
@@ -622,6 +644,7 @@ public struct ResolvedSystem: Sendable {
         staffSize: Double,
         staffHeight: Double,
         graceNoteSpacing: Double = SVGRenderConfig().graceNoteSpacing,
+        tuneStemDirection: StemDirection? = nil,
         extraAbove: Double,
         extraBelow: Double,
         totalHeight: Double,
@@ -641,6 +664,7 @@ public struct ResolvedSystem: Sendable {
         self.staffSize = staffSize
         self.staffHeight = staffHeight
         self.graceNoteSpacing = graceNoteSpacing
+        self.tuneStemDirection = tuneStemDirection
         self.extraAbove = extraAbove
         self.extraBelow = extraBelow
         self.totalHeight = totalHeight

@@ -18,20 +18,24 @@ directives.
 | `CeolKitModel` | The domain model — `Score`, `Tune`, `Voice`, `Measure`, `Event`. |
 | `CeolKitParser` | ABC source → `Score`, with diagnostics. |
 | `CeolKitRenderer` | The renderer protocol and shared rendering utilities. |
-| `CeolKitSVGRenderer` | Engraves a `Score` as one SVG string per page. `TextOutliner` outlines free-standing text in the bundled faces. |
+| `CeolKitSVGRenderer` | Engraves a `Score` as one SVG string per page; `renderDocument(_:)` also reports the layout and which page each tune landed on. `TextOutliner` outlines free-standing text in the bundled faces. |
 | `CeolKitSVGGeometry` | Reads emitted SVG back into layout geometry. |
 
 ## ckprobe
 
 `ckprobe` is a development tool that parses and renders an ABC file and reports what came
-out: diagnostics, tune structure, and the geometry of every system on every page. It is
-not shipped as a product — run it from a checkout.
+out: diagnostics, tune structure, where each tune landed, and the geometry of every system
+on every page. It is not shipped as a product — run it from a checkout.
 
 ```bash
 swift run ckprobe tune.abc
 ```
 
 ```
+placements:
+  tune[0] page[0] printed 1, topY 36
+  tune[1] page[1] printed 2, topY 36
+
 pages: 2
   page[0] 792 x 612, systems: 7
       #  abcLine  staffGap  x-span             width  barlines

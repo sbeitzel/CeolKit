@@ -12,7 +12,13 @@ public struct Score: Sendable {
     public let dialect: Dialect
     public let creator: String?                  // I:abc-creator
     public let charset: String?                  // I:abc-charset
-    public let footer: String?                   // %%footer template (last occurrence wins)
+    /// The `%%footer` template written in the file header, or `nil` where the file header
+    /// states none.
+    ///
+    /// A directive in the file header governs the whole file (ABC v2.2 §4.23), so this is the
+    /// footer every tune starts from — not the document's only one.  A tune whose own header
+    /// names a footer carries it in ``Tune/footer`` and prints that instead (issue #155).
+    public let footer: String?
     public let tunes: [Tune]
     public let freeText: [TextBlock]
     public let typesetText: [TypesetText]

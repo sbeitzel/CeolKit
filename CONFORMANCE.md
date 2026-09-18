@@ -202,6 +202,52 @@ directive an application does not recognise.
 
 ---
 
+## §9.1 Page orientation — `%%landscape`
+
+**Syntax:** `%%landscape 0|1` (`true`/`false` are accepted too) — turn the page.
+
+A page size is a property of a **page**, not of a document. A tunebook that opens landscape
+and turns portrait halfway through is a legitimate thing to ask for, and CeolKit engraves
+one: pages before the change keep the size they were laid out at, and pages after it take
+the new one — width included, so the systems on a landscape page are broken and justified to
+the landscape line.
+
+### Where a change takes effect
+
+A page cannot change size part-way down, so a change of orientation is only expressible at a
+page boundary — and the boundary has to be one the author wrote. A `%%landscape` is therefore
+paired with the `%%newpage` written **at the same point**:
+
+| Written in | Pairs with a `%%newpage` in | Turns |
+| --- | --- | --- |
+| the file header | — | every page; this is the orientation the document opens in |
+| the gap between two tunes | that gap, or the following tune's header | that tune's pages onwards |
+| a tune header | that header, or the gap above it | that tune's pages onwards |
+| the tune body | the same stave | the pages from that stave onwards |
+
+The orientation stays in force until another change, so a tune that states nothing opens on
+whatever the tune before it left standing.
+
+The two directives may be written in either order, and several `%%landscape` landing on one
+break resolve last-written-wins, as every other directive does.
+
+A `%%landscape` with no `%%newpage` at its own point is **dropped**, with a
+`landscapeWithoutPageBreak` warning. Letting it take effect at whatever break happened to
+come next would reorient a page some distance further on, which is not readable from the
+source; and a change cannot be applied where it stands, because there is no page boundary
+there. The one written in the file header is the exception, and is not a change at all: it
+is the size the first page opens at.
+
+### Why the file header is read separately
+
+A `%%landscape` outside a tune used to be folded in with the rest of the file preamble and
+resolved last-wins for the whole document. That made a directive written *between* two tunes
+decide the orientation of the tunes *above* it — a late `%%landscape 0` unrotated a page that
+had already been engraved landscape. Only the file header governs the document now; anything
+later is a change at a break.
+
+---
+
 ## Worked examples in the test suite
 
 The standard's own multi-voice examples are checked in end to end, parser and renderer, so

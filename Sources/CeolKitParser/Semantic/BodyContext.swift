@@ -675,6 +675,10 @@ struct BodyContext {
     /// `%%newpage` met in the body, in source order, each already carrying the stave it
     /// breaks before.
     var bodyPageBreaks: [PageBreak] = []
+    /// `%%landscape` met in the body, in source order, each carrying the stave it was written
+    /// in.  Paired with the `%%newpage` breaking before that stave once the tune is whole —
+    /// see `SemanticPass.resolvingOrientations` (issue #158).
+    var bodyOrientations: [OrientationRequest] = []
     var hasExplicitVoice: Bool = false
     /// The `&` that opened each temporary voice (§7.4).  Its presence is also what says a
     /// layer exists at all: the states themselves live in `voices`, keyed by `VoiceKey`.

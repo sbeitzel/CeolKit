@@ -285,8 +285,8 @@ struct StandardDirectiveTests {
         #expect(unknown.isEmpty)
     }
 
-    @Test("Last %%footer wins across preamble and tune headers")
-    func footerLastWins() {
+    @Test("%%footer is scoped: the file header's is the score's, each tune header's is its own")
+    func footerIsScopedPerTune() {
         let abc = """
         %%footer "first"
         X:1
@@ -306,7 +306,92 @@ struct StandardDirectiveTests {
         GABC|
         """
         let result = parse(abc)
-        #expect(result.score.footer == "third")
+        // The file header's footer is the document's, not whichever tune wrote one last.
+        #expect(result.score.footer == "first")
+        #expect(result.score.tunes.count == 2)
+        #expect(result.score.tunes.first?.footer == "second")
+        #expect(result.score.tunes.last?.footer == "third")
+    }
+
+    @Test("A tune stating no %%footer of its own inherits the file header's")
+    func footerInheritedFromFileHeader() {
+        let abc = """
+        %%footer "book"
+        X:1
+        T:Tune 1
+        M:4/4
+        L:1/4
+        K:C
+        CDEF|
+
+        X:2
+        T:Tune 2
+        %%footer "own"
+        M:4/4
+        L:1/4
+        K:G
+        GABC|
+
+        X:3
+        T:Tune 3
+        M:4/4
+        L:1/4
+        K:D
+        DEFG|
+        """
+        let result = parse(abc)
+        #expect(result.score.footer == "book")
+        let footers = result.score.tunes.map(\.footer)
+        #expect(footers == ["book", "own", "book"])
+    }
+
+    @Test("%%footer written between two tunes governs the tunes that follow it")
+    func footerBetweenTunesGovernsWhatFollows() {
+        let abc = """
+        X:1
+        T:Tune 1
+        M:4/4
+        L:1/4
+        K:C
+        CDEF|
+
+        %%footer "from here on"
+        X:2
+        T:Tune 2
+        M:4/4
+        L:1/4
+        K:G
+        GABC|
+        """
+        let result = parse(abc)
+        // Nothing stood in the file header, so the score names no footer at all.
+        #expect(result.score.footer == nil)
+        #expect(result.score.tunes.first?.footer == nil)
+        #expect(result.score.tunes.last?.footer == "from here on")
+    }
+
+    @Test(#"%%footer "" in a tune header suppresses the file header's footer"#)
+    func emptyTuneFooterSuppressesFileFooter() {
+        let abc = """
+        %%footer "book"
+        X:1
+        T:Tune 1
+        M:4/4
+        L:1/4
+        K:C
+        CDEF|
+
+        X:2
+        T:Tune 2
+        %%footer ""
+        M:4/4
+        L:1/4
+        K:G
+        GABC|
+        """
+        let result = parse(abc)
+        #expect(result.score.footer == "book")
+        #expect(result.score.tunes.last?.footer == "")
     }
 
     @Test("%%footer with \\t column separators is stored verbatim")
@@ -526,5 +611,173 @@ struct StandardDirectiveTests {
             return false
         }
         #expect(!hasGraceSlurs)
+    }
+}
+
+// MARK: - %%landscape pairing with %%newpage (#158)
+
+@Suite("%%landscape scope (#158)")
+struct LandscapeScopeTests {
+
+    private func parse(_ abc: String) -> ParseResult {
+        CeolKitParser().parse(abc, options: .default)
+    }
+
+    private func breaks(_ abc: String) -> [PageBreak] {
+        parse(abc).score.tunes.flatMap(\.pageBreaks)
+    }
+
+    private func unpaired(_ abc: String) -> [Diagnostic] {
+        parse(abc).score.diagnostics.filter { $0.code == .landscapeWithoutPageBreak }
+    }
+
+    private func twoTunes(_ between: String) -> String {
+        """
+        X:1
+        T:First
+        M:4/4
+        L:1/4
+        K:C
+        CDEF|
+
+        \(between)
+        X:2
+        T:Second
+        M:4/4
+        L:1/4
+        K:C
+        CDEF|
+        """
+    }
+
+    @Test("A gap %%landscape rides on the %%newpage beside it rather than reaching tune 0")
+    func gapLandscapeRidesOnTheBreak() {
+        let score = parse(twoTunes("%%newpage\n%%landscape 1")).score
+        #expect(score.tunes[0].pageBreaks.isEmpty)
+        #expect(score.tunes[1].pageBreaks.map(\.landscape) == [true])
+        // It is *not* promoted to the first tune as a file-global directive: doing that is
+        // what made a late %%landscape reorient pages already engraved.
+        let promoted = score.tunes[0].directives.filter {
+            if case .landscape = $0.directive { return true }
+            return false
+        }
+        #expect(promoted.isEmpty)
+    }
+
+    @Test("A file-header %%landscape stays a file-global directive and breaks nothing")
+    func fileHeaderLandscapeStaysADirective() {
+        let score = parse("%%landscape 1\n" + twoTunes("")).score
+        let promoted = score.tunes[0].directives.filter {
+            if case .landscape = $0.directive { return true }
+            return false
+        }
+        #expect(promoted.count == 1)
+        if case .fileGlobal = promoted.first?.scope {} else {
+            Issue.record("file-header %%landscape should be .fileGlobal")
+        }
+        #expect(score.tunes.flatMap(\.pageBreaks).isEmpty)
+        #expect(unpaired("%%landscape 1\n" + twoTunes("")).isEmpty)
+    }
+
+    @Test("A %%landscape in the tune header pairs with a %%newpage in the gap above it")
+    func headerLandscapePairsWithGapBreak() {
+        let score = parse("""
+        X:1
+        T:First
+        M:4/4
+        L:1/4
+        K:C
+        CDEF|
+
+        %%newpage
+        X:2
+        %%landscape 1
+        T:Second
+        M:4/4
+        L:1/4
+        K:C
+        CDEF|
+        """).score
+        #expect(score.tunes[1].pageBreaks.map(\.landscape) == [true])
+    }
+
+    @Test("Last written wins where two %%landscape land on one break")
+    func lastWrittenWins() {
+        let abc = twoTunes("%%newpage\n%%landscape 1\n%%landscape 0")
+        #expect(breaks(abc).map(\.landscape) == [false])
+    }
+
+    @Test("A body %%landscape pairs with the %%newpage before the same stave")
+    func bodyLandscapePairsWithBodyBreak() {
+        let abc = """
+        X:1
+        T:Only
+        M:4/4
+        L:1/4
+        K:C
+        CDEF|
+        %%newpage
+        %%landscape 1
+        GABc|
+        """
+        #expect(breaks(abc).map { ($0.beforeStave, $0.landscape) }.map(\.0) == [1])
+        #expect(breaks(abc).map(\.landscape) == [true])
+        #expect(unpaired(abc).isEmpty)
+    }
+
+    @Test("A %%landscape with no break at its own stave is diagnosed and dropped")
+    func unpairedIsDiagnosed() {
+        let abc = """
+        X:1
+        T:Only
+        M:4/4
+        L:1/4
+        K:C
+        CDEF|
+        %%newpage
+        GABc|
+        %%landscape 1
+        CDEF|
+        """
+        // The break is at stave 1; the %%landscape stands at stave 2, which has none.
+        #expect(breaks(abc).map(\.landscape) == [nil])
+        #expect(unpaired(abc).count == 1)
+    }
+
+    @Test("A %%landscape in the gap after the last tune is diagnosed and dropped")
+    func afterLastTuneIsDiagnosed() {
+        #expect(unpaired(twoTunes("") + "\n%%landscape 1\n").count == 1)
+    }
+
+    @Test("A gap %%landscape governs the tunes after it, not the ones before")
+    func gapLandscapeDoesNotReachBackwards() {
+        let abc = """
+        X:1
+        T:First
+        M:4/4
+        L:1/4
+        K:C
+        CDEF|
+
+        %%newpage
+        %%landscape 1
+        X:2
+        T:Second
+        M:4/4
+        L:1/4
+        K:C
+        CDEF|
+
+        X:3
+        T:Third
+        M:4/4
+        L:1/4
+        K:C
+        CDEF|
+        """
+        let score = parse(abc).score
+        #expect(score.tunes[0].pageBreaks.isEmpty)
+        #expect(score.tunes[1].pageBreaks.map(\.landscape) == [true])
+        #expect(score.tunes[2].pageBreaks.isEmpty)
     }
 }

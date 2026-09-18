@@ -121,20 +121,49 @@ public struct VerticalLayoutEngine: Sendable {
     ///   closed, because a `%%newpage N` renumbers *and* breaks, and only the walk that
     ///   decides where the pages fall can honour both at once.
     public func layout(_ tuneBlocks: [TuneBlock], firstPageNumber: Int = 1) -> ResolvedLayout {
+        layoutDocument(tuneBlocks, firstPageNumber: firstPageNumber).layout
+    }
+
+    /// Lays out a sequence of tune blocks and reports where each one landed (issue #152).
+    ///
+    /// Identical to ``layout(_:firstPageNumber:)`` in everything it produces; it just keeps
+    /// the placement map the packing walk builds on its way through instead of dropping it.
+    /// Which page a tune starts on is a fact only this walk knows — tunes share pages when
+    /// they fit — so a consumer that has to print a table of contents, or answer "turn to
+    /// page N", has no way to work it out from the emitted SVG.
+    ///
+    /// `placements` holds one entry per block, in the order they were handed in.
+    public func layoutDocument(_ tuneBlocks: [TuneBlock], firstPageNumber: Int = 1)
+        -> (layout: ResolvedLayout, placements: [TunePlacement]) {
         var pages: [ResolvedPage] = []
+        var placements: [TunePlacement] = []
         var pageSystems: [ResolvedSystem] = []
         var pageTitleRows: [ResolvedTitleRow] = []
         var y = config.margins.top
         var previousAbcLine: Int?
         var pageNumber = firstPageNumber
+        /// The size of the page being built.  A `%%landscape` written at a `%%newpage` moves
+        /// it (issue #158), and it stays put until another break says otherwise, so the walk
+        /// carries it rather than reading `config.pageSize`: the page a system is being
+        /// packed into is not necessarily the size the document opened at, and how much
+        /// music a page holds is exactly this height.
+        var pageSize = Size(width: config.pageSize.width, height: config.pageSize.height)
+        /// The block that put the first thing on the page being built — its title block, or
+        /// its first system where a tune spills over from the page before.  Claimed once and
+        /// held until the page is flushed, which is what makes it the tune that *opens* the
+        /// page rather than the last one to land on it (issue #155).
+        var pageOpeningTune: Int?
 
         /// Closes the page being built and opens an empty one below it.
         func flushPage() {
             pages.append(ResolvedPage(systems: pageSystems, titleRows: pageTitleRows,
-                                      pageNumber: pageNumber))
+                                      pageNumber: pageNumber,
+                                      openingTuneIndex: pageOpeningTune,
+                                      pageSize: pageSize))
             pageNumber += 1
             pageSystems = []
             pageTitleRows = []
+            pageOpeningTune = nil
             y = config.margins.top
         }
 
@@ -151,9 +180,12 @@ public struct VerticalLayoutEngine: Sendable {
             // Several can land on one system — one in the gap before a tune and another in
             // its header — and the last number written wins, as it does for every directive.
             if let restart = landing.compactMap(\.pageNumber).last { pageNumber = restart }
+            // The orientation moves *after* the flush, so the page just closed keeps the size
+            // it was packed at and the one now opening takes the new one (issue #158).
+            if let size = landing.compactMap(\.pageSize).last { pageSize = size }
         }
 
-        for block in tuneBlocks {
+        for (blockIndex, block) in tuneBlocks.enumerated() {
             let groups = block.systemGroups
             // Worked out once for the whole tune: an ending can run past a line break, so
             // which measures a bracket covers is not something one system can answer alone.
@@ -178,12 +210,20 @@ public struct VerticalLayoutEngine: Sendable {
             // inner system loop below handles the mid-tune page breaks they require.
             if !pageSystems.isEmpty {
                 let tuneH = totalHeight(of: block, endingRuns: endingRuns)
-                if y + tuneH > config.pageSize.height - config.margins.bottom {
+                if y + tuneH > pageSize.height - config.margins.bottom {
                     flushPage()
                 }
             }
 
+            // Everything that can move this tune has now moved it: the `%%newpage` before
+            // its title block, and the test above that opens a fresh page for a tune the
+            // rest of this one cannot hold.  `y` is therefore the top of the title block,
+            // or of the first system where the tune prints no title (issue #152).
+            placements.append(TunePlacement(tuneIndex: blockIndex, pageIndex: pages.count,
+                                            printedPageNumber: pageNumber, topY: y))
+
             // Place this tune's title rows, offsetting their tune-relative baselineY by y.
+            if !block.titleRows.isEmpty && pageOpeningTune == nil { pageOpeningTune = blockIndex }
             for row in block.titleRows {
                 pageTitleRows.append(ResolvedTitleRow(items: row.items.map {
                     ResolvedTitleRow.Item(
@@ -203,7 +243,7 @@ public struct VerticalLayoutEngine: Sendable {
 
                 // A group breaks to the next page whole: splitting it would separate staves
                 // that only mean anything read together.
-                if !pageSystems.isEmpty && y + metrics.totalHeight > config.pageSize.height - config.margins.bottom {
+                if !pageSystems.isEmpty && y + metrics.totalHeight > pageSize.height - config.margins.bottom {
                     flushPage()
                 }
 
@@ -211,10 +251,14 @@ public struct VerticalLayoutEngine: Sendable {
                 // down the page stays monotonic (issue #41).
                 let abcLine = resolvedAbcLine(of: group.staves[0], previous: previousAbcLine)
                 previousAbcLine = abcLine
+                if pageOpeningTune == nil { pageOpeningTune = blockIndex }
                 pageSystems.append(contentsOf: resolveGroup(
                     group, metrics: metrics, topY: y, staffSize: staffSize,
                     staffHeight: staffHeight,
-                    graceNoteSpacing: block.graceNoteSpacing, abcLine: abcLine,
+                    graceNoteSpacing: block.graceNoteSpacing,
+                    tuneStemDirection: block.stemDirection,
+                    straightFlags: block.straightFlags, graceSlurs: block.graceSlurs,
+                    abcLine: abcLine,
                     endingRuns: endingRuns[gi]))
 
                 let isLastInBlock = gi == groups.count - 1
@@ -230,11 +274,22 @@ public struct VerticalLayoutEngine: Sendable {
             flushPage()
         }
 
-        return ResolvedLayout(
+        // A block that drew nothing — no title rows, no systems — was recorded against a
+        // page the final flush then had no reason to create.  Clamp it onto the last page
+        // there is rather than drop it: the map is one entry per block, indexable by tune.
+        let lastPage = max(0, pages.count - 1)
+        placements = placements.map {
+            $0.pageIndex <= lastPage ? $0
+                : TunePlacement(tuneIndex: $0.tuneIndex, pageIndex: lastPage,
+                                printedPageNumber: $0.printedPageNumber, topY: $0.topY)
+        }
+
+        let layout = ResolvedLayout(
             pageSize: Size(width: config.pageSize.width, height: config.pageSize.height),
             margins: config.margins,
             pages: pages
         )
+        return (layout, placements)
     }
 
     // MARK: - Staff groups
@@ -293,6 +348,9 @@ public struct VerticalLayoutEngine: Sendable {
     private func resolveGroup(_ group: JustifiedSystemGroup, metrics: GroupMetrics,
                               topY: Double, staffSize: Double, staffHeight: Double,
                               graceNoteSpacing: Double,
+                              tuneStemDirection: StemDirection?,
+                              straightFlags: Bool?,
+                              graceSlurs: Bool?,
                               abcLine: Int,
                               endingRuns: [[EndingBracketBand.Run]]) -> [ResolvedSystem] {
         // A group of one is an ordinary system: no membership, no group furniture, and the
@@ -361,6 +419,9 @@ public struct VerticalLayoutEngine: Sendable {
                 staffSize: staffSize,
                 staffHeight: staffHeight,
                 graceNoteSpacing: graceNoteSpacing,
+                tuneStemDirection: tuneStemDirection,
+                straightFlags: straightFlags,
+                graceSlurs: graceSlurs,
                 extraAbove: extraAbove,
                 extraBelow: extraBelow,
                 totalHeight: extraAbove + staffHeight + extraBelow,

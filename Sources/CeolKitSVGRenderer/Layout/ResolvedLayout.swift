@@ -205,9 +205,20 @@ public struct ForcedPageBreak: Hashable, Sendable {
     /// The number the new page prints, from `%%newpage N`, or `nil` to carry on counting.
     public let pageNumber: Int?
 
-    public init(beforeGroup: Int, pageNumber: Int?) {
+    /// The size the new page takes, from a `%%landscape` written at this break, or `nil` to
+    /// carry on at the size the page before it had (issue #158).
+    ///
+    /// A page size cannot change part-way down a page, so a break is the only place it *can*
+    /// change; the parser has already paired the `%%landscape` with the `%%newpage` written
+    /// beside it (see ``CeolKitModel/PageBreak/landscape``).  The engine holds this size for
+    /// every page it opens until another break says otherwise, and it is the height those
+    /// pages are packed to as well as the size they are written out at.
+    public let pageSize: Size?
+
+    public init(beforeGroup: Int, pageNumber: Int?, pageSize: Size? = nil) {
         self.beforeGroup = beforeGroup
         self.pageNumber = pageNumber
+        self.pageSize = pageSize
     }
 }
 
@@ -230,6 +241,25 @@ public struct TuneBlock: Sendable {
     /// carried through unmultiplied.  The sizer reserved the group's width with this value,
     /// so the emitter has to draw with the same one.
     public let graceNoteSpacing: Double
+    /// Which way this tune's stems point where its voices ask for nothing, from
+    /// `%%ceolkit:pipeformat`.  Travels with the tune for the same reason `scale` does — it
+    /// is set per tune and one page can hold systems from several (issue #153) — and a voice
+    /// that states its own `V:` `stem=` still outranks it (issue #74).
+    ///
+    /// `nil` means this block states nothing, which leaves the emitter's own document
+    /// direction standing: what a `TuneBlock` assembled by hand has always got.  `.auto` is
+    /// a statement rather than an absence — it is what `%%ceolkit:pipeformat false` asks for.
+    public let stemDirection: StemDirection?
+    /// Whether this tune's flags are drawn as straight lines, from `%%straightflags`.
+    /// Travels with the tune for the same reason `stemDirection` does: it is a tune-header
+    /// directive, and one page can hold systems from several tunes (issue #156).
+    ///
+    /// `nil` means this block states nothing, which leaves the emitter's own document value
+    /// standing — what a `TuneBlock` assembled by hand has always got.
+    public let straightFlags: Bool?
+    /// Whether this tune's grace groups are slurred to the notes they decorate, from
+    /// `%%graceslurs`.  Scoped and carried exactly like ``straightFlags`` (issue #156).
+    public let graceSlurs: Bool?
     /// The `%%newpage` breaks this tune asks for, in system order (issue #140).  Empty for
     /// almost every tune, and an empty list is the pagination this engine has always done.
     public let pageBreaks: [ForcedPageBreak]
@@ -237,12 +267,18 @@ public struct TuneBlock: Sendable {
     public init(systemGroups: [JustifiedSystemGroup], titleRows: [ResolvedTitleRow] = [],
                 titleBlockHeight: Double = 0, scale: Double = 1.0,
                 graceNoteSpacing: Double = SVGRenderConfig().graceNoteSpacing,
+                stemDirection: StemDirection? = nil,
+                straightFlags: Bool? = nil,
+                graceSlurs: Bool? = nil,
                 pageBreaks: [ForcedPageBreak] = []) {
         self.systemGroups = systemGroups
         self.titleRows = titleRows
         self.titleBlockHeight = titleBlockHeight
         self.scale = scale
         self.graceNoteSpacing = graceNoteSpacing
+        self.stemDirection = stemDirection
+        self.straightFlags = straightFlags
+        self.graceSlurs = graceSlurs
         self.pageBreaks = pageBreaks
     }
 
@@ -250,10 +286,15 @@ public struct TuneBlock: Sendable {
     public init(systems: [JustifiedSystem], titleRows: [ResolvedTitleRow] = [],
                 titleBlockHeight: Double = 0, scale: Double = 1.0,
                 graceNoteSpacing: Double = SVGRenderConfig().graceNoteSpacing,
+                stemDirection: StemDirection? = nil,
+                straightFlags: Bool? = nil,
+                graceSlurs: Bool? = nil,
                 pageBreaks: [ForcedPageBreak] = []) {
         self.init(systemGroups: systems.map { JustifiedSystemGroup(staves: [$0]) },
                   titleRows: titleRows, titleBlockHeight: titleBlockHeight,
-                  scale: scale, graceNoteSpacing: graceNoteSpacing, pageBreaks: pageBreaks)
+                  scale: scale, graceNoteSpacing: graceNoteSpacing,
+                  stemDirection: stemDirection, straightFlags: straightFlags,
+                  graceSlurs: graceSlurs, pageBreaks: pageBreaks)
     }
 }
 
@@ -355,6 +396,10 @@ public struct JustifiedMeasure: Sendable {
 // MARK: - Pass 4 output
 
 public struct ResolvedLayout: Sendable {
+    /// The size of a page the document does not say otherwise about: what the renderer was
+    /// configured with, turned by a `%%landscape` in the file header.  A page that states its
+    /// own ``ResolvedPage/pageSize`` — which is every page the layout engine makes — is drawn
+    /// at that instead; this is the default a hand-assembled layout still relies on.
     public let pageSize: Size
     public let margins: EdgeInsets
     public let pages: [ResolvedPage]
@@ -380,12 +425,38 @@ public struct ResolvedPage: Sendable {
     /// where the emitter falls back to counting from its own `firstPageNumber`.
     public let pageNumber: Int?
 
+    /// Index of the tune whose music *opens* this page — the block that put the first thing
+    /// on it, be that a title block or the tail of a system run spilling over from the page
+    /// before (issue #155).
+    ///
+    /// A page can carry systems from several tunes, and they can disagree about what the
+    /// footer should say.  The page belongs to the music that opens it: that is the tune a
+    /// reader turning to this page is reading, and it is the only choice that stays put when
+    /// a later tune is added below.  `nil` on a layout assembled by hand, and on a page that
+    /// somehow carries nothing.
+    public let openingTuneIndex: Int?
+
+    /// The size *this* page is drawn at, once something has decided what it is.
+    ///
+    /// A page size is a property of a page rather than of a document: `%%landscape` written
+    /// at a `%%newpage` turns the pages from there on and leaves the ones before it alone
+    /// (issue #158), so a document can hold both orientations at once.  The engine that
+    /// decides where the pages fall is the only thing that knows which size each one ended
+    /// up with, and it stamps it here as it closes the page.
+    ///
+    /// `nil` on a layout assembled by hand, where ``ResolvedLayout/pageSize`` — the document
+    /// default — stands for every page, exactly as it always did.
+    public let pageSize: Size?
+
     public init(systems: [ResolvedSystem], titleRows: [ResolvedTitleRow] = [],
-                footerRows: [ResolvedTitleRow] = [], pageNumber: Int? = nil) {
+                footerRows: [ResolvedTitleRow] = [], pageNumber: Int? = nil,
+                openingTuneIndex: Int? = nil, pageSize: Size? = nil) {
         self.systems = systems
         self.titleRows = titleRows
         self.footerRows = footerRows
         self.pageNumber = pageNumber
+        self.openingTuneIndex = openingTuneIndex
+        self.pageSize = pageSize
     }
 }
 
@@ -575,6 +646,27 @@ public struct ResolvedSystem: Sendable {
     /// `%%ceolkit:gracenotespacing`.  Travels with the system for the same reason
     /// `staffSize` does: it is set per tune, and one page can hold systems from several.
     public let graceNoteSpacing: Double
+    /// Which way the stems of the *tune* this system came from point, where the system's own
+    /// voices ask for nothing — `%%ceolkit:pipeformat`, carried from
+    /// ``TuneBlock/stemDirection``.  Travels with the system for the same reason
+    /// `graceNoteSpacing` does (issue #153).
+    ///
+    /// `nil` means the system states nothing and the emitter's document direction stands;
+    /// `.auto` is the statement `%%ceolkit:pipeformat false` makes.  Either way a voice's own
+    /// `V:` `stem=` in ``voiceStemDirections`` outranks it.
+    public let tuneStemDirection: StemDirection?
+    /// Whether the flags in this system are drawn as straight lines rather than the curved
+    /// Bravura glyphs — `%%straightflags`, carried from ``TuneBlock/straightFlags``.
+    /// Travels with the system for the same reason `graceNoteSpacing` does: it is set per
+    /// tune, and one page can hold systems from several (issue #156).
+    ///
+    /// `nil` means the system states nothing and the emitter's document value stands, which
+    /// is what a layout assembled by hand has always got.
+    public let straightFlags: Bool?
+    /// Whether this system's grace groups are slurred to the notes they decorate —
+    /// `%%graceslurs`, carried from ``TuneBlock/graceSlurs`` and scoped exactly like
+    /// ``straightFlags`` (issue #156).
+    public let graceSlurs: Bool?
     /// Space above the top staff line (ledger lines, chord symbols, annotations).
     public let extraAbove: Double
     /// Space below the bottom staff line (ledger lines, lyrics).
@@ -622,6 +714,9 @@ public struct ResolvedSystem: Sendable {
         staffSize: Double,
         staffHeight: Double,
         graceNoteSpacing: Double = SVGRenderConfig().graceNoteSpacing,
+        tuneStemDirection: StemDirection? = nil,
+        straightFlags: Bool? = nil,
+        graceSlurs: Bool? = nil,
         extraAbove: Double,
         extraBelow: Double,
         totalHeight: Double,
@@ -641,6 +736,9 @@ public struct ResolvedSystem: Sendable {
         self.staffSize = staffSize
         self.staffHeight = staffHeight
         self.graceNoteSpacing = graceNoteSpacing
+        self.tuneStemDirection = tuneStemDirection
+        self.straightFlags = straightFlags
+        self.graceSlurs = graceSlurs
         self.extraAbove = extraAbove
         self.extraBelow = extraBelow
         self.totalHeight = totalHeight

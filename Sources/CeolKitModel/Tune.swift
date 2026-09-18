@@ -37,6 +37,17 @@ public struct Tune: Sendable {
     /// page break has no meaning apart from where it falls, so the positional view is the
     /// only one.
     public let pageBreaks: [PageBreak]
+    /// The `%%footer` template this tune asks for, or `nil` where it asks for none and
+    /// ``Score/footer`` stands (issue #155).
+    ///
+    /// A stylesheet directive in a tune header applies to that tune (ABC v2.2 §4.23), so a
+    /// `%%footer` written here governs the pages this tune's music opens and no others.  It
+    /// holds whatever governs the tune — its own header's template, or the one last written
+    /// outside any tune before it — so a renderer needs only `tune.footer ?? score.footer`.
+    ///
+    /// The empty string is a statement, not an absence: `%%footer ""` in a tune header
+    /// suppresses a file-header footer for that tune rather than inheriting it.
+    public let footer: String?
     public let source: SourceRange
 
     public init(
@@ -54,6 +65,7 @@ public struct Tune: Sendable {
         directives: [CeolKitDirectiveScope],
         staffPlans: [StaffPlanChange] = [],
         pageBreaks: [PageBreak] = [],
+        footer: String? = nil,
         source: SourceRange
     ) {
         self.reference = reference
@@ -70,6 +82,7 @@ public struct Tune: Sendable {
         self.directives = directives
         self.staffPlans = staffPlans
         self.pageBreaks = pageBreaks
+        self.footer = footer
         self.source = source
     }
 

@@ -101,6 +101,34 @@ struct StaffPlanRegionTests {
         #expect(stavesPerSystem(abc) == [2])
     }
 
+    @Test("A file-header plan is engraved in every tune, not only the first (#157)")
+    func fileHeaderPlanIsEngravedInEveryTune() {
+        let abc = """
+        %%score (T B)
+        X:1
+        L:1/4
+        V:T
+        V:B
+        K:C
+        V:T
+        CDEF|
+        V:B
+        GABc|
+
+        X:2
+        L:1/4
+        V:T
+        V:B
+        K:C
+        V:T
+        CDEF|
+        V:B
+        GABc|
+        """
+        // One shared staff per tune.  Before #157 the second tune drew two.
+        #expect(stavesPerSystem(abc) == [1, 1])
+    }
+
     @Test("A body plan opens a second region at the stave it governs from")
     func bodyPlanOpensARegion() {
         let regions = PlanRegions.segment(

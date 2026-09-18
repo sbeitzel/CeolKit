@@ -87,9 +87,20 @@ public enum DiagnosticCode: String, Codable, Sendable {
     /// A `%%newpage` stands after the last tune in the file, so there is nothing left for it
     /// to move onto a fresh page.  It is dropped.
     case pageBreakAfterLastTune
+    /// A `%%landscape` was written where no `%%newpage` breaks, so there is no page boundary
+    /// for the new orientation to start at.  A page size cannot change part-way down a page,
+    /// so the directive is dropped rather than reaching forward to some later break the
+    /// author did not write — see `PageBreak/landscape` (issue #158).
+    case landscapeWithoutPageBreak
     /// A `%%score` / `%%staves` names a voice the tune does not declare anywhere.  The rest
     /// of the plan is honoured.
     case staffPlanVoiceNotFound
+    /// A `%%score` / `%%staves` written outside any tune names a voice some tune it governs
+    /// does not have.  A plan is voice-specific in a way the other stylesheet directives are
+    /// not, so rather than half-apply it — dropping the voices it does not name from a tune
+    /// that engraves perfectly well without it — that tune is laid out as though the plan had
+    /// not been written.
+    case staffPlanNotApplicableToTune
     /// A `%%score` / `%%staves` names the same voice more than once.  It is printed once, at
     /// the first position it was named in.
     case staffPlanVoiceRepeated

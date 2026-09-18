@@ -236,7 +236,8 @@ public struct VerticalLayoutEngine: Sendable {
                 pageSystems.append(contentsOf: resolveGroup(
                     group, metrics: metrics, topY: y, staffSize: staffSize,
                     staffHeight: staffHeight,
-                    graceNoteSpacing: block.graceNoteSpacing, abcLine: abcLine,
+                    graceNoteSpacing: block.graceNoteSpacing,
+                    tuneStemDirection: block.stemDirection, abcLine: abcLine,
                     endingRuns: endingRuns[gi]))
 
                 let isLastInBlock = gi == groups.count - 1
@@ -326,6 +327,7 @@ public struct VerticalLayoutEngine: Sendable {
     private func resolveGroup(_ group: JustifiedSystemGroup, metrics: GroupMetrics,
                               topY: Double, staffSize: Double, staffHeight: Double,
                               graceNoteSpacing: Double,
+                              tuneStemDirection: StemDirection?,
                               abcLine: Int,
                               endingRuns: [[EndingBracketBand.Run]]) -> [ResolvedSystem] {
         // A group of one is an ordinary system: no membership, no group furniture, and the
@@ -394,6 +396,7 @@ public struct VerticalLayoutEngine: Sendable {
                 staffSize: staffSize,
                 staffHeight: staffHeight,
                 graceNoteSpacing: graceNoteSpacing,
+                tuneStemDirection: tuneStemDirection,
                 extraAbove: extraAbove,
                 extraBelow: extraBelow,
                 totalHeight: extraAbove + staffHeight + extraBelow,

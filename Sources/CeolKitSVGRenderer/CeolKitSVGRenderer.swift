@@ -81,33 +81,31 @@ public struct SVGRenderer: CeolKitRenderer {
             return wf
         }()
 
+        // The four layout values `%%ceolkit:*` can move, resolved from the file-global
+        // directives alone: a preamble value governs the document, so this is the baseline
+        // every tune starts from.  It is *not* what any tune ends up with — see below.
+        let fileLayout: LayoutDirectives = {
+            var resolved = LayoutDirectives(config: effectiveConfig)
+            for scope in score.tunes.first?.directives ?? [] {
+                guard case .fileGlobal = scope.scope else { continue }
+                resolved.apply(scope.directive)
+            }
+            return resolved
+        }()
+
         var tuneBlocks: [TuneBlock] = []
-        // What the *document* asks for. A voice's own `V:` stem= outranks it; the emitter
-        // resolves the two per staff (issue #74).
-        var documentStemDirection: StemDirection = .auto
-        var justifyLastSystem = effectiveConfig.justifyLastSystem
-        // %%ceolkit:scale is tune-scoped but sticky: a preamble value governs every following
-        // tune until a later tune header overrides it. %%ceolkit:gracenotespacing behaves the
-        // same way.
-        var scale = 1.0
-        var graceNoteSpacing = effectiveConfig.graceNoteSpacing
 
         for tune in score.tunes {
-            for scope in tune.directives {
-                switch scope.directive {
-                case .pipeFormat(true):     documentStemDirection = .down
-                case .justifyLast(let on):  justifyLastSystem = on
-                case .scale(let factor):    scale = factor
-                case .graceNoteSpacing(let step): graceNoteSpacing = step
-                default: break
-                }
-            }
+            // Resolved per tune, from the file baseline rather than from the tune before it:
+            // a tune header applies to its own tune (ABC v2.2 §4.23), so a `%%ceolkit:scale`
+            // in tune 1's header must not still be in force in tune 2 (issue #153).
+            let layout = fileLayout.layering(tune)
             // The music scales; the page does not. Sizing and header widths are therefore
             // derived from a per-tune staff size, while `usableWidth` stays absolute.
-            var tuneConfig = effectiveConfig.scaled(by: scale)
+            var tuneConfig = effectiveConfig.scaled(by: layout.scale)
             // A ratio within the grace group, not a size derived from the staff, so it is
             // set after `scaled(by:)` and never multiplied by the scale factor.
-            tuneConfig.graceNoteSpacing = graceNoteSpacing
+            tuneConfig.graceNoteSpacing = layout.graceNoteSpacing
             let sizer = MeasureSizer(config: tuneConfig, metadata: metadata)
 
             // §11.1: a `%%score` / `%%staves` plan decides which voices are printed and in
@@ -325,7 +323,7 @@ public struct SVGRenderer: CeolKitRenderer {
                 $0.element.markingLastSystem($0.offset == groups.count - 1)
             }
             let tuneGroups = groups.isEmpty ? [] : justifier.justifyGroups(
-                groups, usableWidth: usableWidth, justifyLastSystem: justifyLastSystem,
+                groups, usableWidth: usableWidth, justifyLastSystem: layout.justifyLastSystem,
                 systemHeaderWidths: headerWidths)
 
             // Build the title block for this tune per §6.1.3.
@@ -340,15 +338,18 @@ public struct SVGRenderer: CeolKitRenderer {
                 tune: tune, writeFields: tuneWriteFields, layoutConfig: effectiveConfig
             ).build()
             tuneBlocks.append(TuneBlock(systemGroups: tuneGroups, titleRows: titleRows,
-                                        titleBlockHeight: titleBlockHeight, scale: scale,
-                                        graceNoteSpacing: graceNoteSpacing,
+                                        titleBlockHeight: titleBlockHeight, scale: layout.scale,
+                                        graceNoteSpacing: layout.graceNoteSpacing,
+                                        stemDirection: layout.stemDirection,
                                         pageBreaks: Self.forcedPageBreaks(
                                             tune.pageBreaks, staveOfGroup: staveOfGroup)))
         }
 
         let firstPageNumber = Self.firstPageNumber(of: score)
+        // The document's own answer, for a system that states none of its own — which is
+        // every system of a `ResolvedLayout` assembled by hand rather than by the loop above.
         let emitter = SVGEmitter(config: effectiveConfig, metadata: metadata,
-                                 stemDirection: documentStemDirection,
+                                 stemDirection: fileLayout.stemDirection,
                                  firstPageNumber: firstPageNumber)
         let (layout, placements) = engine.layoutDocument(tuneBlocks,
                                                           firstPageNumber: firstPageNumber)

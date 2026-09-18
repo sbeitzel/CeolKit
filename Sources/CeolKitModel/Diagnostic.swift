@@ -90,6 +90,12 @@ public enum DiagnosticCode: String, Codable, Sendable {
     /// A `%%score` / `%%staves` names a voice the tune does not declare anywhere.  The rest
     /// of the plan is honoured.
     case staffPlanVoiceNotFound
+    /// A `%%score` / `%%staves` written outside any tune names a voice some tune it governs
+    /// does not have.  A plan is voice-specific in a way the other stylesheet directives are
+    /// not, so rather than half-apply it — dropping the voices it does not name from a tune
+    /// that engraves perfectly well without it — that tune is laid out as though the plan had
+    /// not been written.
+    case staffPlanNotApplicableToTune
     /// A `%%score` / `%%staves` names the same voice more than once.  It is printed once, at
     /// the first position it was named in.
     case staffPlanVoiceRepeated

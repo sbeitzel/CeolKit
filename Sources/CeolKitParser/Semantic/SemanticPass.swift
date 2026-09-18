@@ -25,6 +25,13 @@ struct SemanticPass {
         // (ABC v2.2 §4.23), one written in a gap governs the tunes that follow it.  Keeping
         // the lines is what lets the walk below tell them apart (issue #155).
         var outsideFooters: [(template: String, line: Int)] = []
+        // Every `%%score` / `%%staves` met outside a tune, in source order, each with the line
+        // it was written on.  A plan governs from where it stands: one in the file header
+        // governs every tune (ABC v2.2 §4.23), one written in the gap between two tunes
+        // governs the tunes that follow it and not the ones before, exactly as `%%footer`
+        // does (issue #157).  Unlike a footer a plan names *voices*, so whether it applies to
+        // a given tune is decided per tune in the walk below.
+        var outsidePlans: [(plan: StaffPlan, line: Int)] = []
         let preambleDirectives = file.filePreamble.compactMap { line -> StylesheetDirective? in
             switch line {
             case .directive(let name, let payload, let src):
@@ -54,6 +61,9 @@ struct SemanticPass {
                     preambleCeolKitDirectives.append(
                         CeolKitDirectiveScope(directive: d, scope: .fileGlobal, source: src)
                     )
+                    if case .staffPlan(let plan) = d {
+                        outsidePlans.append((plan: plan, line: src.line))
+                    }
                 }
                 diagnostics += tempDiags
             } else {
@@ -105,7 +115,12 @@ struct SemanticPass {
             let (tune, tuneDiags) = buildTune(abcTune, dialect: dialect)
             diagnostics += tuneDiags
             let extraDirectives = idx == 0 ? preambleCeolKitDirectives : []
-            if !extraDirectives.isEmpty || !ownedBreaks.isEmpty || tuneFooter != nil {
+            let filePlans = fileStaffPlans(
+                for: tune,
+                from: outsidePlans.last { $0.line < tuneLine }?.plan,
+                into: &diagnostics)
+            if !extraDirectives.isEmpty || !ownedBreaks.isEmpty || tuneFooter != nil
+                || !filePlans.isEmpty {
                 tunes.append(Tune(
                     reference: tune.reference,
                     titles: tune.titles,
@@ -119,7 +134,7 @@ struct SemanticPass {
                     userSymbols: tune.userSymbols,
                     macros: tune.macros,
                     directives: extraDirectives + tune.directives,
-                    staffPlans: initialStaffPlans(from: extraDirectives) + tune.staffPlans,
+                    staffPlans: filePlans + tune.staffPlans,
                     pageBreaks: ownedBreaks + tune.pageBreaks,
                     footer: tuneFooter,
                     source: tune.source
@@ -1168,6 +1183,56 @@ struct SemanticPass {
             }
         }
         return result
+    }
+
+    /// The opening staff plan `tune` inherits from outside itself, as a change list to put
+    /// ahead of its own — empty where it inherits none (issue #157).
+    ///
+    /// A plan is unlike every other stylesheet directive in that it names voices, and voice
+    /// names are a tune's own business: `%%score (T B)` means nothing in a tune whose voices
+    /// are called `1` and `2`.  Applying it there would half-apply it — printing nothing the
+    /// plan names, and dropping everything it does not — so an inherited plan governs only
+    /// where every voice it names exists, and the tune is otherwise laid out as though the
+    /// plan had been written for some other document, which is what it was.
+    ///
+    /// A tune stating its own plan before any music overrides whatever it inherits, so the
+    /// inherited plan never gets to govern there.  It is still carried, ahead of the tune's
+    /// own and in source order, because that is where it was written; and the fit test does
+    /// not apply to it, because a plan that governs nothing cannot misgovern this tune.
+    private func fileStaffPlans(
+        for tune: Tune,
+        from filePlan: StaffPlan?,
+        into diagnostics: inout [Diagnostic]
+    ) -> [StaffPlanChange] {
+        guard let filePlan else { return [] }
+        let change = StaffPlanChange(plan: filePlan, effectiveFromStave: 0, source: filePlan.source)
+        guard !tune.staffPlans.contains(where: { $0.effectiveFromStave == 0 }) else { return [change] }
+
+        let declared = Set(tune.voices.map(\.id))
+        var missing: [VoiceId] = []
+        for id in filePlan.namedVoices where !declared.contains(id) && !missing.contains(id) {
+            missing.append(id)
+        }
+        guard missing.isEmpty else {
+            let names = missing.map(voiceLabel).joined(separator: ", ")
+            diagnostics.append(Diagnostic(
+                severity: .info,
+                code: .staffPlanNotApplicableToTune,
+                message: "staff plan written outside this tune names "
+                       + "\(missing.count == 1 ? "voice" : "voices") \(names), which it does not "
+                       + "have; the tune is laid out as though the plan were not written",
+                source: filePlan.source
+            ))
+            return []
+        }
+        return [change]
+    }
+
+    private func voiceLabel(_ id: VoiceId) -> String {
+        switch id {
+        case .named(let name): return "'\(name)'"
+        case .all: return "'*'"
+        }
     }
 
     /// The staff plans among `scopes`, each governing from the first stave — the position

@@ -32,12 +32,29 @@ public struct PageBreak: Hashable, Sendable {
     /// `%%newpage 20` is 21.
     public let restartingAt: Int?
 
+    /// The orientation the new page takes, from a `%%landscape` written at this break, or
+    /// `nil` to keep whatever the page before it had (issue #158).
+    ///
+    /// A page size is a property of a *page*, and a page cannot change size part-way down,
+    /// so a break is the only place a change of orientation can be expressed.  A `%%landscape`
+    /// is therefore paired with the `%%newpage` written at the same point — the same gap
+    /// between tunes, the same tune header, or the same stave — and one written anywhere else
+    /// is dropped with a ``DiagnosticCode/landscapeWithoutPageBreak`` diagnostic rather than
+    /// reaching forward to a break the author did not ask for.
+    ///
+    /// A `%%landscape` in the *file header*, ahead of every tune, is not a change at all: it
+    /// is the orientation the document opens in, and stays in ``Tune/directives`` at
+    /// ``Scope/fileGlobal`` where it always was.
+    public let landscape: Bool?
+
     /// Where the directive was written, which is not where it takes effect once it snaps.
     public let source: SourceRange
 
-    public init(beforeStave: Int, restartingAt: Int?, source: SourceRange) {
+    public init(beforeStave: Int, restartingAt: Int?, landscape: Bool? = nil,
+                source: SourceRange) {
         self.beforeStave = beforeStave
         self.restartingAt = restartingAt
+        self.landscape = landscape
         self.source = source
     }
 }

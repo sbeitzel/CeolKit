@@ -62,17 +62,25 @@ public struct Justifier: Sendable {
     ///   - justifyLastSystem: When `true`, the last system is also stretched to fill the line.
     ///   - systemHeaderWidths: Per-system width consumed by clef/key/time-sig headers —
     ///     already the `max` across the group's voices, since its staves start at a common x.
+    ///   - systemUsableWidths: Per-system line width, where the systems of one tune do not all
+    ///     have the same one.  A `%%landscape` at a `%%newpage` turns the page part-way
+    ///     through a tune (issue #158), and the systems after it fill a wider — or narrower —
+    ///     line than the ones before.  An entry overrides `usableWidth` for that system;
+    ///     anything the array does not cover falls back to it, which is every system of every
+    ///     tune that keeps one orientation throughout.
     /// Named rather than overloaded on the element type: `justify([])` would otherwise be
     /// ambiguous, which is a trap for a call site that has nothing to justify.
     public func justifyGroups(
         _ groups: [SystemGroup],
         usableWidth: Double,
         justifyLastSystem: Bool,
-        systemHeaderWidths: [Double] = []
+        systemHeaderWidths: [Double] = [],
+        systemUsableWidths: [Double] = []
     ) -> [JustifiedSystemGroup] {
         groups.enumerated().map { i, group in
             let headerWidth = i < systemHeaderWidths.count ? systemHeaderWidths[i] : 0
-            let targetWidth = usableWidth - headerWidth
+            let lineWidth = i < systemUsableWidths.count ? systemUsableWidths[i] : usableWidth
+            let targetWidth = lineWidth - headerWidth
             let shouldStretch = !group.isLastSystem || justifyLastSystem
             return justify(group, targetWidth: targetWidth, stretch: shouldStretch,
                            capStretch: group.staveWasSplit)

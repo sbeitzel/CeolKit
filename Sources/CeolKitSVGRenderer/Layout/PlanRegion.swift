@@ -39,7 +39,14 @@ enum PlanRegions {
     /// Always returns at least one region, so a tune with no plan — the overwhelming majority —
     /// takes exactly the path it did before regions existed: one region, the tune's own voices,
     /// no slicing.
-    static func segment(_ tune: Tune) -> [PlanRegion] {
+    ///
+    /// - Parameter alsoCuttingAt: staves the caller needs a region to start at for a reason of
+    ///   its own, whether or not a plan changes there.  A `%%landscape` at a `%%newpage` turns
+    ///   the page part-way through a tune (issue #158), and the staves after it are broken to
+    ///   a different line width — which is decided per region — so the cut has to be made
+    ///   before any music is packed.  A boundary is a system break either way, and a page
+    ///   break already is one, so nothing else about the tune moves.
+    static func segment(_ tune: Tune, alsoCuttingAt extraBoundaries: Set<Int> = []) -> [PlanRegion] {
         let staveCount = tune.voices.reduce(0) { max($0, $1.staves.count) }
 
         // Two changes can share a stave — a file-preamble plan and a tune-header plan both
@@ -50,19 +57,26 @@ enum PlanRegions {
             planByStave[change.effectiveFromStave] = change.plan
         }
 
+        let starts = Set(planByStave.keys).union(extraBoundaries.filter { $0 > 0 && $0 < staveCount })
+
         // No music, or every plan governs from the very first stave: one region over the whole
         // tune, and no `Voice` is rebuilt.
-        guard let boundaries = boundaries(planByStave.keys, staveCount: staveCount) else {
+        guard let boundaries = boundaries(starts, staveCount: staveCount) else {
             let plan = tune.staffPlans.last { $0.effectiveFromStave == 0 }?.plan
             return [PlanRegion(plan: plan, voices: tune.voices, staves: 0..<staveCount)]
         }
 
+        // The plan in force at each boundary.  A boundary the caller asked for is not a plan
+        // change, so the region opening there carries on under whatever was already governing
+        // — which is why this is threaded rather than read out of `planByStave` alone.
+        var running: StaffPlan? = nil
         return boundaries.indices.map { index in
             let start = boundaries[index]
             let end = index + 1 < boundaries.count ? boundaries[index + 1] : staveCount
             let range = start..<end
+            running = planByStave[start] ?? running
             return PlanRegion(
-                plan: planByStave[start],
+                plan: running,
                 voices: tune.voices.map { $0.covering(range) },
                 staves: range
             )

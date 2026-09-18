@@ -470,6 +470,75 @@ struct StyleTests {
         #expect(extraLines == 3, "expected 3 extra <line> elements for straight 32nd grace flag, got \(extraLines)")
     }
 
+    // MARK: - %%straightflags scope (issue #156)
+
+    /// Three tunes whose flags are individually identifiable: an eighth note carries one
+    /// flag, a sixteenth two, a thirty-second three, and each duration has its own Bravura
+    /// glyph.  Whether a given tune drew straight flags is therefore readable off the page
+    /// as the presence or absence of *that tune's* curved glyph — which is what these tests
+    /// need, because all three tunes land on the same page.
+    private func threeTunes(preamble: String = "", first: String = "",
+                            second: String = "", third: String = "") -> String {
+        """
+        \(preamble)X:1
+        T:Eighth
+        M:4/4
+        L:1/8
+        \(first)K:C
+        G|
+
+        X:2
+        T:Sixteenth
+        M:4/4
+        L:1/16
+        \(second)K:C
+        G|
+
+        X:3
+        T:ThirtySecond
+        M:4/4
+        L:1/32
+        \(third)K:C
+        G|
+        """
+    }
+
+    /// The curved flag glyphs of the three tunes above, in tune order.
+    private static let curvedFlags = [SMuFLGlyph.flag8thUp, .flag16thUp, .flag32ndUp]
+
+    /// Which of the three tunes drew straight flags, read back off the emitted pages.
+    private func straightness(of abc: String) throws -> [Bool] {
+        let svg = try textProbeRenderer().render(parse(abc).score).joined()
+        return Self.curvedFlags.map { !svg.contains(String($0.character)) }
+    }
+
+    @Test func straightFlagsInFirstTuneHeaderDoesNotReachLaterTunes() throws {
+        // §4.23: a directive in a tune header governs that tune.  Tune 1 asking for straight
+        // flags must not straighten tunes 2 and 3.
+        #expect(try straightness(of: threeTunes(first: "%%straightflags true\n"))
+                == [true, false, false])
+    }
+
+    @Test func straightFlagsInFilePreambleReachesEveryTune() throws {
+        #expect(try straightness(of: threeTunes(preamble: "%%straightflags true\n"))
+                == [true, true, true])
+    }
+
+    @Test func straightFlagsInALaterTuneHeaderIsNotDropped() throws {
+        // The failure the other way round: written in tune 2's header alone, the directive
+        // used to be ignored outright because only the first tune's list was read.
+        #expect(try straightness(of: threeTunes(second: "%%straightflags true\n"))
+                == [false, true, false])
+    }
+
+    @Test func straightFlagsFalseInATuneHeaderOverridesThePreamble() throws {
+        // Preamble true, tune 2 false, tune 3 silent: straight, curved, straight.  Tune 3
+        // falls back to the file baseline rather than to what tune 2 last said.
+        #expect(try straightness(of: threeTunes(preamble: "%%straightflags true\n",
+                                                second: "%%straightflags false\n"))
+                == [true, false, true])
+    }
+
     // MARK: - %%graceslurs
 
     @Test func graceSlurstDirectiveRendersWithoutError() throws {
@@ -486,6 +555,40 @@ struct StyleTests {
         let s = parse(abc).score
         let pages = try textProbeRenderer().render(s)
         #expect(!pages.isEmpty)
+    }
+
+    // MARK: - %%graceslurs scope (issue #156)
+
+    /// What each tune's systems were told about `%%graceslurs`, in tune order.
+    ///
+    /// Nothing in the emitter draws from `graceSlurs` yet, so unlike `%%straightflags` there
+    /// is no mark on the page to read it back off.  The scoping is checked one step earlier,
+    /// on the layout the emitter is handed: each of the three tunes below is one system, so
+    /// the systems come out in tune order.
+    private func graceSlurs(of abc: String) throws -> [Bool?] {
+        let document = try textProbeRenderer().renderDocument(parse(abc).score)
+        return document.layout.pages.flatMap(\.systems).map(\.graceSlurs)
+    }
+
+    @Test func graceSlursInFirstTuneHeaderDoesNotReachLaterTunes() throws {
+        #expect(try graceSlurs(of: threeTunes(first: "%%graceslurs false\n"))
+                == [false, true, true])
+    }
+
+    @Test func graceSlursInFilePreambleReachesEveryTune() throws {
+        #expect(try graceSlurs(of: threeTunes(preamble: "%%graceslurs false\n"))
+                == [false, false, false])
+    }
+
+    @Test func graceSlursInALaterTuneHeaderIsNotDropped() throws {
+        #expect(try graceSlurs(of: threeTunes(second: "%%graceslurs false\n"))
+                == [true, false, true])
+    }
+
+    @Test func graceSlursTrueInATuneHeaderOverridesThePreamble() throws {
+        #expect(try graceSlurs(of: threeTunes(preamble: "%%graceslurs false\n",
+                                              second: "%%graceslurs true\n"))
+                == [false, true, false])
     }
 
     @Test func graceSlursDirectiveSetsConfigValue() throws {

@@ -246,7 +246,9 @@ public struct VerticalLayoutEngine: Sendable {
                     group, metrics: metrics, topY: y, staffSize: staffSize,
                     staffHeight: staffHeight,
                     graceNoteSpacing: block.graceNoteSpacing,
-                    tuneStemDirection: block.stemDirection, abcLine: abcLine,
+                    tuneStemDirection: block.stemDirection,
+                    straightFlags: block.straightFlags, graceSlurs: block.graceSlurs,
+                    abcLine: abcLine,
                     endingRuns: endingRuns[gi]))
 
                 let isLastInBlock = gi == groups.count - 1
@@ -337,6 +339,8 @@ public struct VerticalLayoutEngine: Sendable {
                               topY: Double, staffSize: Double, staffHeight: Double,
                               graceNoteSpacing: Double,
                               tuneStemDirection: StemDirection?,
+                              straightFlags: Bool?,
+                              graceSlurs: Bool?,
                               abcLine: Int,
                               endingRuns: [[EndingBracketBand.Run]]) -> [ResolvedSystem] {
         // A group of one is an ordinary system: no membership, no group furniture, and the
@@ -406,6 +410,8 @@ public struct VerticalLayoutEngine: Sendable {
                 staffHeight: staffHeight,
                 graceNoteSpacing: graceNoteSpacing,
                 tuneStemDirection: tuneStemDirection,
+                straightFlags: straightFlags,
+                graceSlurs: graceSlurs,
                 extraAbove: extraAbove,
                 extraBelow: extraBelow,
                 totalHeight: extraAbove + staffHeight + extraBelow,

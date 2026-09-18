@@ -341,6 +341,8 @@ public struct SVGRenderer: CeolKitRenderer {
                                         titleBlockHeight: titleBlockHeight, scale: layout.scale,
                                         graceNoteSpacing: layout.graceNoteSpacing,
                                         stemDirection: layout.stemDirection,
+                                        straightFlags: layout.straightFlags,
+                                        graceSlurs: layout.graceSlurs,
                                         pageBreaks: Self.forcedPageBreaks(
                                             tune.pageBreaks, staveOfGroup: staveOfGroup)))
         }
@@ -557,16 +559,22 @@ public struct SVGRenderer: CeolKitRenderer {
     ///
     /// `%%landscape` is a document-wide setting that the parser promotes into the
     /// first tune's directives.  All other per-config values remain as supplied.
+    ///
+    /// `%%straightflags` and `%%graceslurs` used to be read here too, and were wrong in both
+    /// directions for it: the first tune's copy governed the whole document and every later
+    /// tune's was ignored outright (issue #156).  They are scoped directives, so they belong
+    /// with the rest of them in ``LayoutDirectives`` — resolved from the file preamble for
+    /// the document baseline, then per tune on top of it — and are carried to the emitter on
+    /// the tune's own systems.
+    ///
+    /// `%%landscape` is left here deliberately: a page size is a property of a *page* rather
+    /// than of a tune, and making it follow a `%%newpage` is issue #158's, not this one's.
     private func applyingScoreDirectives(_ score: Score) -> SVGRenderConfig {
         var effective = config
         for scope in score.tunes.first?.directives ?? [] {
             switch scope.directive {
             case .landscape(let on):
                 effective.pageSize = on ? config.pageSize.landscape : config.pageSize
-            case .straightFlags(let on):
-                effective.straightFlags = on
-            case .graceSlurs(let on):
-                effective.graceSlurs = on
             default:
                 break
             }

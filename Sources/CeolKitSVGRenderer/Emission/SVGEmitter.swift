@@ -185,20 +185,32 @@ struct SVGEmitter: Sendable {
     /// carries the tune's answer, and `nil` there — a layout assembled by hand — leaves this
     /// emitter's own document direction standing.
     ///
+    /// `%%straightflags` and `%%graceslurs` are resolved here for the same reason, and per
+    /// *tune* as well: both are stylesheet directives a tune header may state (ABC v2.2
+    /// §4.23), so one tune's straight flags must not straighten the next tune's, nor be
+    /// dropped because the first tune said nothing (issue #156).  `nil` on the system leaves
+    /// this emitter's document value standing.
+    ///
     /// Always called on the page-level emitter, whose ``stemDirection`` is still the
     /// document's — resolving from ``documentStemDirection`` rather than from
     /// ``stemDirection`` keeps that from mattering.
     private func configured(for system: ResolvedSystem) -> SVGEmitter {
         let tuneStem = system.tuneStemDirection ?? documentStemDirection
         let systemStem = system.stemDirection != .auto ? system.stemDirection : tuneStem
+        let straightFlags = system.straightFlags ?? config.straightFlags
+        let graceSlurs = system.graceSlurs ?? config.graceSlurs
         guard system.staffSize != config.staffSize
                 || system.graceNoteSpacing != config.graceNoteSpacing
+                || straightFlags != config.straightFlags
+                || graceSlurs != config.graceSlurs
                 || tuneStem != documentStemDirection
                 || systemStem != stemDirection
                 || system.voiceStemDirections != voiceStemDirections else { return self }
         var systemConfig = config
         systemConfig.staffSize = system.staffSize
         systemConfig.graceNoteSpacing = system.graceNoteSpacing
+        systemConfig.straightFlags = straightFlags
+        systemConfig.graceSlurs = graceSlurs
         return SVGEmitter(config: systemConfig, metadata: metadata,
                           stemDirection: tuneStem, systemStemDirection: systemStem,
                           voiceStemDirections: system.voiceStemDirections,

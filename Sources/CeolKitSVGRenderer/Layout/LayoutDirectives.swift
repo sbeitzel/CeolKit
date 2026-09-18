@@ -22,6 +22,11 @@ struct LayoutDirectives {
     /// Step between adjacent grace noteheads, in grace notehead widths, from
     /// `%%ceolkit:gracenotespacing`.
     var graceNoteSpacing: Double
+    /// Whether eighth-and-shorter flags are drawn as straight lines rather than the curved
+    /// Bravura glyphs, from `%%straightflags`.
+    var straightFlags: Bool
+    /// Whether a grace group is slurred to the note it decorates, from `%%graceslurs`.
+    var graceSlurs: Bool
     /// `strftime` pattern for the `$D`/`$d` marks of a `%%footer`, from `%%dateformat`.
     /// `nil` leaves the renderer's own default date format standing.  Scoped like the rest:
     /// one in a tune header dates that tune's pages and no others (issue #155).
@@ -31,6 +36,8 @@ struct LayoutDirectives {
     init(config: SVGRenderConfig) {
         justifyLastSystem = config.justifyLastSystem
         graceNoteSpacing = config.graceNoteSpacing
+        straightFlags = config.straightFlags
+        graceSlurs = config.graceSlurs
     }
 
     mutating func apply(_ directive: CeolKitDirective) {
@@ -42,6 +49,8 @@ struct LayoutDirectives {
         case .justifyLast(let on):        justifyLastSystem = on
         case .scale(let factor):          scale = factor
         case .graceNoteSpacing(let step): graceNoteSpacing = step
+        case .straightFlags(let on):      straightFlags = on
+        case .graceSlurs(let on):         graceSlurs = on
         case .dateFormat(let pattern):    dateFormat = pattern
         default: break
         }

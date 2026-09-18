@@ -29,6 +29,25 @@ public struct SVGRenderer: CeolKitRenderer {
     /// (see `VoiceAligner`).  `Score.diagnostics` is already sealed by then, so the caller
     /// that wants to report both concatenates them.
     public func render(_ score: Score, diagnostics: inout [Diagnostic]) throws -> [String] {
+        try renderDocument(score, diagnostics: &diagnostics).pages
+    }
+
+    /// Returns the pages, the layout they were emitted from, and where each tune landed
+    /// (issue #152).
+    ///
+    /// Same rendering as ``render(_:)``, which throws the last two away.  A multi-tune score
+    /// packs tunes onto shared pages, so which page a tune starts on is something only the
+    /// layout knows — and nothing in the emitted SVG says.  A caller building a table of
+    /// contents, or reporting where a tune came out, reads it from ``RenderedDocument``.
+    public func renderDocument(_ score: Score) throws -> RenderedDocument {
+        var diagnostics: [Diagnostic] = []
+        return try renderDocument(score, diagnostics: &diagnostics)
+    }
+
+    /// Returns the pages, the layout, and the tune placements, appending anything the
+    /// *renderer* had to complain about to `diagnostics` — see ``render(_:diagnostics:)``.
+    public func renderDocument(_ score: Score,
+                               diagnostics: inout [Diagnostic]) throws -> RenderedDocument {
         let metadata = try BravuraMetadata.load()
 
         // Apply score-level directives that affect the whole document.
@@ -331,10 +350,13 @@ public struct SVGRenderer: CeolKitRenderer {
         let emitter = SVGEmitter(config: effectiveConfig, metadata: metadata,
                                  stemDirection: documentStemDirection,
                                  firstPageNumber: firstPageNumber)
-        let layout = engine.layout(tuneBlocks, firstPageNumber: firstPageNumber)
+        let (layout, placements) = engine.layoutDocument(tuneBlocks,
+                                                          firstPageNumber: firstPageNumber)
         let finalLayout = attachFooters(layout, score: score, config: effectiveConfig,
                                         firstPageNumber: firstPageNumber)
-        return try emitter.emit(finalLayout)
+        // One `TuneBlock` is built per tune above, so a block's index is its tune's index.
+        return RenderedDocument(pages: try emitter.emit(finalLayout), layout: finalLayout,
+                                placements: placements)
     }
 
     // MARK: - Page breaks

@@ -53,8 +53,8 @@ Tests/
 ### Development tooling
 
 `ckprobe` parses and renders an ABC file and reports what came out — diagnostics, tune
-structure, and the geometry of every system on every page. It is the fastest way to answer
-a layout question without a GUI:
+structure, the page each tune landed on, and the geometry of every system on every page.
+It is the fastest way to answer a layout question without a GUI:
 
 ```bash
 swift run ckprobe tune.abc                          # full report

@@ -78,12 +78,14 @@ let result = parse(abc)
 // bar lines fall only matter once they have to share a system — so its diagnostics are
 // collected and reported alongside the parser's.
 var renderDiagnostics: [CeolKitModel.Diagnostic] = []
-let svgs: [String]
+let rendered: RenderedDocument
 do {
-    svgs = try SVGRenderer(config: renderConfig).render(result.score, diagnostics: &renderDiagnostics)
+    rendered = try SVGRenderer(config: renderConfig).renderDocument(
+        result.score, diagnostics: &renderDiagnostics)
 } catch {
     fail("render failed: \(error)")
 }
+let svgs = rendered.pages
 
 if let directory = options.outputDirectory {
     do {
@@ -101,6 +103,7 @@ do {
     let report = Report(file: options.file,
                         score: result.score,
                         diagnostics: result.diagnostics + renderDiagnostics,
+                        placements: rendered.placements,
                         pages: try SVGGeometry.pages(from: svgs))
     if options.json {
         let encoder = JSONEncoder()

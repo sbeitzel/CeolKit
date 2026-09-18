@@ -121,7 +121,22 @@ public struct VerticalLayoutEngine: Sendable {
     ///   closed, because a `%%newpage N` renumbers *and* breaks, and only the walk that
     ///   decides where the pages fall can honour both at once.
     public func layout(_ tuneBlocks: [TuneBlock], firstPageNumber: Int = 1) -> ResolvedLayout {
+        layoutDocument(tuneBlocks, firstPageNumber: firstPageNumber).layout
+    }
+
+    /// Lays out a sequence of tune blocks and reports where each one landed (issue #152).
+    ///
+    /// Identical to ``layout(_:firstPageNumber:)`` in everything it produces; it just keeps
+    /// the placement map the packing walk builds on its way through instead of dropping it.
+    /// Which page a tune starts on is a fact only this walk knows — tunes share pages when
+    /// they fit — so a consumer that has to print a table of contents, or answer "turn to
+    /// page N", has no way to work it out from the emitted SVG.
+    ///
+    /// `placements` holds one entry per block, in the order they were handed in.
+    public func layoutDocument(_ tuneBlocks: [TuneBlock], firstPageNumber: Int = 1)
+        -> (layout: ResolvedLayout, placements: [TunePlacement]) {
         var pages: [ResolvedPage] = []
+        var placements: [TunePlacement] = []
         var pageSystems: [ResolvedSystem] = []
         var pageTitleRows: [ResolvedTitleRow] = []
         var y = config.margins.top
@@ -153,7 +168,7 @@ public struct VerticalLayoutEngine: Sendable {
             if let restart = landing.compactMap(\.pageNumber).last { pageNumber = restart }
         }
 
-        for block in tuneBlocks {
+        for (blockIndex, block) in tuneBlocks.enumerated() {
             let groups = block.systemGroups
             // Worked out once for the whole tune: an ending can run past a line break, so
             // which measures a bracket covers is not something one system can answer alone.
@@ -182,6 +197,13 @@ public struct VerticalLayoutEngine: Sendable {
                     flushPage()
                 }
             }
+
+            // Everything that can move this tune has now moved it: the `%%newpage` before
+            // its title block, and the test above that opens a fresh page for a tune the
+            // rest of this one cannot hold.  `y` is therefore the top of the title block,
+            // or of the first system where the tune prints no title (issue #152).
+            placements.append(TunePlacement(tuneIndex: blockIndex, pageIndex: pages.count,
+                                            printedPageNumber: pageNumber, topY: y))
 
             // Place this tune's title rows, offsetting their tune-relative baselineY by y.
             for row in block.titleRows {
@@ -230,11 +252,22 @@ public struct VerticalLayoutEngine: Sendable {
             flushPage()
         }
 
-        return ResolvedLayout(
+        // A block that drew nothing — no title rows, no systems — was recorded against a
+        // page the final flush then had no reason to create.  Clamp it onto the last page
+        // there is rather than drop it: the map is one entry per block, indexable by tune.
+        let lastPage = max(0, pages.count - 1)
+        placements = placements.map {
+            $0.pageIndex <= lastPage ? $0
+                : TunePlacement(tuneIndex: $0.tuneIndex, pageIndex: lastPage,
+                                printedPageNumber: $0.printedPageNumber, topY: $0.topY)
+        }
+
+        let layout = ResolvedLayout(
             pageSize: Size(width: config.pageSize.width, height: config.pageSize.height),
             margins: config.margins,
             pages: pages
         )
+        return (layout, placements)
     }
 
     // MARK: - Staff groups

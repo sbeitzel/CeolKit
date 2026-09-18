@@ -19,7 +19,12 @@ struct SemanticPass {
         // between two tunes belongs to the one that follows it, so each is matched to its
         // tune by source line in the walk below.
         var preambleBreaks: [PageBreak] = []
-        var currentFooter: String? = nil
+        // Every `%%footer` met outside a tune, in source order, each with the line it was
+        // written on.  `filePreamble` holds the file header *and* the gaps between tunes, and
+        // the two mean different things: a footer in the file header governs the whole file
+        // (ABC v2.2 §4.23), one written in a gap governs the tunes that follow it.  Keeping
+        // the lines is what lets the walk below tell them apart (issue #155).
+        var outsideFooters: [(template: String, line: Int)] = []
         let preambleDirectives = file.filePreamble.compactMap { line -> StylesheetDirective? in
             switch line {
             case .directive(let name, let payload, let src):
@@ -37,7 +42,7 @@ struct SemanticPass {
             if name == "footer" {
                 let footer = stripQuotes(payload.trimmingCharacters(in: .whitespaces))
                 diagnoseFooterPlaceholders(footer, source: src, into: &diagnostics)
-                currentFooter = footer
+                outsideFooters.append((template: footer, line: src.line))
             } else if name == "newpage" {
                 preambleBreaks.append(PageBreak(
                     beforeStave: 0,
@@ -72,18 +77,27 @@ struct SemanticPass {
 
         let fileSource = file.tunes.first?.source ?? .emptySourceRange
 
+        // The footer the *file header* states: the last one written before any tune began.
+        // A file with no tunes has nothing but a file header, so every one of them counts.
+        let firstTuneLine = file.tunes.first?.source.line ?? Int.max
+        let fileFooter = outsideFooters.last { $0.line < firstTuneLine }?.template
+
         var tunes: [Tune] = []
         var previousTuneLine = Int.min
         for (idx, abcTune) in file.tunes.enumerated() {
-            // Update footer from tune header directives (last-wins across document).
+            let tuneLine = abcTune.source.line
+            // What governs this tune: its own header's `%%footer` if it states one — a tune
+            // header applies to its own tune and no other (ABC v2.2 §4.23, issue #155) —
+            // otherwise the last one written outside a tune ahead of it.  `nil` where neither
+            // exists, which leaves `Score.footer` standing for this tune.
+            var tuneFooter = outsideFooters.last { $0.line < tuneLine }?.template
             for (name, payload, src) in abcTune.headerDirectives where name == "footer" {
                 let footer = stripQuotes(payload.trimmingCharacters(in: .whitespaces))
                 diagnoseFooterPlaceholders(footer, source: src, into: &diagnostics)
-                currentFooter = footer
+                tuneFooter = footer
             }
             // The preamble breaks standing between the previous tune and this one: they move
             // *this* tune onto a fresh page, so they are its own, at stave 0.
-            let tuneLine = abcTune.source.line
             let ownedBreaks = preambleBreaks.filter {
                 $0.source.line > previousTuneLine && $0.source.line < tuneLine
             }
@@ -91,7 +105,7 @@ struct SemanticPass {
             let (tune, tuneDiags) = buildTune(abcTune, dialect: dialect)
             diagnostics += tuneDiags
             let extraDirectives = idx == 0 ? preambleCeolKitDirectives : []
-            if !extraDirectives.isEmpty || !ownedBreaks.isEmpty {
+            if !extraDirectives.isEmpty || !ownedBreaks.isEmpty || tuneFooter != nil {
                 tunes.append(Tune(
                     reference: tune.reference,
                     titles: tune.titles,
@@ -107,6 +121,7 @@ struct SemanticPass {
                     directives: extraDirectives + tune.directives,
                     staffPlans: initialStaffPlans(from: extraDirectives) + tune.staffPlans,
                     pageBreaks: ownedBreaks + tune.pageBreaks,
+                    footer: tuneFooter,
                     source: tune.source
                 ))
             } else {
@@ -163,7 +178,7 @@ struct SemanticPass {
             dialect: dialect,
             creator: nil,
             charset: nil,
-            footer: currentFooter,
+            footer: fileFooter,
             tunes: tunes,
             freeText: [],
             typesetText: [],
@@ -1271,7 +1286,8 @@ struct SemanticPass {
             diagnostics += planDiags
             return plan.map { .staffPlan($0) }
         case "footer":
-            // %%footer is file-scoped and extracted directly in build(); silently accept here.
+            // %%footer is scoped to the file or the tune header and is resolved directly in
+            // build(); silently accept here.
             return nil
         default:
             return nil

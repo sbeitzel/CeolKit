@@ -1,14 +1,14 @@
 import CeolKitModel
 
-/// The four layout values a `%%ceolkit:*` directive can move, resolved for one scope level.
+/// The layout values a stylesheet directive can move, resolved for one scope level.
 ///
 /// Every one of them is *scoped*: written in the file preamble it governs the document,
 /// written in a tune header it governs that tune and no other (ABC v2.2 §4.23).  The
 /// renderer therefore resolves it twice — once from the file-global directives, for the
 /// document baseline, and once per tune, starting from that baseline — which is the same
-/// two-step ``WriteFieldsConfig`` already does for `%%writefields`.  Collecting the four in
-/// one value is what keeps the per-tune reset from being four separate `var`s that have to
-/// be remembered individually: forgetting one is exactly what issue #153 was.
+/// two-step ``WriteFieldsConfig`` already does for `%%writefields`.  Collecting them in one
+/// value is what keeps the per-tune reset from being a handful of separate `var`s that have
+/// to be remembered individually: forgetting one is exactly what issue #153 was.
 struct LayoutDirectives {
     /// What `%%ceolkit:pipeformat` asks of the music at this scope.  `.auto` leaves the
     /// choice to the note's staff position, which is the ordinary engraving rule.  A voice's
@@ -22,6 +22,10 @@ struct LayoutDirectives {
     /// Step between adjacent grace noteheads, in grace notehead widths, from
     /// `%%ceolkit:gracenotespacing`.
     var graceNoteSpacing: Double
+    /// `strftime` pattern for the `$D`/`$d` marks of a `%%footer`, from `%%dateformat`.
+    /// `nil` leaves the renderer's own default date format standing.  Scoped like the rest:
+    /// one in a tune header dates that tune's pages and no others (issue #155).
+    var dateFormat: String?
 
     /// The document baseline before any directive has been read: what the config asks for.
     init(config: SVGRenderConfig) {
@@ -38,6 +42,7 @@ struct LayoutDirectives {
         case .justifyLast(let on):        justifyLastSystem = on
         case .scale(let factor):          scale = factor
         case .graceNoteSpacing(let step): graceNoteSpacing = step
+        case .dateFormat(let pattern):    dateFormat = pattern
         default: break
         }
     }

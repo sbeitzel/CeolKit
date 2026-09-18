@@ -393,12 +393,25 @@ public struct ResolvedPage: Sendable {
     /// where the emitter falls back to counting from its own `firstPageNumber`.
     public let pageNumber: Int?
 
+    /// Index of the tune whose music *opens* this page — the block that put the first thing
+    /// on it, be that a title block or the tail of a system run spilling over from the page
+    /// before (issue #155).
+    ///
+    /// A page can carry systems from several tunes, and they can disagree about what the
+    /// footer should say.  The page belongs to the music that opens it: that is the tune a
+    /// reader turning to this page is reading, and it is the only choice that stays put when
+    /// a later tune is added below.  `nil` on a layout assembled by hand, and on a page that
+    /// somehow carries nothing.
+    public let openingTuneIndex: Int?
+
     public init(systems: [ResolvedSystem], titleRows: [ResolvedTitleRow] = [],
-                footerRows: [ResolvedTitleRow] = [], pageNumber: Int? = nil) {
+                footerRows: [ResolvedTitleRow] = [], pageNumber: Int? = nil,
+                openingTuneIndex: Int? = nil) {
         self.systems = systems
         self.titleRows = titleRows
         self.footerRows = footerRows
         self.pageNumber = pageNumber
+        self.openingTuneIndex = openingTuneIndex
     }
 }
 

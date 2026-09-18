@@ -142,14 +142,21 @@ public struct VerticalLayoutEngine: Sendable {
         var y = config.margins.top
         var previousAbcLine: Int?
         var pageNumber = firstPageNumber
+        /// The block that put the first thing on the page being built — its title block, or
+        /// its first system where a tune spills over from the page before.  Claimed once and
+        /// held until the page is flushed, which is what makes it the tune that *opens* the
+        /// page rather than the last one to land on it (issue #155).
+        var pageOpeningTune: Int?
 
         /// Closes the page being built and opens an empty one below it.
         func flushPage() {
             pages.append(ResolvedPage(systems: pageSystems, titleRows: pageTitleRows,
-                                      pageNumber: pageNumber))
+                                      pageNumber: pageNumber,
+                                      openingTuneIndex: pageOpeningTune))
             pageNumber += 1
             pageSystems = []
             pageTitleRows = []
+            pageOpeningTune = nil
             y = config.margins.top
         }
 
@@ -206,6 +213,7 @@ public struct VerticalLayoutEngine: Sendable {
                                             printedPageNumber: pageNumber, topY: y))
 
             // Place this tune's title rows, offsetting their tune-relative baselineY by y.
+            if !block.titleRows.isEmpty && pageOpeningTune == nil { pageOpeningTune = blockIndex }
             for row in block.titleRows {
                 pageTitleRows.append(ResolvedTitleRow(items: row.items.map {
                     ResolvedTitleRow.Item(
@@ -233,6 +241,7 @@ public struct VerticalLayoutEngine: Sendable {
                 // down the page stays monotonic (issue #41).
                 let abcLine = resolvedAbcLine(of: group.staves[0], previous: previousAbcLine)
                 previousAbcLine = abcLine
+                if pageOpeningTune == nil { pageOpeningTune = blockIndex }
                 pageSystems.append(contentsOf: resolveGroup(
                     group, metrics: metrics, topY: y, staffSize: staffSize,
                     staffHeight: staffHeight,

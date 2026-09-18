@@ -354,7 +354,7 @@ public struct SVGRenderer: CeolKitRenderer {
         let (layout, placements) = engine.layoutDocument(tuneBlocks,
                                                           firstPageNumber: firstPageNumber)
         let finalLayout = attachFooters(layout, score: score, config: effectiveConfig,
-                                        firstPageNumber: firstPageNumber)
+                                        firstPageNumber: firstPageNumber, fileLayout: fileLayout)
         // One `TuneBlock` is built per tune above, so a block's index is its tune's index.
         return RenderedDocument(pages: try emitter.emit(finalLayout), layout: finalLayout,
                                 placements: placements)
@@ -401,32 +401,58 @@ public struct SVGRenderer: CeolKitRenderer {
 
     // MARK: - Footer
 
+    /// Stamps each page with the footer of the tune that owns it (issue #155).
+    ///
+    /// `%%footer` is scoped like every other stylesheet directive: written in the file header
+    /// it governs the document, written in a tune header it governs that tune (ABC v2.2
+    /// §4.23).  A page is therefore resolved from ``ResolvedPage/openingTuneIndex`` — the
+    /// tune whose music opens it — rather than once for the whole document, so a tunebook
+    /// whose tunes each name their own footer prints each one where it belongs instead of
+    /// printing the last tune's on everything.
+    ///
+    /// `$T` and `%%dateformat` follow the same tune, for the same reason: a footer reading
+    /// `$T` on page four should name the tune printed on page four.
+    ///
+    /// A page that names no tune — a layout assembled by hand — falls back to the document's
+    /// own footer, which is what it has always got.
     private func attachFooters(_ layout: ResolvedLayout, score: Score, config: SVGRenderConfig,
-                               firstPageNumber: Int) -> ResolvedLayout {
-        guard let template = score.footer, !template.isEmpty else { return layout }
-        // Find the last %%dateformat directive (last-wins across preamble and tune header).
-        let dateFormat = score.tunes.first?.directives.compactMap { scope -> String? in
-            if case .dateFormat(let fmt) = scope.directive { return fmt }
-            return nil
-        }.last
+                               firstPageNumber: Int, fileLayout: LayoutDirectives) -> ResolvedLayout {
+        // Nothing anywhere in the document asks for a footer: the whole pass is skipped, and
+        // no page gains an empty footer row it did not have before.
+        guard score.footer?.isEmpty == false
+                || score.tunes.contains(where: { $0.footer?.isEmpty == false })
+        else { return layout }
+
         let pageCount = layout.pages.count
         let updatedPages = layout.pages.enumerated().map { pageIndex, page -> ResolvedPage in
-            let rows = buildFooterRows(template: template,
-                                       pageNumber: page.pageNumber ?? firstPageNumber + pageIndex,
-                                       pageCount: pageCount, score: score, config: config,
-                                       dateFormat: dateFormat)
+            let tune = page.openingTuneIndex.map { score.tunes[$0] }
+            let template = tune?.footer ?? score.footer
+            let rows: [ResolvedTitleRow]
+            if let template, !template.isEmpty {
+                rows = buildFooterRows(
+                    template: template,
+                    pageNumber: page.pageNumber ?? firstPageNumber + pageIndex,
+                    pageCount: pageCount,
+                    title: (tune ?? score.tunes.first)?.titles.first?.value ?? "",
+                    config: config,
+                    dateFormat: tune.map { fileLayout.layering($0).dateFormat }
+                        ?? fileLayout.dateFormat)
+            } else {
+                rows = []
+            }
             return ResolvedPage(systems: page.systems, titleRows: page.titleRows,
-                                footerRows: rows, pageNumber: page.pageNumber)
+                                footerRows: rows, pageNumber: page.pageNumber,
+                                openingTuneIndex: page.openingTuneIndex)
         }
         return ResolvedLayout(pageSize: layout.pageSize, margins: layout.margins, pages: updatedPages)
     }
 
     private func buildFooterRows(template: String, pageNumber: Int, pageCount: Int,
-                                  score: Score, config: SVGRenderConfig,
+                                  title: String, config: SVGRenderConfig,
                                   dateFormat: String? = nil) -> [ResolvedTitleRow] {
         let context = FooterContext(
             pageNumber: pageNumber, pageCount: pageCount,
-            title: score.tunes.first?.titles.first?.value ?? "",
+            title: title,
             date: Self.currentDateString(format: dateFormat))
         let columns = FooterTemplate.columns(FooterTemplate.segments(of: template,
                                                                      context: context))

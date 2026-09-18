@@ -32,6 +32,19 @@ struct SemanticPass {
         // does (issue #157).  Unlike a footer a plan names *voices*, so whether it applies to
         // a given tune is decided per tune in the walk below.
         var outsidePlans: [(plan: StaffPlan, line: Int)] = []
+        // Every `%%landscape` met in the gap *between* tunes, in source order.  Unlike the
+        // rest of the preamble these are not promoted to the first tune: a page size cannot
+        // change part-way down a page, so a change of orientation is a property of the break
+        // it is written at, and one written in a gap belongs to the tune that follows it —
+        // never to the tunes before, which is what made a late `%%landscape` reorient pages
+        // already engraved (issue #158).  A `%%landscape` in the *file header*, ahead of every
+        // tune, is not a change but the orientation the document opens in, and is promoted as
+        // it always was.
+        var outsideOrientations: [OrientationRequest] = []
+        // The line the music starts on, which is what separates the file header from the gaps
+        // between tunes.  Needed while the preamble is being walked, so it is worked out here
+        // rather than with the other per-tune values below.
+        let firstTuneLine = file.tunes.first?.source.line ?? Int.max
         let preambleDirectives = file.filePreamble.compactMap { line -> StylesheetDirective? in
             switch line {
             case .directive(let name, let payload, let src):
@@ -58,9 +71,16 @@ struct SemanticPass {
             } else if isCeolKitDirective(name) || isStandardDirective(name) {
                 var tempDiags: [Diagnostic] = []
                 if let d = parseCeolKitDirective(name: name, payload: payload, source: src, diagnostics: &tempDiags) {
-                    preambleCeolKitDirectives.append(
-                        CeolKitDirectiveScope(directive: d, scope: .fileGlobal, source: src)
-                    )
+                    if case .landscape(let on) = d, src.line > firstTuneLine {
+                        // Written in a gap between tunes: a change of orientation, matched to
+                        // the break in front of the tune that follows it (issue #158).
+                        outsideOrientations.append(
+                            OrientationRequest(landscape: on, stave: 0, source: src))
+                    } else {
+                        preambleCeolKitDirectives.append(
+                            CeolKitDirectiveScope(directive: d, scope: .fileGlobal, source: src)
+                        )
+                    }
                     if case .staffPlan(let plan) = d {
                         outsidePlans.append((plan: plan, line: src.line))
                     }
@@ -89,7 +109,6 @@ struct SemanticPass {
 
         // The footer the *file header* states: the last one written before any tune began.
         // A file with no tunes has nothing but a file header, so every one of them counts.
-        let firstTuneLine = file.tunes.first?.source.line ?? Int.max
         let fileFooter = outsideFooters.last { $0.line < firstTuneLine }?.template
 
         var tunes: [Tune] = []
@@ -111,15 +130,24 @@ struct SemanticPass {
             let ownedBreaks = preambleBreaks.filter {
                 $0.source.line > previousTuneLine && $0.source.line < tuneLine
             }
-            previousTuneLine = tuneLine
-            let (tune, tuneDiags) = buildTune(abcTune, dialect: dialect)
+            let (tune, tuneDiags, tuneOrientations) = buildTune(abcTune, dialect: dialect)
             diagnostics += tuneDiags
+            // Every `%%landscape` this tune can be asked to honour, in source order: the ones
+            // written in the gap in front of it — which break before its first stave, exactly
+            // as the `%%newpage` there does — then its own header's and body's.
+            let gapOrientations = outsideOrientations.filter {
+                $0.source.line > previousTuneLine && $0.source.line < tuneLine
+            }
+            previousTuneLine = tuneLine
+            let breaks = resolvingOrientations(gapOrientations + tuneOrientations,
+                                               against: ownedBreaks + tune.pageBreaks,
+                                               into: &diagnostics)
             let extraDirectives = idx == 0 ? preambleCeolKitDirectives : []
             let filePlans = fileStaffPlans(
                 for: tune,
                 from: outsidePlans.last { $0.line < tuneLine }?.plan,
                 into: &diagnostics)
-            if !extraDirectives.isEmpty || !ownedBreaks.isEmpty || tuneFooter != nil
+            if !extraDirectives.isEmpty || breaks != tune.pageBreaks || tuneFooter != nil
                 || !filePlans.isEmpty {
                 tunes.append(Tune(
                     reference: tune.reference,
@@ -135,7 +163,7 @@ struct SemanticPass {
                     macros: tune.macros,
                     directives: extraDirectives + tune.directives,
                     staffPlans: filePlans + tune.staffPlans,
-                    pageBreaks: ownedBreaks + tune.pageBreaks,
+                    pageBreaks: breaks,
                     footer: tuneFooter,
                     source: tune.source
                 ))
@@ -149,6 +177,15 @@ struct SemanticPass {
             diagnostics.append(Diagnostic(
                 severity: .info, code: .pageBreakAfterLastTune,
                 message: "%%newpage after the last tune has nothing to break before; ignored",
+                source: orphan.source
+            ))
+        }
+
+        // Nor has a `%%landscape` past the last tune a page left to turn.
+        for orphan in outsideOrientations where orphan.source.line > previousTuneLine {
+            diagnostics.append(Diagnostic(
+                severity: .warning, code: .landscapeWithoutPageBreak,
+                message: "%%landscape after the last tune has no page left to reorient; ignored",
                 source: orphan.source
             ))
         }
@@ -234,9 +271,53 @@ struct SemanticPass {
         return nil
     }
 
+    // MARK: - Orientation changes
+
+    /// Pairs each `%%landscape` with the `%%newpage` written at the same point, and drops the
+    /// ones that have no break to start at (issue #158).
+    ///
+    /// A page size cannot change part-way down a page, so a change of orientation is only
+    /// expressible at a page boundary.  The boundary has to be one the *author* wrote: taking
+    /// effect at whatever break happens to come next would let a `%%landscape` with no
+    /// `%%newpage` near it reorient a page some distance further on, which is not readable
+    /// from the source.  So a request is honoured where a break falls at the same place it
+    /// was written — the gap in front of a tune and that tune's header both break before
+    /// stave 0, and a body directive breaks before the stave enclosing it — and is otherwise
+    /// dropped with a diagnostic.
+    ///
+    /// Several requests can land on one break; the last one written wins, as it does for
+    /// every other directive.
+    private func resolvingOrientations(_ requests: [OrientationRequest],
+                                       against breaks: [PageBreak],
+                                       into diagnostics: inout [Diagnostic]) -> [PageBreak] {
+        guard !requests.isEmpty else { return breaks }
+        var resolved = breaks
+        for request in requests.sorted(by: { $0.source.line < $1.source.line }) {
+            // The last break at the stave, because that is the one whose page the music
+            // after the directive lands on — the same break `%%newpage N` renumbers.
+            guard let index = resolved.lastIndex(where: { $0.beforeStave == request.stave })
+            else {
+                diagnostics.append(Diagnostic(
+                    severity: .warning, code: .landscapeWithoutPageBreak,
+                    message: "%%landscape with no %%newpage at the same point cannot change "
+                           + "the page size, which only a page boundary can; ignored",
+                    source: request.source
+                ))
+                continue
+            }
+            let existing = resolved[index]
+            resolved[index] = PageBreak(beforeStave: existing.beforeStave,
+                                        restartingAt: existing.restartingAt,
+                                        landscape: request.landscape,
+                                        source: existing.source)
+        }
+        return resolved
+    }
+
     // MARK: - Tune builder
 
-    private func buildTune(_ abcTune: ABCTune, dialect: Dialect) -> (Tune, [Diagnostic]) {
+    private func buildTune(_ abcTune: ABCTune, dialect: Dialect)
+    -> (Tune, [Diagnostic], [OrientationRequest]) {
         var diagnostics: [Diagnostic] = []
         var ctx = TuneContext()
 
@@ -265,6 +346,15 @@ struct SemanticPass {
                 beforeStave: 0,
                 restartingAt: parseNewPage(payload, source: src, diagnostics: &diagnostics),
                 source: src))
+        }
+
+        // A `%%landscape` in the header asks the tune's first page to turn, so it is matched
+        // against a break before stave 0 — the tune's own, or the one in the gap above it.
+        var headerOrientations: [OrientationRequest] = []
+        for scope in tuneDirectives {
+            guard case .landscape(let on) = scope.directive else { continue }
+            headerOrientations.append(
+                OrientationRequest(landscape: on, stave: 0, source: scope.source))
         }
 
         // Resolve unitNoteLength from meter if not explicit
@@ -326,7 +416,7 @@ struct SemanticPass {
             pageBreaks: headerBreaks + bodyCtx.bodyPageBreaks,
             source: abcTune.source
         )
-        return (tune, diagnostics)
+        return (tune, diagnostics, headerOrientations + bodyCtx.bodyOrientations)
     }
 
     // MARK: - Header parsing
@@ -956,6 +1046,14 @@ struct SemanticPass {
             var tempDiags: [Diagnostic] = []
             if let d = parseCeolKitDirective(name: name, payload: payload, source: source, diagnostics: &tempDiags) {
                 ctx.bodyTuneDirectives.append(CeolKitDirectiveScope(directive: d, scope: .tuneGlobal, source: source))
+                // §11.4.7 / issue #158: a page turns only where a page breaks, so a
+                // `%%landscape` in the body is recorded against the stave enclosing it — the
+                // same stave a `%%newpage` written beside it breaks before.
+                if case .landscape(let on) = d {
+                    ctx.bodyOrientations.append(
+                        OrientationRequest(landscape: on, stave: ctx.currentStaveIndex,
+                                           source: source))
+                }
             }
             diagnostics += tempDiags
         default:
@@ -1784,4 +1882,18 @@ private struct TuneContext {
     // I:linebreak parsed per ABC 2.2 §9.2 — default is I:linebreak <EOL> $
     var linebreakChars: Set<Character> = ["$"] // $ and/or !
     var linebreakOnEOL: Bool = true            // <EOL> token
+}
+
+// MARK: - Orientation requests
+
+/// A `%%landscape` and the point in the tune it was written at, before it is paired with the
+/// `%%newpage` that gives it a page boundary to take effect at (issue #158).
+struct OrientationRequest {
+    /// `true` for `%%landscape 1`, `false` for `%%landscape 0`.
+    let landscape: Bool
+    /// The stave the directive stands in front of, in the tune's own numbering — the same
+    /// unit ``PageBreak/beforeStave`` counts in.  A directive in the gap above a tune or in
+    /// its header is 0; one in the body is the stave enclosing it.
+    let stave: Int
+    let source: SourceRange
 }

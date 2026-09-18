@@ -10,7 +10,7 @@ public struct Point: Sendable, Equatable {
     public static let zero = Point(x: 0, y: 0)
 }
 
-public struct Size: Sendable, Equatable {
+public struct Size: Sendable, Hashable {
     public var width: Double
     public var height: Double
 

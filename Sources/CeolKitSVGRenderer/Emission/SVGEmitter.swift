@@ -159,9 +159,13 @@ struct SVGEmitter: Sendable {
                             builder: &builder)
         }
         emitFooterBlock(page.footerRows, builder: &builder)
+        // The page's own size where it has one — a `%%landscape` at a `%%newpage` turns the
+        // pages from there on and leaves the ones before it alone (issue #158) — and the
+        // document default for a layout assembled by hand, which states none.
+        let size = page.pageSize ?? layout.pageSize
         return builder.buildDocument(
-            width: layout.pageSize.width,
-            height: layout.pageSize.height,
+            width: size.width,
+            height: size.height,
             embeddedFaces: embeddedFaces
         )
     }

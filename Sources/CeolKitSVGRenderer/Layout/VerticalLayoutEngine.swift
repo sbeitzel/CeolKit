@@ -142,6 +142,12 @@ public struct VerticalLayoutEngine: Sendable {
         var y = config.margins.top
         var previousAbcLine: Int?
         var pageNumber = firstPageNumber
+        /// The size of the page being built.  A `%%landscape` written at a `%%newpage` moves
+        /// it (issue #158), and it stays put until another break says otherwise, so the walk
+        /// carries it rather than reading `config.pageSize`: the page a system is being
+        /// packed into is not necessarily the size the document opened at, and how much
+        /// music a page holds is exactly this height.
+        var pageSize = Size(width: config.pageSize.width, height: config.pageSize.height)
         /// The block that put the first thing on the page being built — its title block, or
         /// its first system where a tune spills over from the page before.  Claimed once and
         /// held until the page is flushed, which is what makes it the tune that *opens* the
@@ -152,7 +158,8 @@ public struct VerticalLayoutEngine: Sendable {
         func flushPage() {
             pages.append(ResolvedPage(systems: pageSystems, titleRows: pageTitleRows,
                                       pageNumber: pageNumber,
-                                      openingTuneIndex: pageOpeningTune))
+                                      openingTuneIndex: pageOpeningTune,
+                                      pageSize: pageSize))
             pageNumber += 1
             pageSystems = []
             pageTitleRows = []
@@ -173,6 +180,9 @@ public struct VerticalLayoutEngine: Sendable {
             // Several can land on one system — one in the gap before a tune and another in
             // its header — and the last number written wins, as it does for every directive.
             if let restart = landing.compactMap(\.pageNumber).last { pageNumber = restart }
+            // The orientation moves *after* the flush, so the page just closed keeps the size
+            // it was packed at and the one now opening takes the new one (issue #158).
+            if let size = landing.compactMap(\.pageSize).last { pageSize = size }
         }
 
         for (blockIndex, block) in tuneBlocks.enumerated() {
@@ -200,7 +210,7 @@ public struct VerticalLayoutEngine: Sendable {
             // inner system loop below handles the mid-tune page breaks they require.
             if !pageSystems.isEmpty {
                 let tuneH = totalHeight(of: block, endingRuns: endingRuns)
-                if y + tuneH > config.pageSize.height - config.margins.bottom {
+                if y + tuneH > pageSize.height - config.margins.bottom {
                     flushPage()
                 }
             }
@@ -233,7 +243,7 @@ public struct VerticalLayoutEngine: Sendable {
 
                 // A group breaks to the next page whole: splitting it would separate staves
                 // that only mean anything read together.
-                if !pageSystems.isEmpty && y + metrics.totalHeight > config.pageSize.height - config.margins.bottom {
+                if !pageSystems.isEmpty && y + metrics.totalHeight > pageSize.height - config.margins.bottom {
                     flushPage()
                 }
 

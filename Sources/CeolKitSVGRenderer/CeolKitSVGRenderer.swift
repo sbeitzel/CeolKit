@@ -67,7 +67,13 @@ public struct SVGRenderer: CeolKitRenderer {
         let engine    = VerticalLayoutEngine(config: effectiveConfig, metadata: metadata,
                                              labelFont: labelFont)
 
-        let usableWidth = effectiveConfig.pageSize.width - effectiveConfig.margins.left - effectiveConfig.margins.right
+        // The line width one page size gives.  A function rather than the single number it
+        // used to be: `%%landscape` at a `%%newpage` turns the page part-way through the
+        // document (issue #158), and a system is broken and justified to the width of the
+        // page it lands on, so this is asked once per *region* rather than once per document.
+        func usableWidth(on pageSize: Size) -> Double {
+            pageSize.width - effectiveConfig.margins.left - effectiveConfig.margins.right
+        }
 
         // File-preamble directives are promoted to the first tune by the parser.
         // Build a file-level WriteFieldsConfig from those file-global-scoped directives
@@ -95,7 +101,19 @@ public struct SVGRenderer: CeolKitRenderer {
 
         var tuneBlocks: [TuneBlock] = []
 
+        // The size of the page the document is currently on, threaded through the tunes in
+        // order: a page size persists until a `%%landscape` at a `%%newpage` changes it, so a
+        // tune that states nothing opens on whatever the tune before it left in force.
+        var runningPageSize = Size(width: effectiveConfig.pageSize.width,
+                                   height: effectiveConfig.pageSize.height)
+
         for tune in score.tunes {
+            // Where this tune's pages change size, and what they change to.  Resolved before
+            // anything is packed because a page size decides the *width* the music is broken
+            // to as well as the height it is packed into.
+            let pageSizes = Self.pageSizePlan(for: tune, inherited: runningPageSize,
+                                              portrait: config.pageSize)
+            runningPageSize = pageSizes.closing
             // Resolved per tune, from the file baseline rather than from the tune before it:
             // a tune header applies to its own tune (ABC v2.2 §4.23), so a `%%ceolkit:scale`
             // in tune 1's header must not still be in force in tune 2 (issue #153).
@@ -126,8 +144,15 @@ public struct SVGRenderer: CeolKitRenderer {
             // whatever key the music before it reached (#134).  Empty until a body `K:` moves
             // a voice, which leaves the tune's own key standing for everything else.
             var runningKeys: [VoiceId: KeySignature] = [:]
+            // The line width each system was broken to, parallel to `groups`: the justifier
+            // has to spend exactly what the breaker charged, and across an orientation change
+            // that is not one number for the tune (issue #158).
+            var usableWidthOfGroup: [Double] = []
 
-            for region in PlanRegions.segment(tune) {
+            for region in PlanRegions.segment(tune, alsoCuttingAt: pageSizes.boundaries) {
+                // The page this region's systems land on — a region never spans an
+                // orientation change, because every stave one lands on cuts a region.
+                let usableWidth = usableWidth(on: pageSizes.size(atStave: region.staves.lowerBound))
                 let selection = VoiceSelector.select(from: region.voices, plan: region.plan,
                                                      into: &diagnostics)
                 let printedVoices = selection.voices
@@ -313,6 +338,7 @@ public struct SVGRenderer: CeolKitRenderer {
                     staveOfGroup.append(stave)
                     if group.sourceForced { stave += 1 }
                 }
+                usableWidthOfGroup += regionGroups.map { _ in usableWidth }
                 groups += regionGroups
             }
 
@@ -323,8 +349,9 @@ public struct SVGRenderer: CeolKitRenderer {
                 $0.element.markingLastSystem($0.offset == groups.count - 1)
             }
             let tuneGroups = groups.isEmpty ? [] : justifier.justifyGroups(
-                groups, usableWidth: usableWidth, justifyLastSystem: layout.justifyLastSystem,
-                systemHeaderWidths: headerWidths)
+                groups, usableWidth: usableWidth(on: pageSizes.opening),
+                justifyLastSystem: layout.justifyLastSystem,
+                systemHeaderWidths: headerWidths, systemUsableWidths: usableWidthOfGroup)
 
             // Build the title block for this tune per §6.1.3.
             // Title row baselineY values are tune-relative; the layout engine offsets
@@ -334,8 +361,14 @@ public struct SVGRenderer: CeolKitRenderer {
                 for scope in tune.directives { wf.apply(scope.directive) }
                 return wf
             }()
+            // Centred on the page the tune's title actually prints on, which is the one it
+            // opens on: a tune that turns the page landscape is titled across the landscape
+            // width, not the document's (issue #158).
+            var titleConfig = effectiveConfig
+            titleConfig.pageSize = PageSize(width: pageSizes.opening.width,
+                                            height: pageSizes.opening.height)
             let (titleRows, titleBlockHeight) = SpecTitleBlockBuilder(
-                tune: tune, writeFields: tuneWriteFields, layoutConfig: effectiveConfig
+                tune: tune, writeFields: tuneWriteFields, layoutConfig: titleConfig
             ).build()
             tuneBlocks.append(TuneBlock(systemGroups: tuneGroups, titleRows: titleRows,
                                         titleBlockHeight: titleBlockHeight, scale: layout.scale,
@@ -344,7 +377,8 @@ public struct SVGRenderer: CeolKitRenderer {
                                         straightFlags: layout.straightFlags,
                                         graceSlurs: layout.graceSlurs,
                                         pageBreaks: Self.forcedPageBreaks(
-                                            tune.pageBreaks, staveOfGroup: staveOfGroup)))
+                                            tune.pageBreaks, staveOfGroup: staveOfGroup,
+                                            portrait: config.pageSize)))
         }
 
         let firstPageNumber = Self.firstPageNumber(of: score)
@@ -373,12 +407,70 @@ public struct SVGRenderer: CeolKitRenderer {
     /// fresh page on one.  A break past every system is kept, addressed one past the end:
     /// there is nothing left in this tune to move, so what it moves is the next tune.
     static func forcedPageBreaks(_ breaks: [PageBreak],
-                                 staveOfGroup: [Int]) -> [ForcedPageBreak] {
+                                 staveOfGroup: [Int],
+                                 portrait: PageSize) -> [ForcedPageBreak] {
         breaks.map { pageBreak in
             let group = staveOfGroup.firstIndex { $0 >= pageBreak.beforeStave }
                 ?? staveOfGroup.count
-            return ForcedPageBreak(beforeGroup: group, pageNumber: pageBreak.restartingAt)
+            let size = pageBreak.landscape.map { Self.size(landscape: $0, portrait: portrait) }
+            return ForcedPageBreak(beforeGroup: group, pageNumber: pageBreak.restartingAt,
+                                   pageSize: size)
         }
+    }
+
+    // MARK: - Page size
+
+    /// Where a tune's pages change size, and what they change to (issue #158).
+    ///
+    /// A page size cannot change part-way down a page, so every change is pinned to a
+    /// `%%newpage` — the parser has already paired the two (see
+    /// ``CeolKitModel/PageBreak/landscape``) — and this reads that pairing off as a function
+    /// of position in the tune.  It has to be known *before* the music is packed: a landscape
+    /// page is not only taller-or-shorter but wider, and a system is broken to the width of
+    /// the page it lands on.
+    struct PageSizePlan {
+        /// The size in force when the tune opens: what the tune before it left standing,
+        /// unless a break at stave 0 turns it.
+        let opening: Size
+        /// Each change, in stave order, as (the stave whose page it opens, the size).
+        let changes: [(stave: Int, size: Size)]
+
+        /// The size the tune leaves in force for whatever follows it.
+        var closing: Size { changes.last?.size ?? opening }
+
+        /// The staves a change lands on past the tune's first: the staves a ``PlanRegion``
+        /// has to start at, so that no region spans two page sizes.
+        var boundaries: Set<Int> { Set(changes.map(\.stave).filter { $0 > 0 }) }
+
+        /// The size of the page stave `stave` lands on.
+        func size(atStave stave: Int) -> Size {
+            changes.last { $0.stave <= stave }?.size ?? opening
+        }
+    }
+
+    static func pageSizePlan(for tune: Tune, inherited: Size,
+                             portrait: PageSize) -> PageSizePlan {
+        // Sorted by stave, and by source order within a stave — a `%%landscape` in the gap
+        // above a tune and another in its header both land on the break before stave 0, and
+        // the last one written wins.  `sorted(by:)` is not stable, so the source position
+        // goes into the key rather than being relied on.
+        let changes = tune.pageBreaks.enumerated()
+            .compactMap { order, pageBreak -> (stave: Int, size: Size, order: Int)? in
+                guard let landscape = pageBreak.landscape else { return nil }
+                return (stave: pageBreak.beforeStave,
+                        size: size(landscape: landscape, portrait: portrait),
+                        order: order)
+            }
+            .sorted { ($0.stave, $0.order) < ($1.stave, $1.order) }
+            .map { (stave: $0.stave, size: $0.size) }
+        return PageSizePlan(
+            opening: changes.last { $0.stave == 0 }?.size ?? inherited,
+            changes: changes)
+    }
+
+    private static func size(landscape: Bool, portrait: PageSize) -> Size {
+        let page = landscape ? portrait.landscape : portrait
+        return Size(width: page.width, height: page.height)
     }
 
     // MARK: - Page numbering
@@ -437,6 +529,10 @@ public struct SVGRenderer: CeolKitRenderer {
                     pageCount: pageCount,
                     title: (tune ?? score.tunes.first)?.titles.first?.value ?? "",
                     config: config,
+                    // The footer sits against *this* page's margins, and a document can hold
+                    // both orientations at once (issue #158), so the row is laid out on the
+                    // page's own size rather than the document's.
+                    pageSize: page.pageSize ?? layout.pageSize,
                     dateFormat: tune.map { fileLayout.layering($0).dateFormat }
                         ?? fileLayout.dateFormat)
             } else {
@@ -444,13 +540,15 @@ public struct SVGRenderer: CeolKitRenderer {
             }
             return ResolvedPage(systems: page.systems, titleRows: page.titleRows,
                                 footerRows: rows, pageNumber: page.pageNumber,
-                                openingTuneIndex: page.openingTuneIndex)
+                                openingTuneIndex: page.openingTuneIndex,
+                                pageSize: page.pageSize)
         }
         return ResolvedLayout(pageSize: layout.pageSize, margins: layout.margins, pages: updatedPages)
     }
 
     private func buildFooterRows(template: String, pageNumber: Int, pageCount: Int,
                                   title: String, config: SVGRenderConfig,
+                                  pageSize: Size,
                                   dateFormat: String? = nil) -> [ResolvedTitleRow] {
         let context = FooterContext(
             pageNumber: pageNumber, pageCount: pageCount,
@@ -463,11 +561,11 @@ public struct SVGRenderer: CeolKitRenderer {
         let fontSize  = 12.0
         // Shift baseline up by the descender depth so the bottom of descenders (p, g, y, …)
         // lands precisely at the bottom margin line, not below it.
-        let baselineY = config.pageSize.height - config.margins.bottom
+        let baselineY = pageSize.height - config.margins.bottom
             - fontSize * LibertinusSerifMetrics.descenderRatio
         let leftX     = config.margins.left
-        let centerX   = config.pageSize.width / 2.0
-        let rightX    = config.pageSize.width - config.margins.right
+        let centerX   = pageSize.width / 2.0
+        let rightX    = pageSize.width - config.margins.right
 
         let placements: [(column: [FooterSegment], x: Double, anchor: TextAnchor)]
         switch columns.count {
@@ -557,8 +655,14 @@ public struct SVGRenderer: CeolKitRenderer {
 
     /// Returns a config with score-level directives applied.
     ///
-    /// `%%landscape` is a document-wide setting that the parser promotes into the
-    /// first tune's directives.  All other per-config values remain as supplied.
+    /// `%%landscape` written in the *file header* is the orientation the document opens in,
+    /// and that is all this resolves: the parser promotes file-header directives into the
+    /// first tune's list at ``Scope/fileGlobal``, so reading only those is what keeps a
+    /// `%%landscape` written later — in the gap between two tunes, or in a tune header —
+    /// from reaching back and reorienting pages already engraved (issue #158).  A change
+    /// written later is a change *at a page break*, carried on ``CeolKitModel/PageBreak``
+    /// instead, because a page size cannot change part-way down a page.  All other
+    /// per-config values remain as supplied.
     ///
     /// `%%straightflags` and `%%graceslurs` used to be read here too, and were wrong in both
     /// directions for it: the first tune's copy governed the whole document and every later
@@ -566,12 +670,10 @@ public struct SVGRenderer: CeolKitRenderer {
     /// with the rest of them in ``LayoutDirectives`` — resolved from the file preamble for
     /// the document baseline, then per tune on top of it — and are carried to the emitter on
     /// the tune's own systems.
-    ///
-    /// `%%landscape` is left here deliberately: a page size is a property of a *page* rather
-    /// than of a tune, and making it follow a `%%newpage` is issue #158's, not this one's.
     private func applyingScoreDirectives(_ score: Score) -> SVGRenderConfig {
         var effective = config
         for scope in score.tunes.first?.directives ?? [] {
+            guard case .fileGlobal = scope.scope else { continue }
             switch scope.directive {
             case .landscape(let on):
                 effective.pageSize = on ? config.pageSize.landscape : config.pageSize

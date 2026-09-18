@@ -205,9 +205,20 @@ public struct ForcedPageBreak: Hashable, Sendable {
     /// The number the new page prints, from `%%newpage N`, or `nil` to carry on counting.
     public let pageNumber: Int?
 
-    public init(beforeGroup: Int, pageNumber: Int?) {
+    /// The size the new page takes, from a `%%landscape` written at this break, or `nil` to
+    /// carry on at the size the page before it had (issue #158).
+    ///
+    /// A page size cannot change part-way down a page, so a break is the only place it *can*
+    /// change; the parser has already paired the `%%landscape` with the `%%newpage` written
+    /// beside it (see ``CeolKitModel/PageBreak/landscape``).  The engine holds this size for
+    /// every page it opens until another break says otherwise, and it is the height those
+    /// pages are packed to as well as the size they are written out at.
+    public let pageSize: Size?
+
+    public init(beforeGroup: Int, pageNumber: Int?, pageSize: Size? = nil) {
         self.beforeGroup = beforeGroup
         self.pageNumber = pageNumber
+        self.pageSize = pageSize
     }
 }
 
@@ -385,6 +396,10 @@ public struct JustifiedMeasure: Sendable {
 // MARK: - Pass 4 output
 
 public struct ResolvedLayout: Sendable {
+    /// The size of a page the document does not say otherwise about: what the renderer was
+    /// configured with, turned by a `%%landscape` in the file header.  A page that states its
+    /// own ``ResolvedPage/pageSize`` — which is every page the layout engine makes — is drawn
+    /// at that instead; this is the default a hand-assembled layout still relies on.
     public let pageSize: Size
     public let margins: EdgeInsets
     public let pages: [ResolvedPage]
@@ -421,14 +436,27 @@ public struct ResolvedPage: Sendable {
     /// somehow carries nothing.
     public let openingTuneIndex: Int?
 
+    /// The size *this* page is drawn at, once something has decided what it is.
+    ///
+    /// A page size is a property of a page rather than of a document: `%%landscape` written
+    /// at a `%%newpage` turns the pages from there on and leaves the ones before it alone
+    /// (issue #158), so a document can hold both orientations at once.  The engine that
+    /// decides where the pages fall is the only thing that knows which size each one ended
+    /// up with, and it stamps it here as it closes the page.
+    ///
+    /// `nil` on a layout assembled by hand, where ``ResolvedLayout/pageSize`` — the document
+    /// default — stands for every page, exactly as it always did.
+    public let pageSize: Size?
+
     public init(systems: [ResolvedSystem], titleRows: [ResolvedTitleRow] = [],
                 footerRows: [ResolvedTitleRow] = [], pageNumber: Int? = nil,
-                openingTuneIndex: Int? = nil) {
+                openingTuneIndex: Int? = nil, pageSize: Size? = nil) {
         self.systems = systems
         self.titleRows = titleRows
         self.footerRows = footerRows
         self.pageNumber = pageNumber
         self.openingTuneIndex = openingTuneIndex
+        self.pageSize = pageSize
     }
 }
 

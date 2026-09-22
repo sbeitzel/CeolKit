@@ -564,4 +564,71 @@ struct CeolKitExtensionTests {
             #expect(graceNoteSpacing(in: result) == nil)
         }
     }
+
+    // MARK: %%ceolkit:label (issue #168)
+
+    /// Every `%%ceolkit:label` value each tune carries, in the order they apply, with the
+    /// scope each was written at.
+    private func labels(in tune: Tune?) -> [(text: String, fileGlobal: Bool)] {
+        (tune?.directives ?? []).compactMap {
+            guard case .label(let text) = $0.directive else { return nil }
+            if case .fileGlobal = $0.scope { return (text, true) }
+            return (text, false)
+        }
+    }
+
+    @Test("%%ceolkit:label in the file header is taken at file scope")
+    func labelInFileHeader() {
+        let result = parse("%%ceolkit:label \"Reels\"\nX:1\nT:T\nM:4/4\nL:1/4\nK:C\nC|")
+        let found = labels(in: result.score.firstTune)
+        #expect(found.map(\.text) == ["Reels"])
+        #expect(found.first?.fileGlobal == true)
+        #expect(!result.score.diagnostics.contains { $0.code == .unknownDirective })
+    }
+
+    @Test("%%ceolkit:label in a tune header is taken at tune scope, for that tune alone")
+    func labelInTuneHeader() {
+        let abc = """
+        X:1
+        T:One
+        %%ceolkit:label "Jigs"
+        M:4/4
+        L:1/4
+        K:C
+        C|
+
+        X:2
+        T:Two
+        M:4/4
+        L:1/4
+        K:C
+        C|
+        """
+        let result = parse(abc)
+        let first = labels(in: result.score.tunes.first)
+        #expect(first.map(\.text) == ["Jigs"])
+        #expect(first.first?.fileGlobal == false)
+        #expect(labels(in: result.score.tunes.last).isEmpty)
+    }
+
+    @Test("When a header sets %%ceolkit:label twice, the last one wins")
+    func labelLastWins() {
+        let abc = "X:1\nT:T\n%%ceolkit:label first\n%%ceolkit:label second\nM:4/4\nL:1/4\nK:C\nC|"
+        // Both are kept in source order; applying them in order leaves the second standing.
+        #expect(labels(in: parse(abc).score.firstTune).map(\.text).last == "second")
+    }
+
+    @Test("%%ceolkit:label strips surrounding quotes, and takes an unquoted value as written")
+    func labelQuotesStripped() {
+        let quoted = parse("%%ceolkit:label \"  Strathspeys \"\nX:1\nT:T\nM:4/4\nL:1/4\nK:C\nC|")
+        #expect(labels(in: quoted.score.firstTune).map(\.text) == ["  Strathspeys "])
+        let bare = parse("%%ceolkit:label Slow airs\nX:1\nT:T\nM:4/4\nL:1/4\nK:C\nC|")
+        #expect(labels(in: bare.score.firstTune).map(\.text) == ["Slow airs"])
+    }
+
+    @Test("An empty %%ceolkit:label parses to the empty string")
+    func labelEmptyValue() {
+        let result = parse("X:1\nT:T\n%%ceolkit:label \"\"\nM:4/4\nL:1/4\nK:C\nC|")
+        #expect(labels(in: result.score.firstTune).map(\.text) == [""])
+    }
 }

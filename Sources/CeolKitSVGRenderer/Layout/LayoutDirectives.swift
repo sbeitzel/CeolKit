@@ -31,6 +31,11 @@ struct LayoutDirectives {
     /// `nil` leaves the renderer's own default date format standing.  Scoped like the rest:
     /// one in a tune header dates that tune's pages and no others (issue #155).
     var dateFormat: String?
+    /// What a `${label}` footer mark draws, from `%%ceolkit:label`.  Empty where no directive
+    /// sets one, which is what the mark drew before the directive existed.  Scoped like
+    /// `%%dateformat`, and for the same reason: a document packing several tunes can give
+    /// each tune's pages their own label (issue #168).
+    var label: String = ""
 
     /// The document baseline before any directive has been read: what the config asks for.
     init(config: SVGRenderConfig) {
@@ -52,6 +57,7 @@ struct LayoutDirectives {
         case .straightFlags(let on):      straightFlags = on
         case .graceSlurs(let on):         graceSlurs = on
         case .dateFormat(let pattern):    dateFormat = pattern
+        case .label(let text):            label = text
         default: break
         }
     }

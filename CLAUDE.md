@@ -107,13 +107,14 @@ The parser **always returns a `Score`**, even on error. Every stage has a recove
 `Note` carries both `writtenAccidental` (what was in the ABC source) and `displayedAccidental` (what a renderer should draw after key signature and intra-bar accidental memory). These differ, e.g., for the second `c` after `^c` in C major.
 
 ### CeolKit extensions
-Six `%%ceolkit:*` directives are first-class model members:
+Seven `%%ceolkit:*` directives are first-class model members:
 - `%%ceolkit:pipeformat true|false`
 - `%%ceolkit:pagenumber N`
 - `%%ceolkit:stemalignment N`
 - `%%ceolkit:justifylast true|false`
 - `%%ceolkit:scale F` (F > 0; tune-wide, never per-voice)
 - `%%ceolkit:gracenotespacing F` (F >= 1, in grace notehead widths; tune-wide, never per-voice)
+- `%%ceolkit:label "text"` (the value of a `${label}` footer mark; scoped like `%%footer`)
 
 All are represented in `CeolKitDirective` (an enum, not a string map). An unrecognised directive is not represented at all: it produces an `unknownDirective` diagnostic and is dropped. They attach to a `Scope` (`.fileGlobal`, `.tuneGlobal`, `.voiceLocal(VoiceId)`).
 

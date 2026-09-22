@@ -76,7 +76,7 @@ struct ScaleDirectiveTests {
 
     /// The `width`/`height` attributes of the root `<svg>` element, as written.
     private func pageAttributes(of svg: String) -> String? {
-        svg.firstMatch(of: /<svg [^>]*(width="[\d.]+" height="[\d.]+")/).map { String($0.1) }
+        svg.firstMatch(of: /<svg [^>]*(width="[\d.]+pt" height="[\d.]+pt")/).map { String($0.1) }
     }
 
     @Test("%%ceolkit:scale 0.5 halves staff line spacing")

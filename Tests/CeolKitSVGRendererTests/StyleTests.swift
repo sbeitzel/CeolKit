@@ -109,9 +109,10 @@ struct StyleTests {
     @Test func pageIsLandscapeLetter() throws {
         let pages = try textProbeRenderer().render(score)
         let svg = try #require(pages.first)
-        // US Letter landscape: 792 × 612 points
-        #expect(svg.contains("width=\"792\""))
-        #expect(svg.contains("height=\"612\""))
+        // US Letter landscape: 792 × 612 points, and the markup says `pt` so that the
+        // declared size is the engraved one rather than 75% of it (#165).
+        #expect(svg.contains("width=\"792pt\""))
+        #expect(svg.contains("height=\"612pt\""))
     }
 
     @Test func sevenLinesOfMusicAreRendered() throws {

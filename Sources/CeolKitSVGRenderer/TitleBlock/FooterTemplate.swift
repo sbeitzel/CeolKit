@@ -28,6 +28,9 @@ struct FooterContext: Sendable {
     let pageCount: Int
     let title: String
     let date: String
+    /// The caller's own string, from `%%ceolkit:label` (issue #168).  Drawn only into a
+    /// `${label}` mark, and drawn as written: a mark's value is never expanded.
+    var label: String = ""
 
     /// The value CeolKit draws into `${name}` where no consumer replaces it.
     ///
@@ -41,6 +44,7 @@ struct FooterContext: Sendable {
         case "pagecount":  return String(pageCount)
         case "title":      return title
         case "date":       return date
+        case "label":      return label
         default:           return ""
         }
     }

@@ -115,6 +115,59 @@ whole width.
 
 ---
 
+## `%%ceolkit:label`
+
+**Syntax:** `%%ceolkit:label "<text>"` (the quotes are optional)
+
+**Type:** string
+
+**Default:** the empty string
+
+**Scope:** global (file preamble or tune header); the last one in a header wins
+
+### Description
+
+Supplies the text a [`${label}`](#consumer-substitutable-footer-spans) mark in a
+`%%footer` draws. CeolKit gives the value no meaning; it is whatever the caller wants
+printed there — a binder assembling several separately rendered files might use it for
+the name of the section each page belongs to.
+
+This exists for the same reason `${…}` marks do. Under the default
+`TextRendering.outlines` a consumer with no fonts cannot draw its own text into the
+footer after rendering, so CeolKit has to draw it.
+
+The value is used exactly as written: `$P`, `$T`, `$D` and `${…}` inside it are not
+expanded.
+
+### Scoping
+
+Scoped like `%%footer`, not like `%%ceolkit:pagenumber`: written in the file header it
+covers the whole document, written in a tune header it covers that tune alone, and a
+page prints the label of the tune whose music opens it. `%%ceolkit:label ""` in a tune
+header clears a file-header label for that tune.
+
+### Examples
+
+```abc
+%%footer "${pagenumber}\t${label}\t$D"
+%%ceolkit:label "Reels"
+
+X:1
+T:The Silver Spear
+...
+
+X:2
+T:The Kesh
+%%ceolkit:label "Jigs"
+...
+```
+
+Pages opened by the first tune print `Reels` in the centre column, and pages opened
+by the second print `Jigs`. Without any `%%ceolkit:label`, the centre column is an
+empty group.
+
+---
+
 ## `%%ceolkit:pipeformat`
 
 **Syntax:** `%%ceolkit:pipeformat <true|false>`
@@ -376,7 +429,7 @@ A name is a letter followed by letters, digits, `_`, `.` or `-`. Anything else �
 `${1st}`, an unclosed `${`, a bare `${}` — is not a mark and is engraved literally,
 which is what an author who did not mean a mark expects to see.
 
-Four names carry a value CeolKit knows:
+Five names carry a value CeolKit knows:
 
 | Name | Default value |
 |------|---------------|
@@ -384,6 +437,7 @@ Four names carry a value CeolKit knows:
 | `${pagecount}` | the number of pages in this render |
 | `${title}` | the first tune's title — the same value as `$T` |
 | `${date}` | the render date, formatted by `%%dateformat` — the same value as `$D` |
+| `${label}` | the text set by [`%%ceolkit:label`](#ceolkitlabel), or empty |
 
 Any other name is a mark CeolKit has no value for. It draws nothing and emits an
 empty group at the right spot, which is exactly what a consumer that means to stamp

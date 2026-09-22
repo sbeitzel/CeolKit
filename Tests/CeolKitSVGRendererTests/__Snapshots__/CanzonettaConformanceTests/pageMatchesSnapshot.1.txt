@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 612 792" width="612" height="792">
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 612 792" width="612pt" height="792pt">
   <defs>
     <path id="libertinusSerif-g36" d="<OUTLINE>"/>
     <path id="libertinusSerif-g66" d="<OUTLINE>"/>

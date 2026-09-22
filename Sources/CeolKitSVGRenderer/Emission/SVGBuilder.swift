@@ -233,9 +233,14 @@ struct SVGBuilder: Sendable {
         // rasterisers being split on which they honour, and an undeclared prefix would make
         // the document ill-formed XML.
         let xlink = glyphOrder.isEmpty ? "" : " xmlns:xlink=\"http://www.w3.org/1999/xlink\""
+        // The page is engraved in points, and `width`/`height` say so: a unitless length is
+        // a user unit, which is a CSS pixel — 1/96 inch, not 1/72 — so an unqualified 792
+        // would declare the page at 75% of the size every coordinate below assumes. With
+        // `pt` the document is self-consistent against its own `viewBox`: one user unit is
+        // one point.
         var lines = ["<svg xmlns=\"http://www.w3.org/2000/svg\"\(xlink)" +
                      " viewBox=\"0 0 \(fmt(width)) \(fmt(height))\"" +
-                     " width=\"\(fmt(width))\" height=\"\(fmt(height))\">"]
+                     " width=\"\(fmt(width))pt\" height=\"\(fmt(height))pt\">"]
         if !defs.isEmpty {
             lines.append("  <defs>")
             lines += defs

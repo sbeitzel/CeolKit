@@ -25,7 +25,7 @@ private func render(_ abc: String) throws -> [String] {
 /// `CeolKitSVGGeometry` does — from the `<svg>` element itself, one page at a time.
 private func pageSizes(of abc: String) throws -> [Size] {
     try render(abc).map { page in
-        guard let match = page.firstMatch(of: #/width="([\d.]+)" height="([\d.]+)"/#)
+        guard let match = page.firstMatch(of: #/width="([\d.]+)pt" height="([\d.]+)pt"/#)
         else { return .zero }
         return Size(width: Double(match.1) ?? 0, height: Double(match.2) ?? 0)
     }

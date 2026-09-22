@@ -1430,6 +1430,10 @@ struct SemanticPass {
                 fieldList = parts.joined()
             }
             return .writeFields(fieldList, enabled)
+        case "ceolkit:label":
+            // Taken exactly as written, quotes aside: it is the caller's string, and the
+            // renderer never expands `$P` or `${…}` inside it (issue #168).
+            return .label(stripQuotes(trimmed))
         case "dateformat":
             return .dateFormat(stripQuotes(trimmed))
         case "straightflags":

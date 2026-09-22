@@ -504,8 +504,8 @@ public struct SVGRenderer: CeolKitRenderer {
     /// whose tunes each name their own footer prints each one where it belongs instead of
     /// printing the last tune's on everything.
     ///
-    /// `$T` and `%%dateformat` follow the same tune, for the same reason: a footer reading
-    /// `$T` on page four should name the tune printed on page four.
+    /// `$T`, `%%dateformat` and `%%ceolkit:label` follow the same tune, for the same reason: a
+    /// footer reading `$T` on page four should name the tune printed on page four.
     ///
     /// A page that names no tune — a layout assembled by hand — falls back to the document's
     /// own footer, which is what it has always got.
@@ -533,8 +533,7 @@ public struct SVGRenderer: CeolKitRenderer {
                     // both orientations at once (issue #158), so the row is laid out on the
                     // page's own size rather than the document's.
                     pageSize: page.pageSize ?? layout.pageSize,
-                    dateFormat: tune.map { fileLayout.layering($0).dateFormat }
-                        ?? fileLayout.dateFormat)
+                    directives: tune.map { fileLayout.layering($0) } ?? fileLayout)
             } else {
                 rows = []
             }
@@ -549,11 +548,12 @@ public struct SVGRenderer: CeolKitRenderer {
     private func buildFooterRows(template: String, pageNumber: Int, pageCount: Int,
                                   title: String, config: SVGRenderConfig,
                                   pageSize: Size,
-                                  dateFormat: String? = nil) -> [ResolvedTitleRow] {
+                                  directives: LayoutDirectives) -> [ResolvedTitleRow] {
         let context = FooterContext(
             pageNumber: pageNumber, pageCount: pageCount,
             title: title,
-            date: Self.currentDateString(format: dateFormat))
+            date: Self.currentDateString(format: directives.dateFormat),
+            label: directives.label)
         let columns = FooterTemplate.columns(FooterTemplate.segments(of: template,
                                                                      context: context))
             .map(FooterTemplate.trimmed)

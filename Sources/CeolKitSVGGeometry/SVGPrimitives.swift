@@ -42,11 +42,37 @@ enum SVGPrimitives {
         guard let root = svg.firstMatch(of: #/<svg\b([^>]*)>/#) else {
             throw SVGGeometryError.missingRootElement
         }
-        let attrs = attributes(String(root.1))
-        guard let width = attrs["width"], let height = attrs["height"] else {
+        let attrs = String(root.1)
+        guard let width = attrs.firstMatch(of: #/\bwidth="([^"]*)"/#).flatMap({ points(in: $0.1) }),
+              let height = attrs.firstMatch(of: #/\bheight="([^"]*)"/#).flatMap({ points(in: $0.1) })
+        else {
             throw SVGGeometryError.missingPageDimensions
         }
         return (width, height)
+    }
+
+    /// One root-element length, in points.
+    ///
+    /// Only the root carries units — the body's attributes are user units, and
+    /// `attributes(_:)` reads them as they stand. A page written by this library says
+    /// `792pt`, but a document from elsewhere may use any of SVG's absolute units, and an
+    /// unqualified number is a user unit, which in a document whose `viewBox` matches its
+    /// size in points is a point.
+    private static func points<S: StringProtocol>(in text: S) -> Double? {
+        let text = text.trimmingCharacters(in: .whitespaces)
+        let unitStart = text.firstIndex { !($0.isNumber || $0 == "." || $0 == "-"
+                                            || $0 == "+" || $0 == "e" || $0 == "E") }
+            ?? text.endIndex
+        guard let value = Double(text[..<unitStart]) else { return nil }
+        switch text[unitStart...].lowercased() {
+        case "", "pt": return value
+        case "px":     return value * 72 / 96
+        case "in":     return value * 72
+        case "pc":     return value * 12
+        case "cm":     return value * 72 / 2.54
+        case "mm":     return value * 72 / 25.4
+        default:       return nil
+        }
     }
 
     /// Numeric attributes of one element, keyed by name.

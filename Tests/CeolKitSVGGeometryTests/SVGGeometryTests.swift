@@ -28,7 +28,7 @@ struct SVGGeometryTests {
 
     private static func page(_ body: String, meta: String? = nil) -> String {
         """
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 792 612" width="792" height="612">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 792 612" width="792pt" height="612pt">
         \(meta ?? "")
         \(body)
         </svg>
@@ -42,6 +42,32 @@ struct SVGGeometryTests {
         let geometry = try SVGGeometry.page(from: Self.page(Self.staff(topY: 100)))
         #expect(geometry.width == 792)
         #expect(geometry.height == 612)
+    }
+
+    @Test("The page box is in points whatever unit the root declares (#165)")
+    func pageBoxUnits() throws {
+        func size(_ width: String, _ height: String) throws -> (Double, Double) {
+            let svg = "<svg viewBox=\"0 0 792 612\" width=\"\(width)\" height=\"\(height)\"></svg>"
+            let page = try SVGGeometry.page(from: svg)
+            return (page.width, page.height)
+        }
+        // A unitless length is a user unit, which in these documents is a point.
+        #expect(try size("792", "612") == (792, 612))
+        #expect(try size("792pt", "612pt") == (792, 612))
+        #expect(try size("11in", "8.5in") == (792, 612))
+        let (pxWidth, pxHeight) = try size("1056px", "816px")
+        #expect(abs(pxWidth - 792) < 1e-9)
+        #expect(abs(pxHeight - 612) < 1e-9)
+        let (mmWidth, mmHeight) = try size("279.4mm", "215.9mm")
+        #expect(abs(mmWidth - 792) < 1e-9)
+        #expect(abs(mmHeight - 612) < 1e-9)
+    }
+
+    @Test("A root element with a length this reader cannot resolve is rejected")
+    func unresolvableDimensions() {
+        #expect(throws: SVGGeometryError.missingPageDimensions) {
+            try SVGGeometry.page(from: #"<svg width="100%" height="100%"></svg>"#)
+        }
     }
 
     @Test("A page with no <svg> root is rejected")

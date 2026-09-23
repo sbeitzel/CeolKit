@@ -632,6 +632,22 @@ public struct EndingBracket: Sendable {
     }
 }
 
+/// How far beyond a staff's outer lines its chord symbols and annotations begin (ABC v2.2
+/// §4.18, §4.19): past its ledger lines, its grace stems, and the clearance
+/// ``AnnotationBand/floorRatio`` keeps for stems and fermatas.  The bands themselves are
+/// ``AnnotationBand``'s; this is only where the layout engine put their inner edges.
+public struct AnnotationFloors: Sendable, Equatable {
+    /// Distance up from the top staff line.
+    public let above: Double
+    /// Distance down from the bottom staff line.
+    public let below: Double
+
+    public init(above: Double, below: Double) {
+        self.above = above
+        self.below = below
+    }
+}
+
 public struct ResolvedSystem: Sendable {
     public let origin: Point
     public let measures: [ResolvedMeasure]
@@ -698,6 +714,10 @@ public struct ResolvedSystem: Sendable {
     /// The variant-ending brackets drawn above this staff, left to right.  Empty on every
     /// staff of every tune that writes none, which reserves no space for them either.
     public let endingBrackets: [EndingBracket]
+    /// Where the chord symbols and annotations above and below this staff stand, measured
+    /// out from its outer lines.  `nil` on a layout assembled by hand, where the emitter
+    /// falls back to ``AnnotationBand/floorRatio``.
+    public let annotationFloors: AnnotationFloors?
     /// Non-nil when a body `K:` lands on this system's *first* measure, so the head signature
     /// is the change itself: the naturals cancelling the key being left behind, then the new
     /// one.  It is drawn there and not again at the head of the bar — the opening measure is
@@ -728,6 +748,7 @@ public struct ResolvedSystem: Sendable {
         voiceLabel: VoiceLabel? = nil,
         voiceStemDirections: [StemDirection] = [],
         endingBrackets: [EndingBracket] = [],
+        annotationFloors: AnnotationFloors? = nil,
         headerKeyChange: KeyChange? = nil
     ) {
         self.origin = origin
@@ -750,6 +771,7 @@ public struct ResolvedSystem: Sendable {
         self.voiceLabel = voiceLabel
         self.voiceStemDirections = voiceStemDirections
         self.endingBrackets = endingBrackets
+        self.annotationFloors = annotationFloors
         self.headerKeyChange = headerKeyChange
     }
 }

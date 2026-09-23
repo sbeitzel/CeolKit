@@ -19,7 +19,11 @@ struct AccidentalMetrics {
     private let metadata: BravuraMetadata
 
     init(config: SVGRenderConfig, metadata: BravuraMetadata) {
-        self.staffSize = config.staffSize
+        self.init(staffSize: config.staffSize, metadata: metadata)
+    }
+
+    init(staffSize: Double, metadata: BravuraMetadata) {
+        self.staffSize = staffSize
         self.metadata = metadata
     }
 

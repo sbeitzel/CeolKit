@@ -174,7 +174,7 @@ struct VoiceAccumulator {
         }
     }
 
-    mutating func closeWith(barLine: BarLine, endingNumber: [Int]?) {
+    mutating func closeWith(barLine: BarLine, endingNumber: [Int]?, endingStartIndex: Int? = nil) {
         // Skip spacer-only content (e.g. the space between [V:1] and |:) — treat as empty.
         let hasMusicalContent = currentEvents.contains {
             if case .spacer = $0 { return false }
@@ -219,6 +219,7 @@ struct VoiceAccumulator {
             events: currentEvents,
             closingBar: barLine,
             endingNumber: endingNumber,
+            endingStartIndex: endingStartIndex,
             source: src,
             meter: meterTag,
             key: keyTag,
@@ -298,6 +299,9 @@ struct VoiceState {
     var pendingAnnotations: [Annotation] = []
     var pendingChordSymbol: ChordSymbol? = nil
     var pendingEndingNumber: [Int]? = nil
+    /// Where in the open measure's events `pendingEndingNumber` was met, or `nil` where it
+    /// was met before any music in the bar — see `Measure.endingStartIndex`.
+    var pendingEndingStartIndex: Int? = nil
 
     // Slur state
     var openSlurs: Int = 0
@@ -392,13 +396,30 @@ struct VoiceState {
     }
 
     mutating func closeMeasure(barLine: BarLine, currentMeter: Meter, generation: Int) {
-        accumulator.closeWith(barLine: barLine, endingNumber: pendingEndingNumber)
+        accumulator.closeWith(barLine: barLine, endingNumber: pendingEndingNumber,
+                              endingStartIndex: pendingEndingStartIndex)
         pendingEndingNumber = nil
+        pendingEndingStartIndex = nil
         // Tag the measure *after* this bar line, matching where a tune-wide [M:] takes effect.
         if generation != lastTaggedMeterGeneration {
             accumulator.pendingMeter = currentMeter
             lastTaggedMeterGeneration = generation
         }
+    }
+
+    /// Records a variant ending opened here, to be carried by the measure being written.
+    ///
+    /// An ending met before any music in the bar begins at its opening bar line; one met
+    /// after some begins at the next event, which lands at the current end of the open
+    /// measure (#172).  Spacers do not count as music, so `| [1` and `|[1` are the same.
+    mutating func setPendingEndingNumber(_ numbers: [Int]) {
+        pendingEndingNumber = numbers
+        let events = accumulator.currentEvents
+        let hasMusic = events.contains {
+            if case .spacer = $0 { return false }
+            return true
+        }
+        pendingEndingStartIndex = hasMusic ? events.count : nil
     }
 
     // MARK: Grace groups
@@ -479,6 +500,7 @@ struct VoiceState {
                 events: newEvents,
                 closingBar: m.closingBar,
                 endingNumber: m.endingNumber,
+                endingStartIndex: m.endingStartIndex,
                 source: m.source,
                 meter: m.meter,
                 key: m.key,
@@ -978,7 +1000,7 @@ struct BodyContext {
     }
 
     mutating func setPendingEndingNumber(_ nums: [Int], in voice: VoiceKey, source: SourceRange) {
-        withVoice(voice, source: source) { $0.pendingEndingNumber = nums }
+        withVoice(voice, source: source) { $0.setPendingEndingNumber(nums) }
     }
 
     mutating func openSlur(in voice: VoiceKey, source: SourceRange) {

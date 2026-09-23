@@ -248,6 +248,58 @@ later is a change at a break.
 
 ---
 
+## §4.18 Chord symbols and §4.19 Annotations
+
+**Syntax:** `"Am7"` — a chord symbol; `"^text"`, `"_text"`, `"<text"`, `">text"`, `"@text"`
+— an annotation above, below, left or right of the following note, or placed by the program.
+
+Both are set in the text face at twice the staff space — the ratio abcm2ps's 12-point
+`%%gchordfont` and `%%annotationfont` bear to its 6-point staff space — and drawn as outlines
+or `<text>`, whichever the document's `TextRendering` asks for.
+
+### Where each placement goes
+
+| Written | Drawn | Space reserved |
+| --- | --- | --- |
+| `"Am7"` | above the staff, on the line nearest it, left-aligned on the note | yes |
+| `"^text"` | above the staff, over the chord symbol, left-aligned on the note | yes |
+| `"_text"` | below the staff, above the lyrics, left-aligned on the note | yes |
+| `"<text"` | left of the notehead and its accidental, level with the notehead | no |
+| `">text"` | right of the notehead and its dot, level with the notehead | no |
+| `"@x,y text"` | `x` staff spaces right and `y` up from the notehead's baseline point | no |
+
+The chord symbols of a staff stand on one line, beyond the highest ledger line, grace stem or
+fermata the staff has, so a system's harmony reads across. §4.19's rule for consecutive
+annotations of one placement — separate lines, "the first listed at the top" — is followed
+for every placement: a note's `^` lines stack upward from its chord symbol, its `_` lines
+downward from the staff, and its `<` or `>` lines are stacked and centred on the notehead.
+
+§4.19 leaves `@` to the program. CeolKit reads the abcm2ps form, `"@x,y text"`, but in staff
+spaces rather than points, so the offset scales with the staff; a bare `"@text"` is drawn at
+the notehead.
+
+### Under a variant ending
+
+The first `^` annotation on the first note of a variant ending — `[2 "^repeat of part 2"A…`
+— is set **inside the ending bracket**, on the line of its number and just right of it, which
+is where abcm2ps sets it: the text says what the ending is for, and reads as its caption.
+Only that one line moves. The note's chord symbol, any further `^` lines, and annotations
+later in the ending stay in the band below the bracket, and a bracket continued from the
+previous system has no number and takes none.
+
+### What CeolKit does not do
+
+- **Horizontal room.** The measure sizer does not widen a column for its text, as it does for
+  lyrics, so a long annotation or chord symbol on a closely spaced note can run into the next
+  one's. `<` and `>` text is not given room beside the notehead either.
+- **Rests and bar lines.** §4.19 lets an annotation precede a rest or a bar line. Only notes and
+  chords carry one in the domain model; quoted text before a rest or bar line is attached to
+  the next note.
+- **Chord symbol typography.** A chord symbol is printed as written: `#` and `b` are not set as
+  ♯ and ♭, and `"G(Em)"`'s alternate chord is not set smaller.
+
+---
+
 ## Worked examples in the test suite
 
 The standard's own multi-voice examples are checked in end to end, parser and renderer, so

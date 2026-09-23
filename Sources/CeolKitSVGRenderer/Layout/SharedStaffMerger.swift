@@ -91,6 +91,8 @@ struct SharedStaffMerger: Sendable {
         var offsets: [Double] = []
         var voiceTags: [Int] = []
         var graceEventIndices: Set<Int> = []
+        // The primary voice's ending start, moved to where its event lands in the merge.
+        var endingStartIndex: Int?
 
         var x = voices.map { metrics.leftMargin(for: $0.part.measure, keyChange: keyChange) }.max()
             ?? metrics.leftMargin(for: primary.measure, keyChange: keyChange)
@@ -138,6 +140,10 @@ struct SharedStaffMerger: Sendable {
                     if run.pairedGraceOffsets.contains(j) {
                         graceEventIndices.insert(offsets.count)
                     }
+                    if run.voice.part.voiceIndex == primary.voiceIndex,
+                       eventIndex == primary.measure.endingStartIndex {
+                        endingStartIndex = mergedEvents.count
+                    }
                     mergedEvents.append(run.voice.part.measure.events[eventIndex])
                     offsets.append(subX[first + j])
                     voiceTags.append(run.voice.part.voiceIndex)
@@ -153,6 +159,7 @@ struct SharedStaffMerger: Sendable {
             measure: Measure(openingBar: primary.measure.openingBar, events: mergedEvents,
                              closingBar: primary.measure.closingBar,
                              endingNumber: primary.measure.endingNumber,
+                             endingStartIndex: endingStartIndex,
                              source: primary.measure.source, meter: primary.measure.meter,
                              key: primary.measure.key,
                              unitNoteLength: unitNoteLength),

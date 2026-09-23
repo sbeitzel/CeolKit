@@ -12,6 +12,16 @@ public struct Measure: Sendable {
     public let events: [Event]                   // notes, rests, chords, grace groups, ties, …
     public let closingBar: BarLine               // bar at end; may carry repeat info
     public let endingNumber: [Int]?              // |1, |2, [1,2 variant endings
+    /// Where in `events` the variant ending this measure opens begins, or `nil` where it
+    /// begins at the measure's opening bar line — as `|1`, `:|2`, and a `[1` written against
+    /// a bar line all do.
+    ///
+    /// ABC v2.2 §4.10 ties only the *end* of an ending to a bar line: a bare `[N` may stand
+    /// part way through a bar, as a pickup that differs between the first and second time
+    /// through is usually written (#172).  This is then the index of the first event after
+    /// it, and a renderer starts the ending's bracket there rather than at the bar line.
+    /// Always `nil` where `endingNumber` is.
+    public let endingStartIndex: Int?
     /// The text this measure occupies: from its first event that has a position
     /// in the source through the end of `closingBar`.
     ///
@@ -58,6 +68,7 @@ public struct Measure: Sendable {
         events: [Event],
         closingBar: BarLine,
         endingNumber: [Int]?,
+        endingStartIndex: Int? = nil,
         source: SourceRange,
         meter: Meter? = nil,
         key: KeySignature? = nil,
@@ -67,6 +78,7 @@ public struct Measure: Sendable {
         self.events = events
         self.closingBar = closingBar
         self.endingNumber = endingNumber
+        self.endingStartIndex = endingNumber == nil ? nil : endingStartIndex
         self.source = source
         self.meter = meter
         self.key = key

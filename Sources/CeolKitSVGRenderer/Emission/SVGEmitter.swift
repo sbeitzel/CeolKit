@@ -472,6 +472,7 @@ struct SVGEmitter: Sendable {
                         builder: &builder)
         }
         emitLyrics(system, builder: &builder)
+        emitAnnotations(system, builder: &builder)
 
         // Anchors still open at the end of this system span into the next system/page.
         // Draw a departing dangling arc to the right staff edge; the anchor itself is left
@@ -707,6 +708,155 @@ struct SVGEmitter: Sendable {
         guard to - from > width else { return }
         builder.text("-", x: (from + to) / 2, y: baselineY,
                      fontFamily: "Libertinus Serif", fontSize: fontSize, textAnchor: "middle")
+    }
+
+    // MARK: - Chord symbols and annotations
+
+    /// The text written in double quotes before this staff's notes: chord symbols (ABC v2.2
+    /// §4.18) and annotations (§4.19) — above, below, left or right of the note, or at the
+    /// offset `@x,y` gives.
+    ///
+    /// Drawn per system rather than per note because the first annotation of a variant
+    /// ending is not the note's business alone: it is raised into the ending bracket's band,
+    /// beside the pass number, where abcm2ps sets it — see ``raisedAnnotations(in:font:)``.
+    ///
+    /// Set through the same `builder.text` path as the title block, so the text takes
+    /// whichever of `<text>` and outlines the document is in — a bare `<text>` would vanish
+    /// in every non-browser rasteriser, which is the default here.
+    private func emitAnnotations(_ system: ResolvedSystem, builder: inout SVGBuilder) {
+        let s = config.staffSize
+        let topY = system.origin.y + system.staffOrigin
+        let bottomY = topY + system.staffHeight
+        let floors = system.annotationFloors
+            ?? AnnotationFloors(above: AnnotationBand.floorRatio * s,
+                                below: AnnotationBand.floorRatio * s)
+        let fontSize = AnnotationBand.fontSize(staffSize: s)
+        let font = OutlineFontSet.textFace()
+        let raised = raisedAnnotations(in: system, font: font)
+
+        func draw(_ text: String, x: Double, y: Double, anchor: String = "start") {
+            guard !text.isEmpty else { return }
+            builder.text(text, x: x, y: y, fontFamily: "Libertinus Serif", fontSize: fontSize,
+                         textAnchor: anchor)
+        }
+
+        for (m, measure) in system.measures.enumerated() {
+            for (e, event) in measure.events.enumerated() {
+                let chordSymbol: ChordSymbol?
+                let annotations: [Annotation]
+                let notes: [Note]
+                switch event.kind {
+                case .note(let n):  (chordSymbol, annotations, notes) = (n.chordSymbol, n.annotations, [n])
+                case .chord(let c): (chordSymbol, annotations, notes) = (c.chordSymbol, c.annotations, c.notes)
+                default:            continue
+                }
+                guard chordSymbol != nil || !annotations.isEmpty else { continue }
+                let x = event.origin.x
+
+                // Above: first listed at the top, the chord symbol nearest the staff.
+                var above = AnnotationBand.linesAbove(chordSymbol: chordSymbol, annotations: annotations)
+                if let spot = raised[EventIndex(measure: m, event: e)], !above.isEmpty {
+                    draw(above.removeFirst(), x: spot.x, y: spot.y)
+                }
+                for (i, text) in above.enumerated() {
+                    let line = above.count - 1 - i
+                    draw(text, x: x, y: topY - floors.above
+                         - AnnotationBand.aboveBaselineOffset(line: line, staffSize: s))
+                }
+
+                // Below: first listed nearest the staff.
+                for (line, text) in AnnotationBand.linesBelow(annotations: annotations).enumerated() {
+                    draw(text, x: x, y: bottomY + floors.below
+                         + AnnotationBand.belowBaselineOffset(line: line, staffSize: s))
+                }
+
+                // Beside the notehead, and at a stated offset from it.  A chord's are centred
+                // on the middle of its span, which is what they stand beside.
+                let ys = notes.map { noteY(staffPos: staffPos(for: $0.pitch), bottomStaffY: bottomY) }
+                guard let highest = ys.min(), let lowest = ys.max() else { continue }
+                let centreY = (highest + lowest) / 2
+                // Half a cap height below the centre puts the letterforms' middle on it.
+                let sideBaseline = centreY + fontSize * LibertinusSerifMetrics.capHeightRatio / 2
+                let lineHeight = AnnotationBand.lineHeight(staffSize: s)
+                /// Where line `i` of `n` stacked beside the note stands: first at the top.
+                func sideY(_ i: Int, of n: Int) -> Double {
+                    sideBaseline + (Double(i) - Double(n - 1) / 2) * lineHeight
+                }
+                let gap = AnnotationBand.sideGapRatio * s
+
+                let left = AnnotationBand.texts(in: annotations, at: .left)
+                let accidental = notes.map { accidentalMetrics.reservation(for: $0.displayedAccidental) }
+                    .max() ?? 0
+                for (i, text) in left.enumerated() {
+                    draw(text, x: x - accidental - gap, y: sideY(i, of: left.count), anchor: "end")
+                }
+
+                let right = AnnotationBand.texts(in: annotations, at: .right)
+                let dotted = notes.contains {
+                    isDotted(absoluteDuration($0.duration, unitNoteLength: measure.unitNoteLength))
+                }
+                let rightX = x + noteheadWidth() + gap + (dotted ? s : 0)
+                for (i, text) in right.enumerated() {
+                    draw(text, x: rightX, y: sideY(i, of: right.count))
+                }
+
+                // `@x,y`: offset in staff spaces from the notehead, y upward.
+                for annotation in annotations {
+                    guard case .absolute(let dx, let dy) = annotation.position else { continue }
+                    draw(annotation.text.value, x: x + dx * s, y: sideBaseline - dy * s)
+                }
+            }
+        }
+    }
+
+    /// An event of a system, by where it stands in the system's measures.
+    private struct EventIndex: Hashable {
+        let measure: Int
+        let event: Int
+    }
+
+    /// The annotations that stand inside an ending bracket rather than in the band below it,
+    /// and where each one goes.
+    ///
+    /// The one written before the first note of a variant ending — `[2 "^repeat of part 2"A…`
+    /// — says what that ending is for, so it is set as abcm2ps sets it: on the bracket's
+    /// label line, just right of the number (issue #171).  Only the first `^` annotation of
+    /// that note moves; its chord symbol and any further lines stay in the band, and so does
+    /// everything written later in the ending.  A bracket carried over from the previous
+    /// system has no number, and nothing is raised into it.
+    private func raisedAnnotations(in system: ResolvedSystem,
+                                   font: OpenTypeFont?) -> [EventIndex: (x: Double, y: Double)] {
+        let s = config.staffSize
+        var raised: [EventIndex: (x: Double, y: Double)] = [:]
+        for bracket in system.endingBrackets {
+            guard let label = bracket.label else { continue }
+            let first = system.measures.enumerated().lazy.flatMap { m, measure in
+                measure.events.enumerated().lazy.map { (index: EventIndex(measure: m, event: $0),
+                                                        event: $1) }
+            }.first { entry in
+                guard entry.event.origin.x >= bracket.startX,
+                      entry.event.origin.x < bracket.endX else { return false }
+                switch entry.event.kind {
+                case .note, .chord: return true
+                default:            return false
+                }
+            }
+            guard let first else { continue }
+            let annotations: [Annotation]
+            switch first.event.kind {
+            case .note(let n):  annotations = n.annotations
+            case .chord(let c): annotations = c.annotations
+            default:            continue
+            }
+            guard annotations.contains(where: { $0.position == .above }) else { continue }
+            let labelRight = bracket.startX + EndingBracketBand.labelInset(staffSize: s)
+                + AnnotationBand.width(of: label, font: font,
+                                       fontSize: EndingBracketBand.fontSize(staffSize: s))
+            raised[first.index] = (
+                x: max(first.event.origin.x, labelRight + AnnotationBand.bracketGapRatio * s),
+                y: bracket.ruleY + EndingBracketBand.labelBaselineOffset(staffSize: s))
+        }
+        return raised
     }
 
     private func emitStaffLines(_ system: ResolvedSystem, builder: inout SVGBuilder) {

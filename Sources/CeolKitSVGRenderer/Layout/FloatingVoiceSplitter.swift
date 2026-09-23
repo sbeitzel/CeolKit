@@ -185,7 +185,15 @@ enum FloatingVoiceSplitter {
         var events: [Event] = []
         var displaced: Fraction?
 
+        // The ending start follows its event, or — where that event went to the other
+        // staff — whatever this half puts in its place: the rest standing in for it, or
+        // failing that the next event kept.
+        var endingStartIndex: Int?
+
         for (index, event) in measure.events.enumerated() {
+            if index == measure.endingStartIndex {
+                endingStartIndex = events.count + (placement[index] == side && displaced != nil ? 1 : 0)
+            }
             guard placement[index] == side else {
                 if let duration = sounding(event) {
                     displaced = displaced.map { plus($0, duration) } ?? duration
@@ -203,6 +211,7 @@ enum FloatingVoiceSplitter {
         // moves nothing.
         return Measure(openingBar: measure.openingBar, events: events,
                        closingBar: measure.closingBar, endingNumber: measure.endingNumber,
+                       endingStartIndex: endingStartIndex.flatMap { $0 < events.count ? $0 : nil },
                        source: measure.source, meter: measure.meter, key: measure.key,
                        unitNoteLength: measure.unitNoteLength)
     }

@@ -50,8 +50,9 @@ public struct VerticalLayoutEngine: Sendable {
 
         for (index, jsystem) in systems.enumerated() {
             let runs = endingRuns[index][0]
-            let (extraAbove, extraBelow) = verticalExtent(of: jsystem, staffSize: config.staffSize,
-                                                          hasEndingBracket: !runs.isEmpty)
+            let extent = verticalExtent(of: jsystem, staffSize: config.staffSize,
+                                        hasEndingBracket: !runs.isEmpty)
+            let (extraAbove, extraBelow) = (extent.extraAbove, extent.extraBelow)
             let totalHeight = extraAbove + staffHeight + extraBelow
 
             if !pageSystems.isEmpty && y + totalHeight > config.pageSize.height - config.margins.bottom {
@@ -90,6 +91,7 @@ public struct VerticalLayoutEngine: Sendable {
                 endingBrackets: EndingBracketBand.place(
                     runs, over: measures, bandTopY: systemOrigin.y,
                     staffSize: config.staffSize, metadata: metadata),
+                annotationFloors: extent.annotationFloors,
                 headerKeyChange: jsystem.headerKeyChange
             ))
 
@@ -299,7 +301,8 @@ public struct VerticalLayoutEngine: Sendable {
     private struct GroupMetrics {
         /// Per staff, the space its ledger lines and annotations need above and below it,
         /// and the y of its top staff line relative to the system's top edge.
-        let staves: [(extraAbove: Double, extraBelow: Double, staffTopOffset: Double)]
+        let staves: [(extraAbove: Double, extraBelow: Double, staffTopOffset: Double,
+                      annotationFloors: AnnotationFloors)]
         /// Full height of the group: every staff's extent plus the gaps between them.
         let totalHeight: Double
         /// Width of the widest clef + key + time signature run in the group.  Every staff
@@ -323,15 +326,17 @@ public struct VerticalLayoutEngine: Sendable {
         let staffHeight = 4.0 * staffSize
         let columns = BracketColumns(grouping: group.grouping, staffCount: group.staves.count,
                                      metadata: metadata, staffSize: staffSize)
-        var staves: [(extraAbove: Double, extraBelow: Double, staffTopOffset: Double)] = []
+        var staves: [(extraAbove: Double, extraBelow: Double, staffTopOffset: Double,
+                      annotationFloors: AnnotationFloors)] = []
         staves.reserveCapacity(group.staves.count)
         var offset = 0.0
         var startWidth = 0.0
         for (i, staff) in group.staves.enumerated() {
-            let (extraAbove, extraBelow) = verticalExtent(
+            let extent = verticalExtent(
                 of: staff, staffSize: staffSize,
                 hasEndingBracket: !endingRuns[i].isEmpty)
-            staves.append((extraAbove, extraBelow, offset + extraAbove))
+            let (extraAbove, extraBelow) = (extent.extraAbove, extent.extraBelow)
+            staves.append((extraAbove, extraBelow, offset + extraAbove, extent.annotationFloors))
             offset += extraAbove + staffHeight + extraBelow
             if i < group.staves.count - 1 {
                 offset += columns.sharesInnermostSpan(i, i + 1) ? config.spanStaffGap : config.staffGap
@@ -388,7 +393,7 @@ public struct VerticalLayoutEngine: Sendable {
         }
 
         return group.staves.enumerated().map { i, staff in
-            let (extraAbove, extraBelow, staffTopOffset) = metrics.staves[i]
+            let (extraAbove, extraBelow, staffTopOffset, annotationFloors) = metrics.staves[i]
             // `origin.y` is the top of the staff's own band; `staffOrigin` walks down from
             // there to the top staff line, exactly as in the single-staff case.
             let systemOrigin = Point(x: staffLeftX, y: topY + staffTopOffset - extraAbove)
@@ -435,6 +440,7 @@ public struct VerticalLayoutEngine: Sendable {
                 endingBrackets: EndingBracketBand.place(
                     endingRuns[i], over: measures, bandTopY: systemOrigin.y,
                     staffSize: staffSize, metadata: metadata),
+                annotationFloors: annotationFloors,
                 headerKeyChange: staff.headerKeyChange
             )
         }
@@ -499,13 +505,16 @@ public struct VerticalLayoutEngine: Sendable {
     ///   staff-system.  Its band is added on top of everything else the staff reaches up to,
     ///   rather than maxed against it: the bracket stands above the ledger lines and the
     ///   chord symbols, not among them.
+    ///
+    /// The chord symbols and annotations are stacked the same way, beyond the ledger lines
+    /// and grace stems on their side of the staff, so the floor they stand on is returned
+    /// with the extent for the emitter to find them again (issue #171).
     private func verticalExtent(of system: JustifiedSystem,
                                 staffSize: Double,
                                 hasEndingBracket: Bool
-    ) -> (extraAbove: Double, extraBelow: Double) {
+    ) -> (extraAbove: Double, extraBelow: Double, annotationFloors: AnnotationFloors) {
         var maxLedgerAbove = 0
         var maxLedgerBelow = 0
-        var hasChordSymbolsOrAnnotations = false
         var verses = 0
         var hasGraceGroups = false
 
@@ -515,18 +524,21 @@ public struct VerticalLayoutEngine: Sendable {
                     event,
                     maxLedgerAbove: &maxLedgerAbove,
                     maxLedgerBelow: &maxLedgerBelow,
-                    hasChordSymbolsOrAnnotations: &hasChordSymbolsOrAnnotations,
                     verses: &verses,
                     hasGraceGroups: &hasGraceGroups
                 )
             }
         }
+        let lines = AnnotationBand.lineCounts(of: system.measures.flatMap(\.source.measure.events))
 
         let s = staffSize
         // Grace note stems always point upward (graceScale=0.6) × 3.5 staff spaces above the
         // notehead. Reserve that height so stems never intrude into the title block zone.
         let graceOvershoot = hasGraceGroups ? 3.5 * s * 0.6 : 0
-        let baseAbove = Double(maxLedgerAbove) * s + (hasChordSymbolsOrAnnotations ? s : 0) + graceOvershoot
+        let floor = AnnotationBand.floorRatio * s
+        let floorAbove = Double(maxLedgerAbove) * s + graceOvershoot + (lines.above > 0 ? floor : 0)
+        let floorBelow = Double(maxLedgerBelow) * s + (lines.below > 0 ? floor : 0)
+        let baseAbove = floorAbove + AnnotationBand.height(lines: lines.above, staffSize: s)
         // Tempo annotations (from inline Q: events) are placed 1.5 staffSizes above the top
         // staff line; font size is 1.5 staffSizes, so the bounding box extends ~3× above.
         let hasTempoChanges = system.measures.contains { jm in
@@ -534,35 +546,33 @@ public struct VerticalLayoutEngine: Sendable {
         }
         var extraAbove = hasTempoChanges ? max(baseAbove, s * 3) : baseAbove
         if hasEndingBracket { extraAbove += EndingBracketBand.height(staffSize: s) }
-        // The verses hang below the ledger lines, so the two are added rather than maxed:
-        // a low note and the syllable under it need the space each of them asked for.
-        let extraBelow = Double(maxLedgerBelow) * s + LyricBand.height(verses: verses, staffSize: s)
-        return (extraAbove, extraBelow)
+        // The verses hang below the ledger lines and the annotations, so the three are added
+        // rather than maxed: a low note and what is written under it need the space each of
+        // them asked for.
+        let extraBelow = floorBelow + AnnotationBand.height(lines: lines.below, staffSize: s)
+            + LyricBand.height(verses: verses, staffSize: s)
+        return (extraAbove, extraBelow, AnnotationFloors(above: floorAbove, below: floorBelow))
     }
 
     private func scan(
         _ event: Event,
         maxLedgerAbove: inout Int,
         maxLedgerBelow: inout Int,
-        hasChordSymbolsOrAnnotations: inout Bool,
         verses: inout Int,
         hasGraceGroups: inout Bool
     ) {
         switch event {
         case .note(let n):
             accumulate(pitch: n.pitch, above: &maxLedgerAbove, below: &maxLedgerBelow)
-            if n.chordSymbol != nil || !n.annotations.isEmpty { hasChordSymbolsOrAnnotations = true }
             verses = max(verses, n.lyrics.count)
         case .chord(let c):
             for n in c.notes { accumulate(pitch: n.pitch, above: &maxLedgerAbove, below: &maxLedgerBelow) }
-            if c.chordSymbol != nil || !c.annotations.isEmpty { hasChordSymbolsOrAnnotations = true }
             verses = max(verses, c.lyrics.count)
         case .tuplet(let t):
             for e in t.events {
                 scan(e,
                      maxLedgerAbove: &maxLedgerAbove,
                      maxLedgerBelow: &maxLedgerBelow,
-                     hasChordSymbolsOrAnnotations: &hasChordSymbolsOrAnnotations,
                      verses: &verses,
                      hasGraceGroups: &hasGraceGroups)
             }

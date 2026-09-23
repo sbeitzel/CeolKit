@@ -193,6 +193,72 @@ struct EndingBracketTests {
         #expect(abs(drawn[1].right - staff.right) < 0.5)
     }
 
+    // MARK: - Endings that open part way through a bar
+
+    /// The x of every notehead drawn on the page, left to right.
+    private func noteheadXs(in svg: String) -> [Double] {
+        let head = String(SMuFLGlyph.noteheadBlack.character)
+        return svg.matches(of: /<text x="([-0-9.]+)" y="[-0-9.]+" font-family="Bravura"[^>]*>([^<]*)<\/text>/)
+            .filter { String($0.2) == head }
+            .compactMap { Double($0.1) }
+            .sorted()
+    }
+
+    /// The pickup that changes between the first and second time through, as pipe and
+    /// fiddle settings write it (#172): the `1` bracket begins over the `e`, not at the bar.
+    @Test("A bare [1 in mid-measure starts its bracket at the note after it")
+    func midMeasureEndingStartsAtItsNote() throws {
+        let abc = ["X:1", "T:mid-bar ending", "M:4/4", "L:1/8", "K:D",
+                   "|: d2 fd A2 FA | B2 dB A2 FA | d2 fd a2 f[1 e :| [2 d |]"]
+            .joined(separator: "\n") + "\n"
+        let (svg, staves) = try render(abc)
+        let staff = try #require(staves.first)
+        // The `a` stands on a ledger line, stroked at the bracket's weight; the brackets
+        // are the rules at the very top of the band.
+        let rules = brackets(in: svg, above: staff)
+        let drawn = rules.filter { $0.y == rules.map(\.y).min() }
+        #expect(drawn.count == 2)
+        guard drawn.count == 2 else { return }
+
+        // Noteheads: six in each of the first two bars, then `d f d a f e`, then `d`.
+        let heads = noteheadXs(in: svg)
+        #expect(heads.count == 19)
+        guard heads.count == 19 else { return }
+        let f = heads[16], e = heads[17]
+
+        // The bracket starts between the `f` before the ending and the `e` it opens on —
+        // well inside the third bar, not at its bar line.
+        #expect(drawn[0].label == "1")
+        #expect(drawn[0].hasStartHook)
+        #expect(drawn[0].left > f)
+        #expect(drawn[0].left < e)
+        #expect(drawn[0].left > staff.barlineXs[2] + staff.staffLineGap)
+        // It still closes at the `:|`, and the second ending still starts there.
+        #expect(drawn[0].hasEndHook)
+        #expect(drawn[1].label == "2")
+        #expect(drawn[1].left == drawn[0].right)
+    }
+
+    @Test("An ending written against a bar line still starts at that bar line")
+    func barLineEndingStillStartsAtTheBar() throws {
+        for body in ["|:CDEF|1GABc:|2CDEF|]", "|:CDEF|[1GABc:|[2CDEF|]"] {
+            let (svg, staves) = try render(tune(body))
+            let staff = try #require(staves.first)
+            let drawn = brackets(in: svg, above: staff)
+            #expect(drawn.count == 2)
+            #expect(abs((drawn.first?.left ?? 0) - staff.barlineXs[1]) < 0.5, "\(body)")
+        }
+    }
+
+    @Test("The start of a mid-measure ending reaches its run")
+    func runCarriesTheEndingStart() {
+        let bars = measures("|:CDEF|GA[1Bc:|[2CDEF|]")
+        let (runs, _) = EndingBracketBand.runs(in: bars, continuing: nil)
+        #expect(runs.count == 2)
+        #expect(runs.first?.startEvent == 2)
+        #expect(runs.last?.startEvent == nil)
+    }
+
     // MARK: - Runs, worked out from the measures
 
     /// `EndingBracketBand` on its own, where the cases that need a whole page of music to

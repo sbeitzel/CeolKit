@@ -128,6 +128,45 @@ struct BarLineTests {
         }
     }
 
+    /// §4.10 ties only the end of an ending to a bar line, so a bare `[1` may stand part
+    /// way through a bar — and the measure has to say where, or the bracket starts at the
+    /// bar line instead of the note (#172).
+    @Test("[1 in mid-measure records the event the ending starts at")
+    func midMeasureEndingRecordsItsStart() {
+        let measures = parse(barTune("|:CDEF|GA[1 B c:|[2 d4|]")).score.firstTune?
+            .singleVoiceMeasures ?? []
+        #expect(measures.count == 3)
+        guard measures.count == 3 else { return }
+        #expect(measures[1].endingNumber == [1])
+        // `G`, `A` — then the ending, which opens at the space before `B`.
+        let start = measures[1].endingStartIndex
+        #expect(start == 2)
+        let firstNote = measures[1].events.dropFirst(start ?? 0).first {
+            if case .note = $0 { return true }
+            return false
+        }
+        if case .note(let n)? = firstNote {
+            #expect(n.pitch.step == .b)
+        } else {
+            Issue.record("no note after the ending start")
+        }
+        // `[2` written against the bar line starts where `:|2` would: at the bar.
+        #expect(measures[2].endingNumber == [2])
+        #expect(measures[2].endingStartIndex == nil)
+    }
+
+    @Test("Endings written at a bar line start at the bar", arguments: [
+        "|:CDEF|1GABc:|2CDEF|]",
+        "|:CDEF|[1GABc:|[2CDEF|]",
+        "|:CDEF| [1 GABc:| [2 CDEF|]",
+    ])
+    func barLineEndingsHaveNoStartIndex(body: String) {
+        let measures = parse(barTune(body)).score.firstTune?.singleVoiceMeasures ?? []
+        let endings = measures.filter { $0.endingNumber != nil }
+        #expect(endings.count == 2)
+        #expect(endings.allSatisfy { $0.endingStartIndex == nil })
+    }
+
     @Test("Measures without ending numbers have nil endingNumber")
     func noEndingNumber() {
         let result = parse(barTune("CDEF|GABC|"))

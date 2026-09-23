@@ -60,6 +60,12 @@ enum EndingBracketBand {
 
     static func labelInset(staffSize: Double) -> Double { labelInsetRatio * staffSize }
 
+    /// How far left of the first thing it covers an ending that opens part way through a
+    /// bar begins.  abcm2ps draws a bare `[N` as an invisible bar line between the notes
+    /// either side of it and starts the bracket there; half a staff space ahead of the
+    /// note's left edge — its accidental, where it has one — stands in the same gap.
+    static let leadInRatio = 0.5
+
     /// What a bracket covering `numbers` is labelled.
     ///
     /// The list, comma-separated, whatever it was written as: the semantic pass resolves
@@ -81,6 +87,10 @@ enum EndingBracketBand {
         /// Indices into the staff-system's measures, inclusive.
         let firstMeasure: Int
         let lastMeasure: Int
+        /// Where in `firstMeasure`'s events the bracket begins, or `nil` where it begins at
+        /// the measure's left edge: ``Measure/endingStartIndex`` for an ending that opens
+        /// part way through a bar (#172), and `nil` on every continuation.
+        let startEvent: Int?
         /// Whether the rule turns down at its left end.  False exactly where the ending was
         /// carried over a system break.
         let hasStartHook: Bool
@@ -127,18 +137,19 @@ enum EndingBracketBand {
         struct Open {
             let numbers: [Int]
             let first: Int
+            let startEvent: Int?
             let startHook: Bool
         }
 
         var runs: [Run] = []
         var open: Open?
         if let continuing, !measures.isEmpty {
-            open = Open(numbers: continuing, first: 0, startHook: false)
+            open = Open(numbers: continuing, first: 0, startEvent: nil, startHook: false)
         }
 
         func close(_ o: Open, at last: Int, endHook: Bool) -> Run {
             Run(label: o.startHook ? label(for: o.numbers) : nil,
-                firstMeasure: o.first, lastMeasure: last,
+                firstMeasure: o.first, lastMeasure: last, startEvent: o.startEvent,
                 hasStartHook: o.startHook, hasEndHook: endHook)
         }
 
@@ -147,7 +158,8 @@ enum EndingBracketBand {
                 // The next ending begins.  Anything still open ends at the measure before it,
                 // unhooked: the music runs straight on into the new ending.
                 if let o = open, i > o.first { runs.append(close(o, at: i - 1, endHook: false)) }
-                open = Open(numbers: numbers, first: i, startHook: true)
+                open = Open(numbers: numbers, first: i, startEvent: measure.endingStartIndex,
+                            startHook: true)
             }
             guard let o = open else { continue }
             switch measure.closingBar.kind {
@@ -187,14 +199,59 @@ enum EndingBracketBand {
         return runs.compactMap { run in
             guard measures.indices.contains(run.firstMeasure),
                   measures.indices.contains(run.lastMeasure) else { return nil }
+            let first = measures[run.firstMeasure]
             let last = measures[run.lastMeasure]
+            let startX = run.startEvent.flatMap {
+                self.startX(at: $0, in: first, staffSize: staffSize, metadata: metadata)
+            } ?? first.origin.x
             return EndingBracket(
                 label: run.label,
-                startX: measures[run.firstMeasure].origin.x,
+                startX: startX,
                 endX: last.origin.x + last.width,
                 ruleY: ruleY,
                 hasStartHook: run.hasStartHook,
                 hasEndHook: run.hasEndHook)
         }
+    }
+
+    /// Where a bracket opening at `measure.events[index]` begins, or `nil` where nothing is
+    /// drawn from there on.
+    ///
+    /// A lead-in ahead of the left edge of the first thing drawn — but never back over the
+    /// notehead before it: where the two stand close, the bracket starts halfway across the
+    /// gap between them, which is where abcm2ps's invisible bar line falls.
+    ///
+    /// Spacers and directive anchors are skipped — the source's `[1 e` puts a space between
+    /// the ending and its note — and so is a tempo marking, which stands above the staff
+    /// rather than in the music.  A grace group's origin is already its left edge, accidentals
+    /// included; a note's or chord's is its notehead, with any accidental drawn to the left.
+    private static func startX(at index: Int, in measure: ResolvedMeasure,
+                               staffSize: Double, metadata: BravuraMetadata) -> Double? {
+        guard index >= 0 else { return nil }
+        let accidentals = AccidentalMetrics(staffSize: staffSize, metadata: metadata)
+        let noteheadWidth = metadata.glyphBBoxes["noteheadBlack"].map { $0.width * staffSize }
+            ?? staffSize * 1.2
+
+        func leftEdge(of event: ResolvedEvent) -> Double? {
+            switch event.kind {
+            case .note(let n):
+                return event.origin.x - accidentals.reservation(for: n.displayedAccidental)
+            case .chord(let c):
+                return event.origin.x - (c.notes
+                    .map { accidentals.reservation(for: $0.displayedAccidental) }.max() ?? 0)
+            case .rest, .grace, .tuplet:
+                return event.origin.x
+            case .spacer, .directiveAnchor, .tempoChange:
+                return nil
+            }
+        }
+
+        guard let left = measure.events.dropFirst(index).lazy.compactMap(leftEdge).first
+        else { return nil }
+        var x = left - leadInRatio * staffSize
+        if let previous = measure.events.prefix(index).last(where: { leftEdge(of: $0) != nil }) {
+            x = max(x, (previous.origin.x + noteheadWidth + left) / 2)
+        }
+        return max(measure.origin.x, x)
     }
 }

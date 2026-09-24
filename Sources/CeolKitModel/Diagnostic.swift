@@ -56,6 +56,11 @@ public enum DiagnosticCode: String, Codable, Sendable {
     /// voice, or further back than its first bar line.  The overlay starts at the first bar
     /// instead.
     case voiceOverlayWithoutBar
+    /// Quoted text with no placement prefix (§4.18) is not a chord symbol — `"Fine"`,
+    /// `"repeat of part 2"`.  It is printed as written on the chord-symbol line, as
+    /// ``AnnotationPosition/chordLine``, and never played or transposed; `"^…"` says the
+    /// same thing without relying on the guess.
+    case unrecognisedChordSymbol
     // Fields
     case unknownField
     case malformedFieldPayload

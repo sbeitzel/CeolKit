@@ -748,7 +748,23 @@ struct SemanticPass {
             ), in: voice)
 
         case .chordSymbol(let s, let src):
-            ctx.setPendingChordSymbol(parseChordSymbol(s, source: src), in: voice, source: src)
+            if let symbol = parseChordSymbol(s, source: src) {
+                ctx.setPendingChordSymbol(symbol, in: voice, source: src)
+            } else if !s.isEmpty {
+                // Not a chord, but the author wrote it to be read: print it where abcm2ps
+                // does, on the chord line, as text nothing will play or transpose (#177).
+                ctx.addPendingAnnotation(Annotation(
+                    position: .chordLine,
+                    text: TextString(value: s, source: src),
+                    source: src
+                ), in: voice)
+                diagnostics.append(Diagnostic(
+                    severity: .warning, code: .unrecognisedChordSymbol,
+                    message: "\"\(s)\" is not a chord symbol; it is printed as text. "
+                        + "Write \"^\(s)\" to place it above the staff explicitly",
+                    source: src
+                ))
+            }
 
         case .tupletStart(let p, let q, let r, let src):
             // Tuplets do not nest: a second one closes the first, which keeps what the first
@@ -825,6 +841,11 @@ struct SemanticPass {
         let tieState: TieState = tok.tie ? .startsTie : .none
         let (opens, closes) = ctx.consumeSlurs(in: voice, source: tok.source)
 
+        // Nothing draws text on a grace note, and `"^text"{g}A` — out of §4.20's order, but
+        // how pipe music writes it — means `A`, as abcm2ps reads it: quoted text stays
+        // pending through a grace group for the note after `}` (#176).  Decorations inside
+        // the braces still belong to the grace note.
+        let inGrace = ctx.isInGrace(voice)
         let note = Note(
             pitch: pitch,
             writtenAccidental: writtenAlt,
@@ -833,14 +854,14 @@ struct SemanticPass {
             ties: tieState,
             slurs: SlurState(opens: opens, closes: closes),
             decorations: ctx.flushDecorations(in: voice, source: tok.source),
-            chordSymbol: ctx.flushChordSymbol(in: voice, source: tok.source),
-            annotations: ctx.flushAnnotations(in: voice, source: tok.source),
+            chordSymbol: inGrace ? nil : ctx.flushChordSymbol(in: voice, source: tok.source),
+            annotations: inGrace ? [] : ctx.flushAnnotations(in: voice, source: tok.source),
             beam: .single,
             lyric: nil,
             source: tok.source
         )
 
-        if ctx.isInGrace(voice) {
+        if inGrace {
             ctx.appendGraceNote(note, in: voice)
             return .note(note)  // returned but not emitted directly; grace buffer holds it
         }
@@ -1214,37 +1235,73 @@ struct SemanticPass {
         )
     }
 
-    // Chord symbol parsing: minimal stub — preserves raw text without structural parsing
+    /// The chord `raw` spells, or `nil` if it is not one.
+    ///
+    /// §4.18: `<note><accidental><type></bass>`, optionally followed by an alternate chord
+    /// in parentheses, `"G(Em)"`, which is kept in `raw` for printing but not played.  The
+    /// type is read liberally, as the standard asks — any run of the qualities and
+    /// extensions chord charts use (`m`, `maj7`, `dim`, `+`, `sus4`, `add9`, `7b5`, `ø`, …)
+    /// — but it must be *made* of them: `"Fine"` is text, not an F chord of quality `ine`
+    /// (issue #177).
     private func parseChordSymbol(_ raw: String, source: SourceRange) -> ChordSymbol? {
-        guard !raw.isEmpty else { return nil }
-        var idx = raw.startIndex
-        guard idx < raw.endIndex, let step = letterToDiatonicStep(raw[idx]) else { return nil }
-        raw.formIndex(after: &idx)
-        var alteration = Alteration.natural
-        if idx < raw.endIndex {
-            switch raw[idx] {
-            case "#": alteration = .sharp;   raw.formIndex(after: &idx)
-            case "b": alteration = .flat;    raw.formIndex(after: &idx)
-            default: break
-            }
+        var body = Substring(raw.trimmingCharacters(in: .whitespaces))
+        // An alternate chord, "G(Em)": only for printing, but it has to be a chord too.
+        if body.hasSuffix(")"), let open = body.firstIndex(of: "("), open != body.startIndex {
+            let alternate = body[body.index(after: open)..<body.index(before: body.endIndex)]
+            if parseChordSpelling(alternate) != nil { body = body[..<open] }
         }
-        let root = PitchClass(step: step, alteration: alteration)
-
-        var quality = String(raw[idx...])
-        var bassNote: PitchClass? = nil
-        if let slashRange = quality.range(of: "/") {
-            let afterSlash = String(quality[quality.index(after: slashRange.lowerBound)...])
-            quality = String(quality[..<slashRange.lowerBound])
-            if let bassStep = afterSlash.first.flatMap({ letterToDiatonicStep($0) }) {
-                var bassAlt = Alteration.natural
-                let rest = afterSlash.dropFirst()
-                if rest.first == "#" { bassAlt = .sharp }
-                else if rest.first == "b" { bassAlt = .flat }
-                bassNote = PitchClass(step: bassStep, alteration: bassAlt)
-            }
-        }
-
+        guard let (root, quality, bassNote) = parseChordSpelling(body) else { return nil }
         return ChordSymbol(root: root, quality: quality, bassNote: bassNote, raw: raw, source: source)
+    }
+
+    /// `<note><accidental><type></bass>`, the whole of `text` and nothing else.
+    private func parseChordSpelling(_ text: Substring)
+        -> (root: PitchClass, quality: String, bassNote: PitchClass?)? {
+        var rest = text
+        var bassNote: PitchClass? = nil
+        if let slash = rest.lastIndex(of: "/") {
+            var bass = rest[rest.index(after: slash)...]
+            guard let bassRoot = parsePitchClass(&bass), bass.isEmpty else { return nil }
+            bassNote = bassRoot
+            rest = rest[..<slash]
+        }
+        guard let root = parsePitchClass(&rest), isChordQuality(rest) else { return nil }
+        return (root, String(rest), bassNote)
+    }
+
+    /// A note letter and its optional accidental, consumed from the front of `text`.
+    private func parsePitchClass(_ text: inout Substring) -> PitchClass? {
+        guard let first = text.first, let step = letterToDiatonicStep(first) else { return nil }
+        text = text.dropFirst()
+        var alteration = Alteration.natural
+        switch text.first {
+        case "#", "♯": alteration = .sharp; text = text.dropFirst()
+        case "b", "♭": alteration = .flat;  text = text.dropFirst()
+        default: break
+        }
+        return PitchClass(step: step, alteration: alteration)
+    }
+
+    /// The words and signs a chord's type is spelled with, longest first so that `maj`
+    /// is not read as `m` followed by `aj`.
+    private static let chordQualityTokens = [
+        "maj", "min", "dim", "aug", "sus", "add", "alt", "omit", "no",
+        "M", "m", "+", "-", "o", "°", "ø", "Δ", "#", "b", "♯", "♭", "♮", "(", ")", ",",
+    ]
+
+    /// Whether `text` is empty or wholly made of ``chordQualityTokens`` and numbers.
+    private func isChordQuality(_ text: Substring) -> Bool {
+        var rest = text
+        while let first = rest.first {
+            if first.isASCII, first.isNumber {
+                rest = rest.drop(while: { $0.isASCII && $0.isNumber })
+            } else if let token = Self.chordQualityTokens.first(where: { rest.hasPrefix($0) }) {
+                rest = rest.dropFirst(token.count)
+            } else {
+                return false
+            }
+        }
+        return true
     }
 
     private func letterToDiatonicStep(_ ch: Character) -> DiatonicStep? {

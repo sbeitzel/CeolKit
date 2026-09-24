@@ -79,8 +79,15 @@ enum AnnotationBand {
     /// lines, with the first listed at the top".  The chord symbol goes under them, nearest
     /// the staff, so the chord symbols of a system stand on one line whatever the notes
     /// around them are annotated with.
+    ///
+    /// Unprefixed text that is not a chord (``AnnotationPosition/chordLine``) is printed on
+    /// the chord line with the chord symbol, as abcm2ps prints it; where a note has more
+    /// than one, they stack in the order written, the first at the top (issue #177).
     static func linesAbove(chordSymbol: ChordSymbol?, annotations: [Annotation]) -> [String] {
-        texts(in: annotations, at: .above) + (chordSymbol.map { [$0.raw] } ?? [])
+        let chordLine = (chordSymbol.map { [($0.source.byteOffset, $0.raw)] } ?? [])
+            + annotations.filter { $0.position == .chordLine }.map { ($0.source.byteOffset, $0.text.value) }
+        return texts(in: annotations, at: .above)
+            + chordLine.sorted { $0.0 < $1.0 }.map(\.1)
     }
 
     /// The lines a note puts below the staff, top to bottom — the first listed nearest it.

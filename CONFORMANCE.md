@@ -278,6 +278,36 @@ downward from the staff, and its `<` or `>` lines are stacked and centred on the
 spaces rather than points, so the offset scales with the staff; a bare `"@text"` is drawn at
 the notehead.
 
+### Unprefixed text that is not a chord
+
+§4.18 reads quoted text with no placement prefix as a chord symbol,
+`<note><accidental><type></bass>`, and asks for chord symbols to be treated "quite
+liberally". CeolKit reads the type liberally — any run of `m`, `min`, `maj`, `M`, `dim`, `o`,
+`°`, `ø`, `aug`, `+`, `-`, `sus`, `add`, `alt`, `omit`, `no`, `Δ`, accidentals, numbers,
+parentheses and commas — but the whole string must be made of it. An alternate chord in
+parentheses, `"G(Em)"`, must itself be a chord; it is printed but left out of `quality`, since
+it is not played.
+
+Anything else — `"Fine"`, `"D.C. al Fine"`, `"repeat of part 2"`, `"N.C."` — is not a chord.
+Where abcm2ps prints such text as written on the chord-symbol line, CeolKit does the same:
+
+- **Model.** It becomes an `Annotation` at `AnnotationPosition.chordLine`, not a
+  `ChordSymbol`, so nothing that plays or transposes chords ever sees it. `ChordSymbol.root`
+  stays non-optional.
+- **Diagnostic.** An `unrecognisedChordSymbol` warning points at the string and suggests
+  `"^…"`, which says the same thing without relying on the guess.
+- **Drawing.** It is drawn on the chord line. A note with a chord symbol and such text, or
+  several such texts, stacks them in the order written, the first at the top and the last
+  nearest the staff, as abcm2ps does. Unlike a `^` annotation, it is not raised into a
+  variant ending's bracket; abcm2ps leaves it below the bracket too.
+
+### Before a grace group
+
+§4.20 puts grace notes ahead of chord symbols and annotations, but `"^text"{g}A` is common in
+pipe music. As in abcm2ps, a chord symbol or annotation written before the braces, or inside
+them, belongs to the note after the `}`: grace notes never carry quoted text. A decoration
+inside the braces (`{!accent!g}`) still belongs to its grace note.
+
 ### Under a variant ending
 
 The first `^` annotation on the first note of a variant ending — `[2 "^repeat of part 2"A…`

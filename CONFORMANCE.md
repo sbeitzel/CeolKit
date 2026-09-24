@@ -278,6 +278,13 @@ downward from the staff, and its `<` or `>` lines are stacked and centred on the
 spaces rather than points, so the offset scales with the staff; a bare `"@text"` is drawn at
 the notehead.
 
+### Before a grace group
+
+§4.20 puts grace notes ahead of chord symbols and annotations, but `"^text"{g}A` is common in
+pipe music. As in abcm2ps, a chord symbol or annotation written before the braces, or inside
+them, belongs to the note after the `}`: grace notes never carry quoted text. A decoration
+inside the braces (`{!accent!g}`) still belongs to its grace note.
+
 ### Under a variant ending
 
 The first `^` annotation on the first note of a variant ending — `[2 "^repeat of part 2"A…`

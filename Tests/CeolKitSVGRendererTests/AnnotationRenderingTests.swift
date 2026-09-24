@@ -205,6 +205,20 @@ struct AnnotationRenderingTests {
         #expect(later.y > label.y)
     }
 
+    // MARK: - Before a grace group
+
+    /// Issue #176: text written ahead of the braces was attached to the grace note, where
+    /// nothing draws it.
+    @Test("\"^x\"{g}A draws the text above the staff")
+    func annotationBeforeGraceGroupIsDrawn() throws {
+        let (svg, staves) = try render(tune(#""^x"{g}A "G"{ag}B c d|]"#))
+        let staff = try #require(staves.first)
+        let x = try run("x", in: svg)
+        let g = try run("G", in: svg)
+        #expect(x.y + x.fontSize * LibertinusSerifMetrics.descenderRatio < staff.topY)
+        #expect(g.y < staff.topY)
+    }
+
     @Test("Nothing changes on a staff that carries no quoted text")
     func unannotatedStaffIsUnchanged() throws {
         let (svg, _) = try render(tune("C D E F|]"))

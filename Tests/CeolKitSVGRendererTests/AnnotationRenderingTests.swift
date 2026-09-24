@@ -219,6 +219,37 @@ struct AnnotationRenderingTests {
         #expect(g.y < staff.topY)
     }
 
+    // MARK: - Unprefixed text that is not a chord
+
+    /// Issue #177: text of this kind was dropped, or — `"Fine"` — read as an F chord.
+    @Test("Unprefixed text that is not a chord is drawn on the chord line")
+    func freeTextIsDrawnOnTheChordLine() throws {
+        let (svg, staves) = try render(tune(#""repeat of part 2"C D "G"E F|]"#))
+        let staff = try #require(staves.first)
+        let text = try run("repeat of part 2", in: svg)
+        let chord = try run("G", in: svg)
+        #expect(text.y + text.fontSize * LibertinusSerifMetrics.descenderRatio < staff.topY)
+        #expect(text.y == chord.y)
+    }
+
+    @Test("A chord symbol and free text on one note stack, the first written at the top")
+    func chordLineTextStacksInWrittenOrder() throws {
+        let (svg, _) = try render(tune(#""G""Fine"C D "D"E F|]"#))
+        let g = try run("G", in: svg)
+        let fine = try run("Fine", in: svg)
+        let d = try run("D", in: svg)
+        #expect(g.y < fine.y)
+        #expect(fine.y == d.y)
+    }
+
+    @Test("Chord-line text on an ending's first note stays below the bracket")
+    func chordLineTextIsNotRaisedIntoTheBracket() throws {
+        let (svg, _) = try render(tune(#"|:CDEF|1GABc:|[2 "repeat of part 2"c BAG|]"#))
+        let label = try run("2", in: svg)
+        let text = try run("repeat of part 2", in: svg)
+        #expect(text.y > label.y)
+    }
+
     @Test("Nothing changes on a staff that carries no quoted text")
     func unannotatedStaffIsUnchanged() throws {
         let (svg, _) = try render(tune("C D E F|]"))

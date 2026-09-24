@@ -825,6 +825,11 @@ struct SemanticPass {
         let tieState: TieState = tok.tie ? .startsTie : .none
         let (opens, closes) = ctx.consumeSlurs(in: voice, source: tok.source)
 
+        // Nothing draws text on a grace note, and `"^text"{g}A` — out of §4.20's order, but
+        // how pipe music writes it — means `A`, as abcm2ps reads it: quoted text stays
+        // pending through a grace group for the note after `}` (#176).  Decorations inside
+        // the braces still belong to the grace note.
+        let inGrace = ctx.isInGrace(voice)
         let note = Note(
             pitch: pitch,
             writtenAccidental: writtenAlt,
@@ -833,14 +838,14 @@ struct SemanticPass {
             ties: tieState,
             slurs: SlurState(opens: opens, closes: closes),
             decorations: ctx.flushDecorations(in: voice, source: tok.source),
-            chordSymbol: ctx.flushChordSymbol(in: voice, source: tok.source),
-            annotations: ctx.flushAnnotations(in: voice, source: tok.source),
+            chordSymbol: inGrace ? nil : ctx.flushChordSymbol(in: voice, source: tok.source),
+            annotations: inGrace ? [] : ctx.flushAnnotations(in: voice, source: tok.source),
             beam: .single,
             lyric: nil,
             source: tok.source
         )
 
-        if ctx.isInGrace(voice) {
+        if inGrace {
             ctx.appendGraceNote(note, in: voice)
             return .note(note)  // returned but not emitted directly; grace buffer holds it
         }

@@ -11,8 +11,8 @@ import CeolKitParser
 /// passed before the fix.
 ///
 /// Direction is read out of the emitted document rather than out of the layout: a stem is
-/// drawn from its notehead, so the end that coincides with a notehead's y is the notehead
-/// end, and the stem points away from it.
+/// drawn from its notehead, so the end that lands on a notehead is the notehead end, and the
+/// stem points away from it.
 @Suite("Stem direction (V: stem=)")
 struct StemDirectionTests {
 

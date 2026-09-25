@@ -143,8 +143,11 @@ struct DirectiveScopeTests {
 
     /// The grace beam spans `noteCount - 1` steps, so its length is proportional to the
     /// spacing factor — the same measurement `GraceNoteSpacingDirectiveTests` makes, reduced
-    /// here to the one number these tests compare.
+    /// here to the one number these tests compare.  The beam also covers half a stem at each
+    /// end (#181), which is taken off so the proportion holds exactly.
     private func graceBeamLengths(in svg: String) throws -> [Double] {
+        let stem = try BravuraMetadata.load().engravingDefaults.stemThickness
+                   * SVGRenderConfig().staffSize * GraceMetrics.scale
         let lines = svg.matches(of: /<line x1="([\d.-]+)" y1="([\d.-]+)" x2="([\d.-]+)" y2="([\d.-]+)"/)
             .compactMap { match -> (x1: Double, x2: Double, y: Double)? in
                 guard let x1 = Double(match.1), let y1 = Double(match.2),
@@ -171,7 +174,7 @@ struct DirectiveScopeTests {
         return try tops.enumerated().map { index, top in
             let floor = index == 0 ? -Double.infinity : tops[index - 1]
             let beam = try #require(beams.first { $0.y < top && $0.y > floor })
-            return beam.x2 - beam.x1
+            return beam.x2 - beam.x1 - stem
         }
     }
 

@@ -38,14 +38,27 @@ func probedStems(in svg: String, staffSize: Double, metadata: BravuraMetadata) -
         guard let x = Double(match.1), let y1 = Double(match.2),
               let y2 = Double(match.4), let width = Double(match.5),
               abs(width - stemWidth) < 0.01, y1 != y2 else { return nil }
-        // The notehead end is whichever end a notehead is drawn at.  A stem is attached to
+        // The notehead end is whichever end lands on a notehead.  A stem is attached to
         // the right of its notehead when it points up and to the left when it points down,
         // so the x match has to allow a notehead's width either way.
-        let touches: (Double) -> Bool = { end in
-            noteheads.contains { abs($0.y - end) < 0.01 && abs($0.x - x) < 4 * staffSize }
+        //
+        // The stem starts where the notehead's `stemUpSE` / `stemDownNW` anchor puts it, a
+        // fraction of a space off the notehead's centre towards the tip — well inside the
+        // half space that separates adjacent staff positions.  `towardTip` is that offset,
+        // signed so it is positive when it points the way the stem does.
+        let reach = 0.25 * staffSize
+        let head: ((Double) -> Double) -> Double? = { towardTip in
+            noteheads.first {
+                (0..<reach).contains(towardTip($0.y)) && abs($0.x - x) < 4 * staffSize
+            }?.y
         }
-        if touches(y2) { return ProbedStem(x: x, noteheadY: y2, tipY: y1) }
-        if touches(y1) { return ProbedStem(x: x, noteheadY: y1, tipY: y2) }
+        let (top, bottom) = (min(y1, y2), max(y1, y2))
+        if let y = head({ y in y - bottom }) {
+            return ProbedStem(x: x, noteheadY: y, tipY: top)
+        }
+        if let y = head({ y in top - y }) {
+            return ProbedStem(x: x, noteheadY: y, tipY: bottom)
+        }
         return nil
     }
 }

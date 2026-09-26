@@ -29,6 +29,13 @@ struct GraceMetrics {
     /// Width of a grace notehead.
     let noteheadWidth: Double
 
+    /// x of a stem's centreline from its notehead's left edge.  Grace stems always point up,
+    /// so this is the notehead's `stemUpSE` anchor less half a stem (issue #181).
+    let stemDX: Double
+
+    /// How far above the notehead's centre its stem starts, from the same anchor.
+    let stemBaseDY: Double
+
     /// Step between the x of one notehead and the next within the same group, for notes
     /// with no accidental.
     let advance: Double
@@ -39,6 +46,9 @@ struct GraceMetrics {
         let fullNoteheadWidth = metadata.glyphBBoxes["noteheadBlack"].map { $0.width * config.staffSize }
                                 ?? config.staffSize * 1.2
         self.noteheadWidth = fullNoteheadWidth * Self.scale
+        let attachment = metadata.stemAttachment(to: .noteheadBlack, stemUp: true)
+        self.stemDX = attachment.x * config.staffSize * Self.scale
+        self.stemBaseDY = attachment.y * config.staffSize * Self.scale
         self.advance = self.noteheadWidth * config.graceNoteSpacing
         self.accidentalMetrics = AccidentalMetrics(config: config, metadata: metadata)
     }
@@ -71,14 +81,16 @@ struct GraceMetrics {
 
     /// x of each note's stem, relative to the group's left edge.
     ///
-    /// Grace stems always point up, so the stem sits at the right edge of the notehead.
+    /// Grace stems always point up, so the stem sits just inside the right edge of the
+    /// notehead, at ``stemDX``.
     func stemOffsets(_ notes: [Note]) -> [Double] {
-        noteheadOffsets(notes).map { $0 + noteheadWidth }
+        noteheadOffsets(notes).map { $0 + stemDX }
     }
 
-    /// Total width of a grace group.
+    /// Total width of a grace group, from its left edge to the trailing pad after the last
+    /// notehead's right edge.
     func width(_ notes: [Note]) -> Double {
-        let last = stemOffsets(notes).last ?? (noteheadWidth * (Self.edgePad + 1))
-        return last + noteheadWidth * Self.edgePad
+        let last = noteheadOffsets(notes).last ?? (noteheadWidth * Self.edgePad)
+        return last + noteheadWidth * (1 + Self.edgePad)
     }
 }

@@ -134,7 +134,13 @@ private func measure(events: [Event]) -> Measure {
         // Single grace note: flag overhang + 0.25 staffSize clearance (see MeasureSizer.graceNoteGap)
         let flagW          = metadata.glyphBBoxes["flag32ndUp"].map { $0.width * config.staffSize * 0.6 }
                              ?? config.staffSize * 0.625
-        let flagOverhang   = max(0.0, 1.25 * graceNoteW + flagW - 1.5 * graceNoteW)
+        // The flag hangs from the stem's left edge, which sits inside the notehead's right
+        // edge by the `stemUpSE` anchor's inset plus a whole (grace-scaled) stem (#181).
+        let stemUpSE       = try #require(metadata.anchor("stemUpSE", on: .noteheadBlack))
+        let stemLeft       = 0.25 * graceNoteW
+                             + (stemUpSE.x - metadata.engravingDefaults.stemThickness)
+                               * config.staffSize * 0.6
+        let flagOverhang   = max(0.0, stemLeft + flagW - 1.5 * graceNoteW)
         let expectedGap    = flagOverhang + config.staffSize * 0.25
         let expectedNoteOffset = noteW + expectedGraceW + expectedGap
 

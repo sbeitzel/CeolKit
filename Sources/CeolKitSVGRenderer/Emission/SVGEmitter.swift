@@ -5,10 +5,10 @@ import Foundation
 
 /// Stem geometry returned by `emitStem` so the caller can draw beam strokes.
 private struct StemInfo {
-    let stemX:     Double  // x of the stem stroke
+    let stemX:     Double  // x of the stem stroke's centreline
     let stemTipY:  Double  // y of the tip (the end away from the notehead)
     let stemUp:    Bool
-    let noteheadY: Double  // y of the notehead end (used by emitBeamGroup to draw stems)
+    let stemBaseY: Double  // y of the notehead end (used by emitBeamGroup to draw stems)
 }
 
 /// Which part an open tie or slur belongs to: the staff of the system it was opened on, and
@@ -1288,8 +1288,8 @@ struct SVGEmitter: Sendable {
         // Draw each stem from its notehead to the common beam Y.
         for stem in stems {
             let (y1, y2) = stemUp
-                ? (commonBeamY, stem.noteheadY)
-                : (stem.noteheadY, commonBeamY)
+                ? (commonBeamY, stem.stemBaseY)
+                : (stem.stemBaseY, commonBeamY)
             builder.line(x1: stem.stemX, y1: y1, x2: stem.stemX, y2: y2,
                          stroke: "black", strokeWidth: stemThick)
         }
@@ -1303,10 +1303,13 @@ struct SVGEmitter: Sendable {
                 ? commonBeamY + Double(b) * beamStep
                 : commonBeamY - Double(b) * beamStep
 
+            // A beam covers its outer stems rather than stopping at their centrelines, which
+            // would leave half of each end stem poking out past it (issue #181).
+            let halfStem = stemThick / 2
             func emitRun(from start: Int, to end: Int) {
                 if start < end {
-                    builder.line(x1: entries[start].stem.stemX, y1: beamY,
-                                 x2: entries[end].stem.stemX,   y2: beamY,
+                    builder.line(x1: entries[start].stem.stemX - halfStem, y1: beamY,
+                                 x2: entries[end].stem.stemX + halfStem,   y2: beamY,
                                  stroke: "black", strokeWidth: beamThick)
                 } else {
                     // Stub: point right if first in group, otherwise left.
@@ -1316,11 +1319,11 @@ struct SVGEmitter: Sendable {
                     let maxStubW = s * 0.75
                     if start == 0 {
                         let stubW = min((entries[1].stem.stemX - stemX) * 0.5, maxStubW)
-                        builder.line(x1: stemX, y1: beamY, x2: stemX + stubW, y2: beamY,
+                        builder.line(x1: stemX - halfStem, y1: beamY, x2: stemX + stubW, y2: beamY,
                                      stroke: "black", strokeWidth: beamThick)
                     } else {
                         let stubW = min((stemX - entries[start - 1].stem.stemX) * 0.5, maxStubW)
-                        builder.line(x1: stemX - stubW, y1: beamY, x2: stemX, y2: beamY,
+                        builder.line(x1: stemX - stubW, y1: beamY, x2: stemX + halfStem, y2: beamY,
                                      stroke: "black", strokeWidth: beamThick)
                     }
                 }
@@ -1544,7 +1547,8 @@ struct SVGEmitter: Sendable {
 
         var stemInfo: StemInfo?
         if absDur < 1.0 {
-            stemInfo = emitStem(staffPos: staffPos, noteheadY: y, x: headX, absDur: absDur,
+            stemInfo = emitStem(staffPos: staffPos, noteheadY: y, x: headX, notehead: glyph,
+                                absDur: absDur,
                                 beamState: note.beam, direction: stemDirection, builder: &builder)
         }
 
@@ -1591,25 +1595,30 @@ struct SVGEmitter: Sendable {
     ///   `V:` `stem=`, the opposition a shared staff imposes, or the document's — with
     ///   `.auto` left for the note's own staff position to settle here.
     @discardableResult
-    private func emitStem(staffPos: Int, noteheadY: Double, x: Double, absDur: Double,
-                           beamState: BeamState, direction: StemDirection,
+    ///
+    /// The stem joins `notehead` where the face's `stemUpSE` / `stemDownNW` anchor says, so
+    /// it overlaps the notehead's edge rather than straddling it (issue #181).  Its length is
+    /// still measured from the notehead's centre, so the tip — and every beam hung from it —
+    /// is where it always was.
+    private func emitStem(staffPos: Int, noteheadY: Double, x: Double, notehead: SMuFLGlyph,
+                           absDur: Double, beamState: BeamState, direction: StemDirection,
                            builder: inout SVGBuilder) -> StemInfo {
+        let s            = config.staffSize
         let stemUp       = stemsUp(direction, staffPos: staffPos)
-        let noteheadW    = noteheadWidth()
-        let stemThick    = metadata.engravingDefaults.stemThickness * config.staffSize
-        let stemLength   = 3.5 * config.staffSize
+        let stemThick    = metadata.engravingDefaults.stemThickness * s
+        let stemLength   = 3.5 * s
+        let attachment   = metadata.stemAttachment(to: notehead, stemUp: stemUp)
 
-        let stemX: Double
+        let stemX      = x + attachment.x * s
+        let stemBaseY  = noteheadY - attachment.y * s
         let stemTop: Double
         let stemBottom: Double
 
         if stemUp {
-            stemX      = x + noteheadW
             stemTop    = noteheadY - stemLength
-            stemBottom = noteheadY
+            stemBottom = stemBaseY
         } else {
-            stemX      = x
-            stemTop    = noteheadY
+            stemTop    = stemBaseY
             stemBottom = noteheadY + stemLength
         }
 
@@ -1629,13 +1638,28 @@ struct SVGEmitter: Sendable {
             } else {
                 let fontSize = 4.0 * config.staffSize
                 let flag     = flagGlyph(absDur: absDur, stemUp: stemUp)
-                builder.text(String(flag.character), x: stemX, y: flagY,
-                             fontFamily: "Bravura", fontSize: fontSize)
+                emitFlag(flag, stemX: stemX, tipY: flagY, stemUp: stemUp, scale: 1.0,
+                         fontSize: fontSize, builder: &builder)
             }
         }
 
         return StemInfo(stemX: stemX, stemTipY: stemUp ? stemTop : stemBottom, stemUp: stemUp,
-                        noteheadY: noteheadY)
+                        stemBaseY: stemBaseY)
+    }
+
+    /// Hangs `flag` off the stem centred on `stemX` whose tip is at `tipY`.
+    ///
+    /// The flag's own `stemUpNW` / `stemDownSW` anchor is put on the stem's left edge at its
+    /// tip, which is where SMuFL designs the two to meet (issue #181).  `scale` applies to
+    /// the stem as well as the flag: a grace flag is drawn for a grace-sized stem.
+    private func emitFlag(_ flag: SMuFLGlyph, stemX: Double, tipY: Double, stemUp: Bool,
+                          scale: Double, fontSize: Double, builder: inout SVGBuilder) {
+        let s        = config.staffSize
+        let stemLeft = stemX - metadata.engravingDefaults.stemThickness * s * scale / 2
+        let join     = metadata.flagStemJoin(flag, stemUp: stemUp)
+        builder.text(String(flag.character),
+                     x: stemLeft - join.x * s * scale, y: tipY + join.y * s * scale,
+                     fontFamily: "Bravura", fontSize: fontSize)
     }
 
     /// Draws an accidental left of the notehead at `x`.
@@ -1696,7 +1720,9 @@ struct SVGEmitter: Sendable {
 
         let s          = config.staffSize
         let fontSize   = 4.0 * s * graceScale
-        let stemThick  = metadata.engravingDefaults.stemThickness * s
+        // Scaled with the rest of the note: the grace flag's own stem cap, and the anchors
+        // `GraceMetrics` places the stem by, are both drawn for a stem of this thickness.
+        let stemThick  = metadata.engravingDefaults.stemThickness * s * graceScale
         let metrics    = GraceMetrics(config: config, metadata: metadata)
         let stemLength = 3.5 * s * graceScale
         let multiple   = grace.notes.count > 1
@@ -1704,13 +1730,15 @@ struct SVGEmitter: Sendable {
         // Pre-pass: compute notehead Y and stem X for each grace note.
         // Notehead x positions come from `GraceMetrics`, the same source the sizer used to
         // reserve this group's width.
-        struct GracePos { let x, noteheadY, stemX: Double; let staffPos: Int }
+        struct GracePos { let x, noteheadY, stemX, stemBaseY: Double; let staffPos: Int }
         let noteheadXs = metrics.noteheadOffsets(grace.notes)
+        let stemXs     = metrics.stemOffsets(grace.notes)
         let positions: [GracePos] = grace.notes.enumerated().map { i, note in
             let x   = originX + noteheadXs[i]
             let sp  = self.staffPos(for: note.pitch)
             let y   = noteY(staffPos: sp, bottomStaffY: bottomStaffY)
-            return GracePos(x: x, noteheadY: y, stemX: x + metrics.noteheadWidth, staffPos: sp)
+            return GracePos(x: x, noteheadY: y, stemX: originX + stemXs[i],
+                            stemBaseY: y - metrics.stemBaseDY, staffPos: sp)
         }
 
         // The beam (or flag) sits at the top of the highest note's stem.
@@ -1741,7 +1769,7 @@ struct SVGEmitter: Sendable {
 
             // Stem runs from the notehead up to beamY; the highest note has exactly stemLength,
             // lower notes are extended so every stem tip meets the beam.
-            builder.line(x1: pos.stemX, y1: beamY, x2: pos.stemX, y2: pos.noteheadY,
+            builder.line(x1: pos.stemX, y1: beamY, x2: pos.stemX, y2: pos.stemBaseY,
                          stroke: "black", strokeWidth: stemThick)
 
             // Single grace note gets a 32nd-note flag (three flags); grace stems always point up.
@@ -1750,8 +1778,8 @@ struct SVGEmitter: Sendable {
                     emitStraightFlags(stemX: pos.stemX, flagTipY: beamY, absDur: 0.03125,
                                       stemUp: true, scale: graceScale, builder: &builder)
                 } else {
-                    builder.text(String(SMuFLGlyph.flag32ndUp.character), x: pos.stemX, y: beamY,
-                                 fontFamily: "Bravura", fontSize: fontSize)
+                    emitFlag(.flag32ndUp, stemX: pos.stemX, tipY: beamY, stemUp: true,
+                             scale: graceScale, fontSize: fontSize, builder: &builder)
                 }
             }
 
@@ -1767,18 +1795,20 @@ struct SVGEmitter: Sendable {
             let beamStep    = beamThick + beamSpacing
             for b in 0..<3 {
                 let y = beamY + Double(b) * beamStep
-                builder.line(x1: first.stemX, y1: y, x2: last.stemX, y2: y,
+                builder.line(x1: first.stemX - stemThick / 2, y1: y,
+                             x2: last.stemX + stemThick / 2, y2: y,
                              stroke: "black", strokeWidth: beamThick)
             }
         }
 
         // Acciaccatura: diagonal slash through the first stem at its midpoint
         if grace.kind == .acciaccatura, let first = positions.first {
-            let midStemY = (first.noteheadY + beamY) / 2.0
+            let midStemY = (first.stemBaseY + beamY) / 2.0
             let slashExt = s * 0.25
             builder.line(x1: first.stemX - slashExt, y1: midStemY + slashExt,
                          x2: first.stemX + slashExt, y2: midStemY - slashExt,
-                         stroke: "black", strokeWidth: stemThick)
+                         stroke: "black",
+                         strokeWidth: metadata.engravingDefaults.stemThickness * s)
         }
 
         return beamY
@@ -1955,7 +1985,7 @@ struct SVGEmitter: Sendable {
     }
 
     /// Which way a note stems, once its voice's direction and its own staff position have
-    /// both had their say.  ``emitStem(staffPos:noteheadY:x:absDur:beamState:direction:builder:)``
+    /// both had their say.  ``emitStem(staffPos:noteheadY:x:notehead:absDur:beamState:direction:builder:)``
     /// draws by this, and the collision pass reads it to decide which way a unison separates.
     private func stemsUp(_ direction: StemDirection, staffPos: Int) -> Bool {
         switch direction {

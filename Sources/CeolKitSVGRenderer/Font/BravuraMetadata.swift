@@ -152,3 +152,41 @@ private extension BravuraMetadata {
         glyphsWithAnchors = raw.glyphsWithAnchors
     }
 }
+
+// MARK: - Anchors
+
+extension BravuraMetadata {
+    /// The anchor `name` on `glyph`, in staff spaces from the glyph's origin with y pointing
+    /// up (SMuFL's convention, not SVG's), or `nil` where the face defines none.
+    public func anchor(_ name: String, on glyph: SMuFLGlyph) -> (x: Double, y: Double)? {
+        guard let point = glyphsWithAnchors[glyph.rawValue]?[name], point.count == 2 else {
+            return nil
+        }
+        return (point[0], point[1])
+    }
+
+    /// Where a stem joins `notehead`, in staff spaces from the notehead's origin, y up.
+    ///
+    /// `x` is the stem's *centreline*: SMuFL's `stemUpSE` and `stemDownNW` locate the stem's
+    /// outer corner, and a stroked stem is centred on the x it is drawn at, so the centreline
+    /// sits half a stem thickness inside that corner (issue #181).  `y` is where the stem's
+    /// notehead end goes.  A face without the anchor falls back to the notehead's bounding
+    /// box edge at its vertical centre.
+    func stemAttachment(to notehead: SMuFLGlyph, stemUp: Bool) -> (x: Double, y: Double) {
+        let halfStem = engravingDefaults.stemThickness / 2
+        if stemUp {
+            if let se = anchor("stemUpSE", on: notehead) { return (se.x - halfStem, se.y) }
+            return (glyphBBoxes[notehead.rawValue]?.width ?? 1.2, 0)
+        }
+        if let nw = anchor("stemDownNW", on: notehead) { return (nw.x + halfStem, nw.y) }
+        return (0, 0)
+    }
+
+    /// Where the stem's outer corner meets `flag` — `stemUpNW` on an up flag, `stemDownSW`
+    /// on a down one — in staff spaces from the flag's origin, y up.  The flag is hung so
+    /// that this point lands on the stem's left edge at its tip; `(0, 0)` where the face
+    /// has no anchor, which puts the flag's origin there instead.
+    func flagStemJoin(_ flag: SMuFLGlyph, stemUp: Bool) -> (x: Double, y: Double) {
+        anchor(stemUp ? "stemUpNW" : "stemDownSW", on: flag) ?? (0, 0)
+    }
+}

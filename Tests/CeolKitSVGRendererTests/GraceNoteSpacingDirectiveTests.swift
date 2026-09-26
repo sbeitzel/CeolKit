@@ -75,18 +75,23 @@ struct GraceNoteSpacingDirectiveTests {
 
     /// Length of the grace beam on each system of `svg`, in document order.
     ///
-    /// A grace beam runs from the first stem of the group to the last, so its length is
+    /// A grace beam runs from the first stem's centreline to the last's, plus half a stem at
+    /// each end to cover them (#181); less that one stem thickness its length is
     /// `(noteCount - 1) × advance` — the directive's effect on the drawn page, measured
     /// directly.  Grace stems point up, so the beams sit above their own staff and below
     /// the staff before it; the test tunes carry one grace group per system, and are
     /// written in quarter notes so no ordinary beam is drawn to be mistaken for one.
-    private func graceBeamLengths(in svg: String) -> [Double] {
+    ///
+    /// - Parameter scale: the tune's `%%ceolkit:scale`, which the stem thickness scales with.
+    private func graceBeamLengths(in svg: String, scale: Double = 1) throws -> [Double] {
+        let stem = try BravuraMetadata.load().engravingDefaults.stemThickness
+                   * SVGRenderConfig().staffSize * scale * GraceMetrics.scale
         let lines = horizontalLines(in: svg)
         let (tops, staffLines) = staves(in: svg)
         let beams = lines.enumerated().filter { !staffLines.contains($0.offset) }.map(\.element)
         return tops.enumerated().compactMap { index, top in
             let floor = index == 0 ? -Double.infinity : tops[index - 1]
-            return beams.first { $0.y < top && $0.y > floor }?.length
+            return beams.first { $0.y < top && $0.y > floor }.map { $0.length - stem }
         }
     }
 
@@ -112,8 +117,8 @@ struct GraceNoteSpacingDirectiveTests {
         let plainPage = try #require(try render(Self.tuneBody).first)
         let widePage  = try #require(try render(directive("2.1")).first)
 
-        let plainBeam = try #require(graceBeamLengths(in: plainPage).first)
-        let wideBeam  = try #require(graceBeamLengths(in: widePage).first)
+        let plainBeam = try #require(try graceBeamLengths(in: plainPage).first)
+        let wideBeam  = try #require(try graceBeamLengths(in: widePage).first)
 
         // The beam spans two steps for a three-note group, so its length is proportional
         // to the spacing factor: 2.1 is exactly twice the 1.05 default.
@@ -146,7 +151,7 @@ struct GraceNoteSpacingDirectiveTests {
         {gcd}A A A A|
         """
         let page = try #require(try render(abc).first)
-        let beams = graceBeamLengths(in: page)
+        let beams = try graceBeamLengths(in: page)
         try #require(beams.count == 2)
         #expect(abs(beams[1] - beams[0] * 2.0) < 1e-6)
     }
@@ -170,12 +175,12 @@ struct GraceNoteSpacingDirectiveTests {
         {gcd}A A A A|
         """
         let page = try #require(try render(abc).first)
-        let beams = graceBeamLengths(in: page)
+        let beams = try graceBeamLengths(in: page)
         try #require(beams.count == 2)
         #expect(abs(beams[0] - beams[1]) < 1e-9)
 
         let plainPage = try #require(try render(Self.tuneBody).first)
-        let plainBeam = try #require(graceBeamLengths(in: plainPage).first)
+        let plainBeam = try #require(try graceBeamLengths(in: plainPage).first)
         #expect(abs(beams[0] - plainBeam * 2.0) < 1e-6)
     }
 
@@ -199,8 +204,8 @@ struct GraceNoteSpacingDirectiveTests {
         let scaled   = try #require(
             try render(directive("2.1").replacing("K:C", with: "%%ceolkit:scale 0.5\nK:C")).first)
 
-        let unscaledBeam = try #require(graceBeamLengths(in: unscaled).first)
-        let scaledBeam   = try #require(graceBeamLengths(in: scaled).first)
+        let unscaledBeam = try #require(try graceBeamLengths(in: unscaled).first)
+        let scaledBeam   = try #require(try graceBeamLengths(in: scaled, scale: 0.5).first)
 
         // Halving the staff size halves the notehead the step is measured in, and nothing
         // more: a step that were itself scaled would land at a quarter, not a half.

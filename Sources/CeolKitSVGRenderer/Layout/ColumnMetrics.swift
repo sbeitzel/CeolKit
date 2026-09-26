@@ -158,8 +158,11 @@ struct ColumnMetrics: Sendable {
         let flagW = metadata.glyphBBoxes["flag32ndUp"]
                         .map { $0.width * config.staffSize * GraceMetrics.scale }
                     ?? config.staffSize * 0.625
-        let stemX        = graceMetrics.stemOffsets([single])[0]
-        let flagOverhang = max(0, stemX + flagW - graceMetrics.width([single]))
+        // The flag hangs from the stem's left edge (see `SVGEmitter.emitFlag`).
+        let stemLeft     = graceMetrics.stemOffsets([single])[0]
+                           - metadata.engravingDefaults.stemThickness * config.staffSize
+                             * GraceMetrics.scale / 2
+        let flagOverhang = max(0, stemLeft + flagW - graceMetrics.width([single]))
         return flagOverhang + config.staffSize * 0.25
     }
 

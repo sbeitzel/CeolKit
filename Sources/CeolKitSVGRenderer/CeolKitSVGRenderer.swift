@@ -112,6 +112,7 @@ public struct SVGRenderer: CeolKitRenderer {
         }()
 
         var tuneBlocks: [TuneBlock] = []
+        var fontReports: [TuneFontReport] = []
 
         // The size of the page the document is currently on, threaded through the tunes in
         // order: a page size persists until a `%%landscape` at a `%%newpage` changes it, so a
@@ -119,7 +120,7 @@ public struct SVGRenderer: CeolKitRenderer {
         var runningPageSize = Size(width: effectiveConfig.pageSize.width,
                                    height: effectiveConfig.pageSize.height)
 
-        for tune in score.tunes {
+        for (tuneIndex, tune) in score.tunes.enumerated() {
             // Where this tune's pages change size, and what they change to.  Resolved before
             // anything is packed because a page size decides the *width* the music is broken
             // to as well as the height it is packed into.
@@ -147,6 +148,17 @@ public struct SVGRenderer: CeolKitRenderer {
                 else { continue }
                 diagnostics += found.resolution.diagnostics(at: source)
             }
+            let report = styles.report(specs: layout.fonts, sources: layout.fontSources)
+            fontReports.append(TuneFontReport(tuneIndex: tuneIndex, roles: report))
+            diagnostics += Self.fontListDiagnostics(
+                for: tune, tuneReport: report, config: effectiveConfig,
+                fileReport: {
+                    TextStyles.resolve(
+                        fileLayout.fonts, sources: fileLayout.fontSources, provider: fontProvider,
+                        staffSize: effectiveConfig.scaled(by: fileLayout.scale).staffSize,
+                        scale: fileLayout.scale
+                    ).styles.report(specs: fileLayout.fonts, sources: fileLayout.fontSources)
+                })
             let sizer = MeasureSizer(config: tuneConfig, metadata: metadata, styles: styles)
 
             // §11.1: a `%%score` / `%%staves` plan decides which voices are printed and in
@@ -421,7 +433,41 @@ public struct SVGRenderer: CeolKitRenderer {
                                         firstPageNumber: firstPageNumber, fileLayout: fileLayout)
         // One `TuneBlock` is built per tune above, so a block's index is its tune's index.
         return RenderedDocument(pages: try emitter.emit(finalLayout), layout: finalLayout,
-                                placements: placements)
+                                placements: placements, fonts: fontReports)
+    }
+
+    // MARK: - Font lists
+
+    /// What each `%%ceolkit:fontlist` in `tune` reports, as notes at the directive
+    /// (issue #191).
+    ///
+    /// Font directives are scoped, not positional — one anywhere in a tune sets that tune's
+    /// text throughout — so a list reports the fonts of the scope it is written in: the
+    /// tune's, or, written in the file preamble, the document's baseline (`fileReport`,
+    /// asked for only where a preamble list needs it).
+    static func fontListDiagnostics(for tune: Tune, tuneReport: [TextFontReport],
+                                    config: SVGRenderConfig,
+                                    fileReport: () -> [TextFontReport]) -> [Diagnostic] {
+        var out: [Diagnostic] = []
+        for scope in tune.directives {
+            guard case .fontList(let mode) = scope.directive else { continue }
+            func note(_ message: String) {
+                out.append(Diagnostic(severity: .info, code: .fontList, message: message,
+                                      source: scope.source))
+            }
+            switch mode {
+            case .resolved:
+                let fileGlobal = if case .fileGlobal = scope.scope { true } else { false }
+                for role in fileGlobal ? fileReport() : tuneReport { note(role.summary) }
+            case .available:
+                for face in CeolKitFonts.availableFaces(config: config) {
+                    note("\(face.postScriptName): \(face.family), \(face.weight.rawValue) "
+                         + "\(face.style.rawValue), \(face.format.rawValue), \(face.origin.rawValue)"
+                         + (face.embeddable ? "" : ", not embeddable"))
+                }
+            }
+        }
+        return out
     }
 
     // MARK: - Page breaks

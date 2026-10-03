@@ -23,6 +23,7 @@ public enum CeolKitDirective: Hashable, Sendable {
     case graceSlurs(Bool)              // %%graceslurs bool      (abcm2ps/abc2svg)
     case staffPlan(StaffPlan)          // %%score / %%staves     (ABC v2.2 §11.1)
     case font(TextFontRole, FontSpec)  // %%titlefont, %%gchordfont, … <name> [<size>]  (§11.4.2)
+    case fontList(FontListMode)        // %%ceolkit:fontlist [resolved|available]  (issue #191)
 }
 
 public struct CeolKitDirectiveScope: Sendable {

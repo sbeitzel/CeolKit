@@ -8,8 +8,11 @@ struct TextFace: Sendable {
     let family: String
     let isItalic: Bool
     let isBold: Bool
+    /// How the face was chosen, for reporting (issue #191).
+    let resolution: FontResolution
 
     init(_ resolved: FontProvider.Resolved) {
+        resolution = resolved.resolution
         key = resolved.key
         font = resolved.font
         family = resolved.resolution.family
@@ -38,6 +41,19 @@ struct TextStyle: Sendable {
         self.face = face
         self.size = size
         self.italic = italic
+    }
+
+    /// The face the text is set in: the directive's, or the Libertinus Serif face the
+    /// default draws with, which is never a substitute for anything.
+    var resolution: FontResolution {
+        if let face { return face.resolution }
+        let bundled: CeolKitFonts.Face = italic ? .libertinusSerifItalic : .libertinusSerifRegular
+        return FontResolution(
+            requested: FontRequest(family: bundled.familyName,
+                                   style: italic ? .italic : .upright),
+            postScriptName: bundled.rawValue, family: bundled.familyName, weight: .regular,
+            style: italic ? .italic : .upright, origin: .bundled, refusedForEmbedding: [],
+            searchedSystemFonts: false)
     }
 
     /// The face text in this style is measured with: the directive's, or Libertinus Serif.
@@ -157,6 +173,33 @@ struct TextStyles: Sendable {
         styles.vocal = style(.vocal, styles.vocal, scales: true)
         styles.tempoChange = style(.tempo, styles.tempoChange, scales: true)
         return (styles, resolutions)
+    }
+
+    /// The style text of `role` is set in, for a role this renderer draws; the `Q:` in the
+    /// title block stands for `.tempo`.
+    func style(for role: TextFontRole) -> TextStyle? {
+        switch role {
+        case .title:       return title
+        case .subtitle:    return subtitle
+        case .composer:    return composer
+        case .info:        return info
+        case .tempo:       return tempo
+        case .words:       return words
+        case .chordSymbol: return chordSymbol
+        case .annotation:  return annotation
+        case .vocal:       return vocal
+        case .parts, .text, .set1, .set2, .set3, .set4: return nil
+        }
+    }
+
+    /// What each kind of text drawn is set in, and what was asked for it (issue #191).
+    func report(specs: [TextFontRole: FontSpec],
+                sources: [TextFontRole: SourceRange]) -> [TextFontReport] {
+        TextFontRole.allCases.compactMap { role in
+            guard let style = style(for: role) else { return nil }
+            return TextFontReport(role: role, requested: specs[role], source: sources[role],
+                                  resolution: style.resolution, size: style.size)
+        }
     }
 
     /// Every bundled face the styles draw with, for `fontFace` mode to embed.

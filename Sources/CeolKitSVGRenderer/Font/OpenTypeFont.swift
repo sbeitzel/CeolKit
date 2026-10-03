@@ -135,6 +135,12 @@ struct OpenTypeFont: Sendable {
         case trueType(TrueTypeGlyphs)
     }
 
+    /// Whether the outlines are CFF (`.otf`) rather than TrueType `glyf` (`.ttf`).
+    var isCFF: Bool {
+        if case .cff = outlines { return true }
+        return false
+    }
+
     var glyphCount: Int {
         switch outlines {
         case .cff(let charstrings): return charstrings.glyphCount

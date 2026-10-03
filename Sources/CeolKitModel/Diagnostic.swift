@@ -136,4 +136,7 @@ public enum DiagnosticCode: String, Codable, Sendable {
     /// A face matched the font a document named, but its licence (`OS/2.fsType`) forbids
     /// copying its outlines into a document, so another face was used.
     case fontNotEmbeddable
+    /// A report `%%ceolkit:fontlist` asked for: one face, or what one kind of text is set in
+    /// (issue #191).  Always `.info`.
+    case fontList
 }

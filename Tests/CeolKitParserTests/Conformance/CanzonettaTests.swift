@@ -107,7 +107,7 @@ struct CanzonettaTests {
 
     @Test("Composer is Claudio Monteverdi (1567-1643)")
     func tuneComposer() {
-        #expect(score.firstTune?.metadata.composer?.value == "Claudio Monteverdi (1567-1643)")
+        #expect(score.firstTune?.metadata.composer.map(\.value) == ["Claudio Monteverdi (1567-1643)"])
     }
 
     @Test("Meter is common time (C)")

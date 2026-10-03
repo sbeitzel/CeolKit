@@ -73,11 +73,7 @@ private func makeTune(
         staffProperties: StaffProperties(staffLines: 5),
         source:          dummyRange
     )
-    let meta = TuneMetadata(
-        composer: nil, origin: [], area: nil, book: nil, discography: nil,
-        fileURL: nil, group: nil, history: [], notes: nil, source: nil,
-        rhythm: nil, transcription: nil
-    )
+    let meta = TuneMetadata()
     return Tune(
         reference:      ref,
         titles:         [TextString(value: title, source: dummyRange)],

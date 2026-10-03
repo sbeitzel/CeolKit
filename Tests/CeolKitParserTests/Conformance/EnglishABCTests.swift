@@ -144,7 +144,7 @@ struct EnglishABCTests {
     @Test("Tune 1 composer is Trad.")
     func tune1Composer() {
         guard let tune = score.tunes.first else { Issue.record("Parser prerequisite not met"); return }
-        #expect(tune.metadata.composer?.value == "Trad.")
+        #expect(tune.metadata.composer.map(\.value) == ["Trad."])
     }
 
     @Test("Tune 1 first measure has six notes")

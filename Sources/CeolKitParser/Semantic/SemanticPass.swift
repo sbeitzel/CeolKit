@@ -441,22 +441,23 @@ struct SemanticPass {
         case .userSymbol(let ch, let d, _): ctx.userSymbols[ch] = d
         case .macro(let pat, let exp, let src):
             ctx.macros.append(MacroDefinition(pattern: pat, expansion: exp, source: src))
-        case .composer(let t):          ctx.composer = t
+        case .composer(let t):          ctx.composer.append(t)
         case .origin(let t):
             let parts = t.value.components(separatedBy: ";")
                 .map { $0.trimmingCharacters(in: .whitespaces) }
                 .filter { !$0.isEmpty }
             ctx.origins.append(contentsOf: parts)
-        case .area(let t):              ctx.area = t
-        case .book(let t):              ctx.book = t
-        case .discography(let t):       ctx.discography = t
-        case .fileUrl(let t):           ctx.fileURL = URL(string: t.value)
-        case .group(let t):             ctx.group = t
+        case .area(let t):              ctx.area.append(t)
+        case .book(let t):              ctx.book.append(t)
+        case .discography(let t):       ctx.discography.append(t)
+        case .fileUrl(let t):
+            if let url = URL(string: t.value) { ctx.fileURL.append(url) }
+        case .group(let t):             ctx.group.append(t)
         case .history(let t):           ctx.history.append(t)
-        case .notes(let t):             ctx.notes = t
-        case .sourceText(let t):        ctx.sourceText = t
-        case .rhythm(let t):            ctx.rhythm = t
-        case .transcription(let t):     ctx.transcription = t
+        case .notes(let t):             ctx.notes.append(t)
+        case .sourceText(let t):        ctx.sourceText.append(t)
+        case .rhythm(let t):            ctx.rhythm.append(t)
+        case .transcription(let t):     ctx.transcription.append(t)
         case .instruction(let t):
             let parts = t.value.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
             if parts.first?.lowercased() == "linebreak" {
@@ -1985,18 +1986,18 @@ private struct TuneContext {
     var userSymbols: [Character: Decoration] = [:]
     var macros: [MacroDefinition] = []
     // metadata fields
-    var composer: TextString? = nil
+    var composer: [TextString] = []
     var origins: [String] = []
-    var area: TextString? = nil
-    var book: TextString? = nil
-    var discography: TextString? = nil
-    var fileURL: URL? = nil
-    var group: TextString? = nil
+    var area: [TextString] = []
+    var book: [TextString] = []
+    var discography: [TextString] = []
+    var fileURL: [URL] = []
+    var group: [TextString] = []
     var history: [TextString] = []
-    var notes: TextString? = nil
-    var sourceText: TextString? = nil
-    var rhythm: TextString? = nil
-    var transcription: TextString? = nil
+    var notes: [TextString] = []
+    var sourceText: [TextString] = []
+    var rhythm: [TextString] = []
+    var transcription: [TextString] = []
     // I:linebreak parsed per ABC 2.2 §9.2 — default is I:linebreak <EOL> $
     var linebreakChars: Set<Character> = ["$"] // $ and/or !
     var linebreakOnEOL: Bool = true            // <EOL> token

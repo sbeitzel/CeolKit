@@ -235,7 +235,7 @@ struct StaffBraceTests {
 @Suite("Anisotropic glyph scaling")
 struct StretchedTextTests {
 
-    private let fonts = try! OutlineFontSet.shared()
+    private let fonts = try! FontProvider(library: nil, systemFonts: false, outlinesEmbed: true)
     /// A glyph Bravura actually draws, so the outline route has an outline to emit.
     private let glyph = String(SMuFLGlyph.brace.character)
 

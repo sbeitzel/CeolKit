@@ -127,4 +127,10 @@ public enum DiagnosticCode: String, Codable, Sendable {
     case circularInclude
     case includeIgnoredInline
     case usingDefaultFileResolver
+    // Fonts (issue #190)
+    /// The font a document named was not available, and another face was used in its place.
+    case fontSubstituted
+    /// A face matched the font a document named, but its licence (`OS/2.fsType`) forbids
+    /// copying its outlines into a document, so another face was used.
+    case fontNotEmbeddable
 }

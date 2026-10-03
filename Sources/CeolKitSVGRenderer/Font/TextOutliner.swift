@@ -20,6 +20,9 @@ public struct OutlinedText: Sendable, Equatable {
     /// The face's typographic descender at this size, as a positive distance below the
     /// baseline — the same sign convention as ``LibertinusSerifMetrics/descenderRatio``.
     public let descent: Double
+    /// Which face the text was drawn in and why, where it was asked for by
+    /// ``FontRequest``; `nil` for a bundled ``CeolKitFonts/Face`` asked for directly.
+    public let resolution: FontResolution?
 }
 
 /// Outlines text in a bundled face without going through the parser or a `Score` (#146).
@@ -48,7 +51,48 @@ public enum TextOutliner {
         fontSize: Double,
         fill: String = "black"
     ) throws -> OutlinedText {
-        let font = try OutlineFontSet.font(for: face)
+        outline(text, in: try OutlineFontSet.font(for: face), fontSize: fontSize, fill: fill,
+                resolution: nil)
+    }
+
+    /// Outlines `text` in the face `font` names, found as the engraver finds it: in
+    /// `library`, then — with `systemFonts` — among the fonts installed on the machine, then
+    /// in the bundle, which always has an answer (issue #190).
+    ///
+    /// ``OutlinedText/resolution`` says which face was used; its
+    /// ``FontResolution/diagnostics(at:)`` say what a document that named this font should
+    /// hear about the choice.  A face whose licence forbids embedding is passed over, since
+    /// outlining copies its glyphs into whatever document the result lands in.
+    ///
+    /// - Throws: ``CeolKitFontsError`` if the bundled faces cannot be read.
+    public static func outline(
+        _ text: String,
+        font request: FontRequest,
+        fontSize: Double,
+        fill: String = "black",
+        library: FontLibrary? = nil,
+        systemFonts: Bool = false
+    ) throws -> OutlinedText {
+        let provider = try fontProvider(library: library, systemFonts: systemFonts)
+        let resolved = provider.resolve(request)
+        return outline(text, in: resolved.font, fontSize: fontSize, fill: fill,
+                       resolution: resolved.resolution)
+    }
+
+    private static func fontProvider(library: FontLibrary?,
+                                     systemFonts: Bool) throws -> FontProvider {
+        do {
+            return try FontProvider(library: library, systemFonts: systemFonts,
+                                    outlinesEmbed: true)
+        } catch {
+            // Report it as the bundled-face API does: the bundle is what failed.
+            _ = try OutlineFontSet.font(for: .libertinusSerifRegular)
+            throw error
+        }
+    }
+
+    private static func outline(_ text: String, in font: OpenTypeFont, fontSize: Double,
+                                fill: String, resolution: FontResolution?) -> OutlinedText {
         let scale = fontSize / font.unitsPerEm
         let run = OutlineRun(text, font: font)
 
@@ -69,7 +113,8 @@ public enum TextOutliner {
             svg: svg,
             advanceWidth: font.width(of: text, fontSize: fontSize),
             ascent: font.ascender * scale,
-            descent: -font.descender * scale)
+            descent: -font.descender * scale,
+            resolution: resolution)
     }
 
     /// How wide `text` is drawn in `face` at `fontSize` — the ``OutlinedText/advanceWidth``

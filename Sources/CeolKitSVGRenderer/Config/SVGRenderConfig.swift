@@ -49,6 +49,14 @@ public struct SVGRenderConfig: Sendable {
     /// short rather than smeared across the page.  Systems the source broke are not capped.
     /// Generous by design — see ``Justifier/maxStretch``.
     public var maxSystemStretch: Double
+    /// Faces the host supplies, tried before any other when text names a font (issue #190).
+    /// `nil` — the default — leaves the system's fonts, if enabled, and the bundled faces.
+    public var fontLibrary: FontLibrary?
+    /// Whether a font named by the document may be looked up among the fonts installed on
+    /// the machine (Apple platforms only).  Off by default, because it makes the output
+    /// depend on the machine it is rendered on; the SVG that results is still portable in
+    /// ``TextRendering/outlines`` mode, which carries the glyphs with it.
+    public var systemFonts: Bool
 
     public init(
         pageSize: PageSize = .letter,
@@ -64,7 +72,9 @@ public struct SVGRenderConfig: Sendable {
         graceNoteSpacing: Double = 1.05,
         textRendering: TextRendering = .outlines,
         lineOverflowTolerance: Double = 0.02,
-        maxSystemStretch: Double = 3.0
+        maxSystemStretch: Double = 3.0,
+        fontLibrary: FontLibrary? = nil,
+        systemFonts: Bool = false
     ) {
         self.pageSize = pageSize
         self.margins = margins
@@ -80,6 +90,8 @@ public struct SVGRenderConfig: Sendable {
         self.textRendering = textRendering
         self.lineOverflowTolerance = lineOverflowTolerance
         self.maxSystemStretch = maxSystemStretch
+        self.fontLibrary = fontLibrary
+        self.systemFonts = systemFonts
     }
 
     /// Returns a copy with `staffSize` and the vertical gaps derived from it multiplied

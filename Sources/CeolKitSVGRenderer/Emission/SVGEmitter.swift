@@ -122,7 +122,7 @@ struct SVGEmitter: Sendable {
                 libertinusSerif: try LibertinusSerifMetrics.loadBase64(),
                 libertinusSerifItalic: try LibertinusSerifMetrics.loadItalicBase64())
             : nil
-        let fonts = config.textRendering.emitsOutlines ? try OutlineFontSet.shared() : nil
+        let fonts = config.textRendering.emitsOutlines ? try FontProvider(config: config) : nil
         // Threaded across every page/system so ties and slurs that span a system or page
         // break (#27) are resolved with dangling arcs instead of being silently dropped.
         var pendingTies:  [TieAnchor]  = []
@@ -145,7 +145,7 @@ struct SVGEmitter: Sendable {
     // MARK: - Page
 
     private func emitPage(_ page: ResolvedPage, pageNumber: Int, layout: ResolvedLayout,
-                           embeddedFaces: EmbeddedFaces?, fonts: OutlineFontSet?,
+                           embeddedFaces: EmbeddedFaces?, fonts: FontProvider?,
                            pendingTies: inout [TieAnchor], pendingSlurs: inout [SlurAnchor]) -> String {
         var builder = SVGBuilder(textRendering: config.textRendering, fonts: fonts)
         emitScrollSyncMetadata(for: page, pageNumber: pageNumber, builder: &builder)

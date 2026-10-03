@@ -695,12 +695,19 @@ public struct VerticalLayoutEngine: Sendable {
             // section-start markers ([|, [|:, |:, ::), which are conventionally
             // restated at the start of a line.  Anything else would appear as a
             // spurious bar line between the clef/key signature and the first note.
+            //
+            // A repeat sign that falls on a system break is split across it, as abcm2ps
+            // and engraving convention both do it (issue #197): the half that looks back
+            // closes the system, the half that looks forward opens the next one.  So `::`
+            // restated at the start of a line keeps only its start-repeat half...
             let openingBar: ResolvedBarLine? = {
                 guard let bar = jm.source.measure.openingBar else { return nil }
                 guard i > 0 else {
                     switch bar.kind {
-                    case .start, .sectionRepeatStart, .repeatStart, .repeatBoth:
+                    case .start, .sectionRepeatStart, .repeatStart:
                         return ResolvedBarLine(x: measureOrigin.x, kind: bar.kind)
+                    case .repeatBoth:
+                        return ResolvedBarLine(x: measureOrigin.x, kind: .repeatStart)
                     default:
                         return nil
                     }
@@ -708,9 +715,21 @@ public struct VerticalLayoutEngine: Sendable {
                 guard bar != measures[i - 1].source.measure.closingBar else { return nil }
                 return ResolvedBarLine(x: measureOrigin.x, kind: bar.kind)
             }()
+            // ...and at the end of a system a start-repeat draws as a plain bar line, and
+            // `::` as its end-repeat half.  Drawn whole, either one's dots — and the thick
+            // line of a `|:` — would land past the end of the staff.
+            let closingKind: BarLineKind = {
+                let kind = jm.source.measure.closingBar.kind
+                guard i == measures.count - 1 else { return kind }
+                switch kind {
+                case .repeatStart, .sectionRepeatStart: return .single
+                case .repeatBoth:                       return .repeatEnd
+                default:                                return kind
+                }
+            }()
             let closingBar = ResolvedBarLine(
                 x: measureOrigin.x + jm.finalWidth,
-                kind: jm.source.measure.closingBar.kind
+                kind: closingKind
             )
 
             resolved.append(ResolvedMeasure(

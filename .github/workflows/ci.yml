@@ -68,6 +68,18 @@ jobs:
       - name: Resolve dependencies
         run: swift package resolve
 
+      # Fonts the fontconfig tests (#206) know are there: one package per case (TrueType
+      # stand-ins, CFF .otf, .otf beside Type 1, a .ttc), plus CeolKit's own fixture
+      # collection, whose second face restricts embedding.  The tests run only where
+      # CEOLKIT_FONT_FIXTURES is set, below.
+      - name: Install fonts for the system font tests
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            fontconfig fonts-liberation fonts-ebgaramond fonts-urw-base35 fonts-wqy-microhei
+          cp Tests/CeolKitSVGRendererTests/Resources/CeolKitTest.ttc /usr/local/share/fonts/
+          fc-cache -f
+
       - name: Build
         run: swift build --build-tests
 
@@ -76,3 +88,5 @@ jobs:
       # compile out on Linux.
       - name: Test
         run: swift test --skip-build
+        env:
+          CEOLKIT_FONT_FIXTURES: "1"

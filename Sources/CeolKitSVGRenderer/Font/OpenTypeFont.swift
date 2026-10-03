@@ -224,8 +224,7 @@ struct OpenTypeFont: Sendable {
             throw OpenTypeError.missingTable("CFF ")
         }
 
-        let os2 = tables["OS/2"]
-        let macStyle = try bytes.u16(head + 44, "head")
+        let style = try readStyle(bytes, tables: tables)
         return OpenTypeFont(
             unitsPerEm: Double(unitsPerEm),
             ascender: Double(ascender),
@@ -233,17 +232,58 @@ struct OpenTypeFont: Sendable {
             postScriptName: try readName(6, bytes, tables: tables),
             familyName: try readName(16, bytes, tables: tables)
                 ?? readName(1, bytes, tables: tables),
-            // `head.macStyle` bit 0 for a face with no `OS/2` — macOS's own Courier.ttc.
-            weightClass: try os2.map { try bytes.u16($0 + 4, "OS/2") }
-                ?? (macStyle & 0x0001 != 0 ? 700 : 400),
-            isItalic: try os2.map { try bytes.u16($0 + 62, "OS/2") & 0x0001 != 0 }
-                ?? (macStyle & 0x0002 != 0),
-            embedding: EmbeddingPermissions(
-                fsType: try tables["OS/2"].map { try bytes.u16($0 + 8, "OS/2") } ?? 0),
+            weightClass: style.weightClass,
+            isItalic: style.isItalic,
+            embedding: style.embedding,
             cmap: cmap,
             advances: advances,
             outlines: outlines
         )
+    }
+
+    /// What a listing says about a face, read without parsing its glyphs (issue #206).
+    struct Summary: Sendable {
+        let postScriptName: String?
+        let familyName: String?
+        let weightClass: Int
+        let isItalic: Bool
+        let isCFF: Bool
+        let embedding: EmbeddingPermissions
+    }
+
+    /// Summarises face `faceIndex` of a font file or collection: the names and style a
+    /// parse would read, from the same tables, but none of the outlines or metrics.
+    /// Throws for a file that is not an OpenType face with CFF or TrueType outlines.
+    static func summary(_ data: Data, faceIndex: Int = 0) throws -> Summary {
+        let bytes = FontBytes(data)
+        let directories = try faceDirectories(bytes)
+        guard directories.indices.contains(faceIndex) else {
+            throw OpenTypeError.faceNotFound("#\(faceIndex)")
+        }
+        let tables = try readTableDirectory(bytes, at: directories[faceIndex])
+        guard tables["CFF "] != nil || tables["glyf"] != nil else {
+            throw OpenTypeError.missingTable("CFF ")
+        }
+        let style = try readStyle(bytes, tables: tables)
+        return Summary(
+            postScriptName: try readName(6, bytes, tables: tables),
+            familyName: try readName(16, bytes, tables: tables) ?? readName(1, bytes, tables: tables),
+            weightClass: style.weightClass, isItalic: style.isItalic,
+            isCFF: tables["CFF "] != nil, embedding: style.embedding)
+    }
+
+    /// Weight, slant and embedding permission, from `OS/2` — or, for a face with no `OS/2`
+    /// (macOS's own Courier.ttc), `head.macStyle`'s bold and italic bits.
+    private static func readStyle(_ bytes: FontBytes, tables: [String: Int]) throws
+        -> (weightClass: Int, isItalic: Bool, embedding: EmbeddingPermissions) {
+        guard let head = tables["head"] else { throw OpenTypeError.missingTable("head") }
+        let macStyle = try bytes.u16(head + 44, "head")
+        guard let os2 = tables["OS/2"] else {
+            return (macStyle & 0x0001 != 0 ? 700 : 400, macStyle & 0x0002 != 0,
+                    EmbeddingPermissions(fsType: 0))
+        }
+        return (try bytes.u16(os2 + 4, "OS/2"), try bytes.u16(os2 + 62, "OS/2") & 0x0001 != 0,
+                EmbeddingPermissions(fsType: try bytes.u16(os2 + 8, "OS/2")))
     }
 
     /// Where each face's table directory starts: the start of the file for a single face,

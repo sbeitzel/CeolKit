@@ -99,8 +99,21 @@ public struct Justifier: Sendable {
         let finalTotal = resolvedWidth(naturalTotal: naturalTotal, targetWidth: targetWidth,
                                        stretch: stretch, capStretch: capStretch)
 
+        // What the music alone would have made each column, before text widened it.
+        let musicWidths = (0..<group.columnCount).map { column in
+            group.staves.reduce(0.0) { max($0, $1.measures[column].musicWidth) }
+        }
+
         let finalWidths: [Double]
-        if naturalTotal > 0 && finalTotal != naturalTotal {
+        if finalTotal > naturalTotal, zip(musicWidths, columnWidths).contains(where: { $0 < $1 }) {
+            // Some column was widened for its text (issue #185).  Stretch the music and hold
+            // each column to the width its text needs, rather than scaling the text's room up
+            // along with it: a bar that had to open up for one long chord symbol should not
+            // then take the lion's share of the line's slack as well.
+            let scale = Self.floorScale(music: musicWidths, floors: columnWidths,
+                                        target: finalTotal)
+            finalWidths = zip(musicWidths, columnWidths).map { max($0 * scale, $1) }
+        } else if naturalTotal > 0 && finalTotal != naturalTotal {
             let slack = finalTotal - naturalTotal
             finalWidths = columnWidths.map { $0 + slack * ($0 / naturalTotal) }
         } else {
@@ -115,10 +128,14 @@ public struct Justifier: Sendable {
                     return JustifiedMeasure(source: sized, finalWidth: finalWidth,
                                             eventOffsets: sized.eventOffsets)
                 }
-                let offsets = stretchOffsets(sized.eventOffsets,
-                                             naturalWidth: sized.naturalWidth,
-                                             finalWidth: finalWidth,
-                                             graceIndices: sized.graceEventIndices)
+                let widenedForText = sized.musicOffsets != sized.eventOffsets
+                    || sized.musicWidth != sized.naturalWidth
+                let offsets = widenedForText && finalWidth > sized.naturalWidth
+                    ? stretchOffsets(of: sized, finalWidth: finalWidth)
+                    : stretchOffsets(sized.eventOffsets,
+                                     naturalWidth: sized.naturalWidth,
+                                     finalWidth: finalWidth,
+                                     graceIndices: sized.graceEventIndices)
                 return JustifiedMeasure(source: sized, finalWidth: finalWidth, eventOffsets: offsets)
             }
             return JustifiedSystem(measures: measures, isLastSystem: staff.isLastSystem,
@@ -196,6 +213,117 @@ public struct Justifier: Sendable {
                 // Elastic event: scale its position relative to the base.
                 let fixed = fixedLeftOf(i)
                 result[i] = base + fixed + (offsets[i] - base - fixed) * elasticScale
+            }
+        }
+        return result
+    }
+
+    // MARK: - Stretching around text (issue #185)
+
+    /// The factor `k` at which `Σ max(music[g] · k, floors[g])` reaches `target`.
+    ///
+    /// Each gap is stretched with the music, but never below the width it already has
+    /// (`floors[g] ≥ music[g]`); a gap the text widened therefore takes no slack until the
+    /// music around it has caught up with it.  `target` is at least `Σ floors`, which is the
+    /// sum at `k = 1`.  Where nothing can stretch at all, `1`.
+    static func floorScale(music: [Double], floors: [Double], target: Double) -> Double {
+        // A gap joins the stretch at the factor where its music overtakes its floor.
+        /// Where a gap joins: never, for one with no music to stretch.
+        func joinsAt(_ gap: (music: Double, floor: Double)) -> Double {
+            gap.music > 0 ? gap.floor / gap.music : .infinity
+        }
+        let gaps: [(music: Double, floor: Double)] = zip(music, floors)
+            .map { (music: $0.0, floor: max($0.0, $0.1)) }
+            .sorted { joinsAt($0) < joinsAt($1) }
+        var stretching = 0.0                                // Σ music of the gaps stretching
+        var held = gaps.reduce(0.0) { $0 + $1.floor }       // Σ floor of the gaps that are not
+        for gap in gaps {
+            guard gap.music > 0 else { break }
+            if stretching > 0 {
+                let k = (target - held) / stretching
+                if k <= joinsAt(gap) { return max(1, k) }
+            }
+            stretching += gap.music
+            held -= gap.floor
+        }
+        guard stretching > 0 else { return 1 }
+        return max(1, (target - held) / stretching)
+    }
+
+    /// Stretches a bar that ``AnnotationSpacing`` widened, from its natural width to
+    /// `finalWidth`.
+    ///
+    /// As ``stretchOffsets(_:naturalWidth:finalWidth:graceIndices:)`` does, the leading
+    /// margin and each grace+note gap stay fixed and everything else is elastic.  The
+    /// elastic gaps, though, are stretched from their *music* widths and held to at least
+    /// their widened ones — see ``floorScale(music:floors:target:)`` — so the room a chord
+    /// symbol needed is kept, not scaled up again with everything else.
+    private func stretchOffsets(of sized: SizedMeasure, finalWidth: Double) -> [Double] {
+        let offsets = sized.eventOffsets
+        let music = sized.musicOffsets
+        guard !offsets.isEmpty, music.count == offsets.count else { return offsets }
+        let graceIndices = sized.graceEventIndices
+        let base = offsets[0]
+
+        let pairs: [(note: Int, x: Double, gap: Double)] = graceIndices.sorted().compactMap {
+            guard $0 + 1 < offsets.count else { return nil }
+            return (note: $0 + 1, x: offsets[$0 + 1], gap: offsets[$0 + 1] - offsets[$0])
+        }
+        let fixedTotal = pairs.reduce(0.0) { $0 + $1.gap }
+        func fixedLeftOf(_ i: Int) -> Double {
+            pairs.reduce(0.0) { sum, pair in
+                guard pair.note != i, pair.note - 1 != i else { return sum }
+                let isLeft = pair.x < offsets[i] || (pair.x == offsets[i] && pair.note < i)
+                return isLeft ? sum + pair.gap : sum
+            }
+        }
+
+        // Every elastic event's coordinate along the elastic part of the bar, as widened and
+        // as the music alone placed it.
+        let elastic = offsets.indices.filter { !($0 > 0 && graceIndices.contains($0 - 1)) }
+        let widened = Dictionary(uniqueKeysWithValues: elastic.map {
+            ($0, offsets[$0] - base - fixedLeftOf($0))
+        })
+        let unwidened = Dictionary(uniqueKeysWithValues: elastic.map {
+            ($0, music[$0] - music[0] - fixedLeftOf($0))
+        })
+
+        // The distinct points the elastic events stand at, left to right, and the bar's end.
+        var points: [(widened: Double, music: Double)] = []
+        for i in elastic.sorted(by: { (widened[$0]!, $0) < (widened[$1]!, $1) }) {
+            let point = (widened: widened[i]!, music: unwidened[i]!)
+            if let last = points.last, abs(last.widened - point.widened) < 0.0001 {
+                points[points.count - 1].music = max(last.music, point.music)
+            } else {
+                points.append(point)
+            }
+        }
+        points.append((widened: sized.naturalWidth - base - fixedTotal,
+                       music: sized.musicWidth - music[0] - fixedTotal))
+
+        let floors = zip(points, points.dropFirst()).map { $1.widened - $0.widened }
+        let musicGaps = zip(zip(points, points.dropFirst()), floors).map { pair, floor in
+            min(floor, max(0, pair.1.music - pair.0.music))
+        }
+        let scale = Self.floorScale(music: musicGaps, floors: floors,
+                                    target: finalWidth - base - fixedTotal)
+
+        // Where each point lands once every gap before it has been stretched.
+        var landed: [Double] = [points.first?.widened ?? 0]
+        for (m, floor) in zip(musicGaps, floors) {
+            landed.append(landed[landed.count - 1] + max(m * scale, floor))
+        }
+        func landing(_ coordinate: Double) -> Double {
+            let n = points.firstIndex { abs($0.widened - coordinate) < 0.0001 } ?? 0
+            return landed[n]
+        }
+
+        var result = [Double](repeating: 0, count: offsets.count)
+        for i in 0..<offsets.count {
+            if i > 0 && graceIndices.contains(i - 1) {
+                result[i] = result[i - 1] + (offsets[i] - offsets[i - 1])
+            } else {
+                result[i] = base + fixedLeftOf(i) + landing(widened[i]!)
             }
         }
         return result

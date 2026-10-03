@@ -32,6 +32,13 @@ public struct SizedMeasure: Sendable {
     /// outgoing signature depend on the key being left behind, which is not the measure's to
     /// know.
     public let keyChange: KeyChange?
+    /// Where the events stood, and how wide the bar was, as the music alone spaced it —
+    /// before ``AnnotationSpacing`` opened columns up for the text on the notes (issue #185).
+    /// The ``Justifier`` stretches *these*, holding each gap to at least its widened width,
+    /// so that the room a chord symbol needed is not then scaled up again along with the
+    /// music.  Equal to ``eventOffsets`` and ``naturalWidth`` in a bar no text widened.
+    public let musicOffsets: [Double]
+    public let musicWidth: Double
 
     public init(
         measure: Measure,
@@ -40,11 +47,15 @@ public struct SizedMeasure: Sendable {
         unitNoteLength: Fraction = Fraction(numerator: 1, denominator: 8),
         graceEventIndices: Set<Int> = [],
         eventVoiceIndices: [Int]? = nil,
-        keyChange: KeyChange? = nil
+        keyChange: KeyChange? = nil,
+        musicOffsets: [Double]? = nil,
+        musicWidth: Double? = nil
     ) {
         self.measure = measure
         self.naturalWidth = naturalWidth
         self.eventOffsets = eventOffsets
+        self.musicOffsets = musicOffsets ?? eventOffsets
+        self.musicWidth = musicWidth ?? naturalWidth
         self.unitNoteLength = unitNoteLength
         self.graceEventIndices = graceEventIndices
         self.keyChange = keyChange

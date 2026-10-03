@@ -9,10 +9,14 @@ import CeolKitModel
 public struct MeasureSizer: Sendable {
     private let metrics: ColumnMetrics
     private let merger: SharedStaffMerger
+    /// Opens the columns up wherever the text on the notes would otherwise collide; run on
+    /// every bar either sizing path produces (issue #185).
+    private let annotationSpacing: AnnotationSpacing
 
     public init(config: SVGRenderConfig, metadata: BravuraMetadata) {
         self.metrics = ColumnMetrics(config: config, metadata: metadata)
         self.merger = SharedStaffMerger(metrics: metrics)
+        self.annotationSpacing = AnnotationSpacing(metrics: metrics)
     }
 
     /// Sizes a single measure.
@@ -73,10 +77,11 @@ public struct MeasureSizer: Sendable {
         // the measure's right edge.
         let naturalWidth = x + metrics.rightPadding(for: measure)
 
-        return SizedMeasure(measure: measure, naturalWidth: naturalWidth, eventOffsets: offsets,
-                            unitNoteLength: unitNoteLength, graceEventIndices: graceEventIndices,
-                            eventVoiceIndices: Array(repeating: voiceIndex, count: offsets.count),
-                            keyChange: keyChange)
+        return annotationSpacing.widen(SizedMeasure(
+            measure: measure, naturalWidth: naturalWidth, eventOffsets: offsets,
+            unitNoteLength: unitNoteLength, graceEventIndices: graceEventIndices,
+            eventVoiceIndices: Array(repeating: voiceIndex, count: offsets.count),
+            keyChange: keyChange))
     }
 
     /// The next event of the bar that a column runs to.  A column is spaced for the syllable
@@ -100,10 +105,10 @@ public struct MeasureSizer: Sendable {
         if let only = sounding.count == 1 ? sounding[0] : nil {
             return size(only.measure, voiceIndex: only.voiceIndex, keyChange: keyChange)
         }
-        return merger.merge(parts.map {
+        return annotationSpacing.widen(merger.merge(parts.map {
             SharedStaffMerger.VoicePart(measure: $0.measure, voiceIndex: $0.voiceIndex,
                                         isPadding: $0.isPadding)
-        }, keyChange: keyChange)
+        }, keyChange: keyChange))
     }
 
     /// One voice's contribution to one bar of a shared staff.

@@ -3,18 +3,18 @@ import Foundation
 import CoreText
 #endif
 
-/// The fonts installed on the machine, found through CoreText and read with CeolKit's own
-/// parser (issue #190).
+/// The fonts installed on the machine, found through CoreText on Apple platforms and
+/// fontconfig on Linux, and read with CeolKit's own parser (issues #190, #206).
 ///
-/// CoreText is asked only *where* a face is — the file and the face's PostScript name — and
+/// The platform is asked only *where* a face is — the file and the face's PostScript name — and
 /// the file is then read by ``OpenTypeFont`` like any other.  Every face, from whatever
 /// source, is therefore outlined, measured and checked for embedding permission by the same
 /// code, and a system face draws exactly as the same file registered by a host would.  A
 /// face in a format the parser does not read is passed over.
 ///
-/// Only Apple platforms have a lookup.  Elsewhere every query answers nothing, and a host
-/// supplies its faces through ``FontLibrary`` instead; system lookup there would need
-/// fontconfig, deferred until someone asks for it.
+/// On Linux, fontconfig is loaded at first use (see ``Fontconfig``); where it is not
+/// installed, and on every other platform, every query answers nothing, and a host supplies
+/// its faces through ``FontLibrary`` instead.
 enum SystemFonts {
 
     /// Every installed face of `family`, in all its weights and styles.
@@ -23,6 +23,8 @@ enum SystemFonts {
             #if canImport(CoreText)
             return locate([kCTFontFamilyNameAttribute: family],
                           mandatory: kCTFontFamilyNameAttribute)
+            #elseif canImport(Glibc)
+            return load(Fontconfig.list(("family", family)))
             #else
             return []
             #endif
@@ -35,6 +37,9 @@ enum SystemFonts {
         return cached("name:" + postScriptName) {
             #if canImport(CoreText)
             return locate([kCTFontNameAttribute: postScriptName], mandatory: kCTFontNameAttribute)
+                .filter { $0.postScriptName == postScriptName }
+            #elseif canImport(Glibc)
+            return load(Fontconfig.list(("postscriptname", postScriptName)))
                 .filter { $0.postScriptName == postScriptName }
             #else
             return []
@@ -71,6 +76,25 @@ enum SystemFonts {
                 faces.append(face)
             }
         }
+        #elseif canImport(Glibc)
+        // fontconfig names the files; the file's own tables say the rest, read as the
+        // provider reads them but without the outlines, so a listing costs a read of each
+        // file rather than a parse of each face.
+        var files: [String: Data] = [:]
+        let faces = Fontconfig.list().filter(\.isReadable).compactMap { face -> FontFaceInfo? in
+            guard let data = files[face.file]
+                    ?? (try? Data(contentsOf: URL(fileURLWithPath: face.file), options: .alwaysMapped)),
+                  let summary = try? OpenTypeFont.summary(data, faceIndex: face.index)
+            else { return nil }
+            files[face.file] = data
+            return FontFaceInfo(
+                postScriptName: summary.postScriptName ?? face.postScriptName ?? face.file,
+                family: summary.familyName ?? face.family ?? face.file,
+                weight: summary.weightClass >= 600 ? .bold : .regular,
+                style: summary.isItalic ? .italic : .upright,
+                origin: .system, format: summary.isCFF ? .cff : .trueType,
+                embeddable: summary.embedding.allowsOutlineEmbedding)
+        }
         #else
         let faces: [FontFaceInfo] = []
         #endif
@@ -80,6 +104,19 @@ enum SystemFonts {
 
     private nonisolated(unsafe) static var listingCache: [FontFaceInfo]?
     private static let listingLock = NSLock()
+
+    #if !canImport(CoreText) && canImport(Glibc)
+    /// Parses the faces fontconfig listed, reading each file once.
+    private static func load(_ found: [Fontconfig.Face]) -> [OpenTypeFont] {
+        var files: [String: Data] = [:]
+        return found.filter(\.isReadable).compactMap { face in
+            guard let data = files[face.file]
+                    ?? (try? Data(contentsOf: URL(fileURLWithPath: face.file))) else { return nil }
+            files[face.file] = data
+            return try? OpenTypeFont.parse(data, faceIndex: face.index)
+        }
+    }
+    #endif
 
     #if canImport(CoreText)
     private static func describe(_ descriptor: CTFontDescriptor) -> FontFaceInfo? {

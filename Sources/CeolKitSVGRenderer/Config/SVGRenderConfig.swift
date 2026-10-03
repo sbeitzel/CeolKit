@@ -54,7 +54,9 @@ public struct SVGRenderConfig: Sendable {
     /// `nil` — the default — leaves the system's fonts, if enabled, and the bundled faces.
     public var fontLibrary: FontLibrary?
     /// Whether a font named by the document may be looked up among the fonts installed on
-    /// the machine (Apple platforms only).  Off by default, because it makes the output
+    /// the machine: through CoreText on Apple platforms, and on Linux through fontconfig,
+    /// where `libfontconfig.so.1` is installed (it is loaded at run time, never linked).
+    /// Elsewhere it finds nothing.  Off by default, because it makes the output
     /// depend on the machine it is rendered on; the SVG that results is still portable in
     /// ``TextRendering/outlines`` mode, which carries the glyphs with it.
     public var systemFonts: Bool

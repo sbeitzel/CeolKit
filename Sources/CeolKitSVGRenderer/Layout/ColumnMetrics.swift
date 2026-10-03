@@ -200,6 +200,62 @@ struct ColumnMetrics: Sendable {
          + metadata.engravingDefaults.barlineSeparation) * staffSize
     }
 
+    /// Space from one bar line's anchor to the leftmost ink of a bar written straight after
+    /// it, in staff spaces.  abcm2ps sets `| |`, `|] [|`, `|| ||`, `:| :|` and `:| ::` all
+    /// about 2.4 staff spaces apart, measured that way (issue #212).
+    static let barPairGapRatio = 2.4
+
+    /// How far a bar line's ink reaches left of its anchor: the x ``SVGEmitter`` draws it at.
+    /// Must match `emitBarLine`.  The bars that open a section are left-anchored and reach
+    /// back only half their thick line; the rest are right-anchored and reach back across
+    /// every stroke and dot they draw.
+    func leftExtent(of kind: BarLineKind) -> Double {
+        let s       = config.staffSize
+        let thin    = metadata.engravingDefaults.thinBarlineThickness * s
+        let thick   = metadata.engravingDefaults.thickBarlineThickness * s
+        let sep     = metadata.engravingDefaults.barlineSeparation * s
+        let wideSep = sep * 2.0
+        let dots    = metadata.engravingDefaults.repeatBarlineDotSeparation * s
+            + (metadata.glyphBBoxes["repeatDot"].map { $0.width * s } ?? s * 0.25)
+        switch kind {
+        case .single, .dotted:                           return thin / 2
+        case .double:                                    return sep + thin / 2
+        case .final:                                     return wideSep + thin / 2
+        case .start, .repeatStart, .sectionRepeatStart:  return thick / 2
+        case .repeatEnd, .repeatEndSection:              return wideSep + thin / 2 + dots
+        case .repeatBoth:
+            return Self.repeatBothBarOffset(metadata: metadata, staffSize: s) + thick / 2 + dots
+        }
+    }
+
+    /// How far right of the measure's origin its opening bar stands: see
+    /// ``SizedMeasure/openingBarLead``.
+    ///
+    /// abcm2ps draws every bar that is written, whole, wherever it falls (issue #212).  A bar
+    /// that is only the previous measure's closing bar restated is already drawn there, and
+    /// needs nothing.  One written in its own right is a second bar line, and is moved clear
+    /// of the first:
+    ///
+    /// - part way through a line, ``barPairGapRatio`` past the closing bar it follows;
+    /// - at the head of a system, so its leftmost ink starts where a `|:`'s thick line does —
+    ///   which is where abcm2ps starts every bar it draws there, `|`, `||`, `|]`, `:|` and
+    ///   `::` alike.  A `|:` itself therefore stays where it always was.
+    ///
+    /// - Parameters:
+    ///   - ownsOpeningBar: whether the opening bar was written in its own right rather than
+    ///     being the previous measure's closing bar.
+    ///   - atSystemStart: whether the measure is being sized to open a system.
+    func openingBarLead(for measure: Measure, ownsOpeningBar: Bool,
+                        atSystemStart: Bool = false) -> Double {
+        guard ownsOpeningBar, let kind = measure.openingBar?.kind else { return 0 }
+        let extent = leftExtent(of: kind)
+        guard !atSystemStart else {
+            let thick = metadata.engravingDefaults.thickBarlineThickness * config.staffSize
+            return max(0, extent - thick / 2)
+        }
+        return Self.barPairGapRatio * config.staffSize + extent
+    }
+
     /// Left margin before the first event.
     ///
     /// For measures that begin with a start-repeat bar line the dots occupy
@@ -207,7 +263,15 @@ struct ColumnMetrics: Sendable {
     /// pushed past them before the standard one-notehead gap is added.
     /// A mid-line key or time-signature change adds its glyph width before the note gap,
     /// key first — the order they are engraved in, and the order the emitter draws them.
-    func leftMargin(for measure: Measure, keyChange: KeyChange? = nil) -> Double {
+    /// An opening bar the measure owns (see ``openingBarLead(for:ownsOpeningBar:atSystemStart:)``)
+    /// is moved right by its lead, and the rest of the margin with it.
+    func leftMargin(for measure: Measure, keyChange: KeyChange? = nil,
+                    ownsOpeningBar: Bool = false, atSystemStart: Bool = false) -> Double {
+        openingBarLead(for: measure, ownsOpeningBar: ownsOpeningBar, atSystemStart: atSystemStart)
+            + barMargin(for: measure, keyChange: keyChange)
+    }
+
+    private func barMargin(for measure: Measure, keyChange: KeyChange?) -> Double {
         let nhw = noteheadWidth()
         let thin = metadata.engravingDefaults.thinBarlineThickness * config.staffSize
         let keySigW = keyChange.map {

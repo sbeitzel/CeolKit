@@ -178,4 +178,110 @@ struct RepeatAtSystemBreakTests {
             #expect(abs(dot.x - second.x - clearance) < 1e-6)
         }
     }
+
+    /// The `::` drawn right of `x`, checked as `:][:` — two dots, thick, thick, two dots —
+    /// and nothing of it left of `x`.  Its bars are the first two thick strokes past `x`.
+    private func expectWholeDoubleRepeat(_ svg: String, on staff: SystemGeometry,
+                                         after x: Double) {
+        let thick = Array(barStrokes(in: svg, on: staff).filter {
+            isThick($0, on: staff) && $0.x > x
+        }.prefix(2))
+        try! #require(thick.count == 2)
+        let (first, second) = (thick[0], thick[1])
+        let around = dots(in: svg, on: staff).filter {
+            $0.x > x && $0.x < second.x + 2 * staff.staffLineGap
+        }
+        #expect(around.filter { $0.x < first.x }.count == 2)
+        #expect(around.filter { $0.x > second.x }.count == 2)
+        #expect(around.count == 4)
+    }
+
+    @Test func doubleRepeatOpeningALineAfterItsOwnBarIsDrawnWhole() {
+        // Issue #212: `:|` closes line 1 and a separate `::` opens line 2.  Nothing was split
+        // across the break, so the `::` is drawn as written: `:][:`, as abcm2ps draws it.
+        let (svg, staves) = render("GAB cde |: dcB A3 :|\n:: dcB A3 |: GAB cde :|]")
+        try! #require(staves.count == 2)
+        let (line1, line2) = (staves[0], staves[1])
+
+        expectNothingPastStaffEnd(svg, line1)
+        // Its leading dots stand no further left than a `|:` opening the line would.
+        let plain = render("GAB cde |: dcB A3 :|\n|: dcB A3 |: GAB cde :|]")
+        try! #require(plain.staves.count == 2)
+        let startRepeat = try! #require(barStrokes(in: plain.svg, on: plain.staves[1]).first)
+        expectWholeDoubleRepeat(svg, on: line2, after: startRepeat.x - line2.staffLineGap / 2)
+        // Its leftmost ink starts where the `|:`'s thick line does, as abcm2ps sets them.
+        let thickEdge = startRepeat.x - startRepeat.width / 2
+        #expect(abs(leadingInk(svg, on: line2) - thickEdge) < 1e-3)
+    }
+
+    /// The leftmost ink — bar stroke edge or repeat dot — in the first half of `staff`.
+    private func leadingInk(_ svg: String, on staff: SystemGeometry) -> Double {
+        let half = staff.left + staff.width / 2
+        let strokes = barStrokes(in: svg, on: staff).filter { $0.x < half }.map { $0.x - $0.width / 2 }
+        let dotXs = dots(in: svg, on: staff).filter { $0.x < half }.map(\.x)
+        return (strokes + dotXs).min() ?? .infinity
+    }
+
+    /// Issue #212: every bar is drawn as written.  A bar that opens a line after a bar of its
+    /// own is a second bar, not the first restated, and abcm2ps draws it — its leftmost ink
+    /// where a `|:`'s thick line would start.
+    @Test(arguments: [("|", 1), ("||", 2), (":|", 2), ("|]", 2), ("::", 2)])
+    func barOpeningALineAfterItsOwnBarIsDrawn(sign: String, strokes: Int) {
+        let (svg, staves) = render("GAB cde |\n\(sign) dcB A3 |")
+        try! #require(staves.count == 2)
+        let line2 = staves[1]
+        let opening = barStrokes(in: svg, on: line2).filter { $0.x < line2.left + line2.width / 2 }
+        #expect(opening.count == strokes)
+
+        let plain = render("GAB cde |\n|: dcB A3 |")
+        try! #require(plain.staves.count == 2)
+        let startRepeat = try! #require(barStrokes(in: plain.svg, on: plain.staves[1]).first)
+        #expect(leadingInk(svg, on: line2) >= startRepeat.x - startRepeat.width / 2 - 1e-3)
+    }
+
+    /// A bar that ends a line is not restated at the head of the next (issue #197), and
+    /// abcm2ps does not restate these either.
+    @Test(arguments: ["|", "||", "|]", ":|"])
+    func barEndingALineIsNotRestated(sign: String) {
+        let (svg, staves) = render("GAB cde \(sign)\ndcB A3 |")
+        try! #require(staves.count == 2)
+        let line2 = staves[1]
+        #expect(barStrokes(in: svg, on: line2).filter { $0.x < line2.left + line2.width / 2 }.isEmpty)
+        #expect(dots(in: svg, on: line2).filter { $0.x < line2.left + line2.width / 2 }.isEmpty)
+    }
+
+    /// Issue #212: two bars written back to back part way through a line are both drawn,
+    /// apart — never one on top of the other.
+    @Test(arguments: [("| |", 2), ("|] [|", 4), ("|| ||", 4), (":| :|", 4), (":| |:", 4)])
+    func backToBackBarsMidLineAreBothDrawnApart(pair: String, strokes: Int) {
+        let (svg, staves) = render("GAB cde \(pair) dcB A3 |]")
+        try! #require(staves.count == 1)
+        let staff = staves[0]
+        let middle = barStrokes(in: svg, on: staff).filter {
+            $0.x > staff.left + staff.staffLineGap && $0.x < staff.right - 2 * staff.staffLineGap
+        }
+        try! #require(middle.count == strokes)
+        // The two bars' strokes are each a bar's own width apart; between the bars there is
+        // a gap of the kind abcm2ps leaves.
+        let gaps = zip(middle, middle.dropFirst()).map { $1.x - $0.x }
+        let widest = try! #require(gaps.max())
+        #expect(widest > 2 * staff.staffLineGap)
+        #expect(gaps.allSatisfy { $0 > 0 })
+    }
+
+    @Test func doubleRepeatAfterAnEndRepeatMidLineIsDrawnWhole() {
+        // `:| ::` mid-line is two bars, and both are drawn — the `::` clear of the `:|`.
+        let (svg, staves) = render("GAB cde :| :: dcB A3 :|")
+        try! #require(staves.count == 1)
+        let staff = staves[0]
+        let strokes = barStrokes(in: svg, on: staff).filter {
+            $0.x > staff.left + staff.staffLineGap && $0.x < staff.right - 2 * staff.staffLineGap
+        }
+        // `:|` is thin, thick; then the `::`'s two thick bars.
+        try! #require(strokes.count == 4)
+        #expect(!isThick(strokes[0], on: staff))
+        #expect(strokes[1...].allSatisfy { isThick($0, on: staff) })
+        let endRepeatEdge = strokes[1].x + thickWidth * staff.staffLineGap / 2
+        expectWholeDoubleRepeat(svg, on: staff, after: endRepeatEdge)
+    }
 }

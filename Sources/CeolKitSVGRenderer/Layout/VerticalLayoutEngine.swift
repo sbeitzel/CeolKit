@@ -692,8 +692,18 @@ public struct VerticalLayoutEngine: Sendable {
             // and engraving convention both do it (issue #197): the half that looks back
             // closes the system, the half that looks forward opens the next one.  So `::`
             // restated at the start of a line keeps only its start-repeat half...
+            //
+            // None of this applies to a bar written in its own right — `:|` ending one line
+            // and `::` opening the next, or `| |` part way through one.  Nothing was split or
+            // shared: it is a second bar, drawn whole, as written, wherever it falls (issue
+            // #212).  The sizer has said which it is, and kept the room it needs clear of
+            // whatever stands before it: the lead.
             let openingBar: ResolvedBarLine? = {
                 guard let bar = jm.source.measure.openingBar else { return nil }
+                if jm.source.ownsOpeningBar {
+                    return ResolvedBarLine(x: measureOrigin.x + jm.source.openingBarLead,
+                                           kind: bar.kind)
+                }
                 guard i > 0 else {
                     switch bar.kind {
                     case .start, .sectionRepeatStart, .repeatStart:

@@ -124,7 +124,9 @@ struct AnnotationSpacing: Sendable {
                             graceEventIndices: sized.graceEventIndices,
                             eventVoiceIndices: sized.eventVoiceIndices,
                             keyChange: sized.keyChange,
-                            musicOffsets: sized.musicOffsets, musicWidth: sized.musicWidth)
+                            musicOffsets: sized.musicOffsets, musicWidth: sized.musicWidth,
+                            ownsOpeningBar: sized.ownsOpeningBar,
+                            openingBarLead: sized.openingBarLead)
     }
 
     // MARK: - Measuring

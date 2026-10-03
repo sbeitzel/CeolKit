@@ -253,9 +253,10 @@ later is a change at a break.
 **Syntax:** `"Am7"` — a chord symbol; `"^text"`, `"_text"`, `"<text"`, `">text"`, `"@text"`
 — an annotation above, below, left or right of the following note, or placed by the program.
 
-Both are set in the text face at twice the staff space — the ratio abcm2ps's 12-point
-`%%gchordfont` and `%%annotationfont` bear to its 6-point staff space — and drawn as outlines
-or `<text>`, whichever the document's `TextRendering` asks for.
+Both are set in the text face at twice the staff space by default — the ratio abcm2ps's
+12-point `%%gchordfont` and `%%annotationfont` bear to its 6-point staff space — or in the face
+and size those directives set (see [§11.4.2](#1142-font-directives)), and drawn as outlines or
+`<text>`, whichever the document's `TextRendering` asks for.
 
 ### Where each placement goes
 
@@ -327,6 +328,68 @@ previous system has no number and takes none.
   the next note.
 - **Chord symbol typography.** A chord symbol is printed as written: `#` and `b` are not set as
   ♯ and ♭, and `"G(Em)"`'s alternate chord is not set smaller.
+
+---
+
+## §11.4.2 Font directives
+
+**Syntax:** `%%<role>font <font name> [<size>]`, e.g. `%%wordsfont Courier-Bold 16`.
+
+Each directive sets the face and size of one kind of text, and leaves every other kind as it
+was. Written in the file header it governs every tune; in a tune header, or the tune body, it
+governs that tune and overrides the file header's (§4.23). The size is optional, and `*` in
+place of the name keeps the face in force (abcm2ps), so `%%vocalfont * 14` changes only the
+size. A name with spaces may be quoted: `%%titlefont "Times New Roman" 24`.
+
+| Directive | Sets | Default | Scales with `%%ceolkit:scale` |
+|---|---|---|---|
+| `titlefont` | the first `T:` | Libertinus Serif 18 | no |
+| `subtitlefont` | later `T:` | Libertinus Serif Italic 12 | no |
+| `composerfont` | `C:`, with `O:` appended | Libertinus Serif Italic 12 | no |
+| `infofont` | `R:` and other `%%writefields` fields | Libertinus Serif Italic 12 | no |
+| `tempofont` | `Q:` in the header / in the music | Libertinus Serif 12 / 1.5 staff spaces | header no / music yes |
+| `wordsfont` | `W:` words | Libertinus Serif 12 | no |
+| `gchordfont` | chord symbols and chord-line text | Libertinus Serif, 2 staff spaces | yes |
+| `annotationfont` | `^ _ < > @` annotations | Libertinus Serif, 2 staff spaces | yes |
+| `vocalfont` | `w:` lyrics | Libertinus Serif, 2 staff spaces | yes |
+| `partsfont`, `textfont`, `setfont-1`…`4` | parsed and scoped; see below | | |
+
+The defaults are CeolKit's own and unchanged by this support: a document with no font
+directive renders exactly as before. Text drawn with the staff scales with the music; text in
+the page's furniture is sized in absolute points. A row of the title block set larger than its
+default grows to hold it, as do the chord, annotation and lyric bands, and chord symbols are
+measured in their own font when the notes are spaced.
+
+A host app can set a house style beneath the document's directives with
+`SVGRenderConfig.textFonts` — say, every composer line in Zapf Chancery — and a directive in
+the document still overrides it.
+
+### How a font name is found
+
+The name is read as a PostScript name — `Times-BoldItalic` is the Times family, bold, italic
+— and looked up in the faces the host registered (`SVGRenderConfig.fontLibrary`), then, where
+`SVGRenderConfig.systemFonts` allows, the fonts installed on the machine (Apple platforms),
+then the faces CeolKit bundles: Libertinus Serif in regular, italic, bold and bold italic.
+The PostScript base 14 and the generic families `serif`, `sans-serif` and `monospace` are
+also tried under the names of the fonts that stand in for them (Times New Roman, Liberation,
+Nimbus, DejaVu). A face whose licence forbids embedding is passed over in outline output.
+
+Where the face named is not found, the text is set in Libertinus Serif in the weight and
+style the name asked for, and the substitution is reported at the directive: a note while
+system lookup is off — that is the configuration working as asked — and a warning where the
+system was searched and nothing answered.
+
+### What CeolKit does not do
+
+- **`$1`…`$4` font switches.** `%%setfont-n` is parsed and scoped, but switching font inside
+  a string is not implemented, and `$n` prints as written.
+- **`partsfont` and `textfont`** have nothing to style yet: `P:` part labels and `%%text`
+  blocks are not printed.
+- **`%%font`** declarations, and abcm2ps's `box`/`class=` arguments, are not read; a
+  directive with anything after its size is reported and dropped.
+- **abcm2ps's `%%scale`**, which shrinks the whole page — fonts included — is not
+  implemented, so a document that sets large fonts and relies on `%%scale` to fit them (the
+  §14.4 Canzonetta does) prints larger than abcm2ps would.
 
 ---
 

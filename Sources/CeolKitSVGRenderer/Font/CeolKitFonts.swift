@@ -38,15 +38,27 @@ public enum CeolKitFonts {
         case libertinusSerifRegular = "LibertinusSerif-Regular"
         /// Italic serif face used for rhythm and other italicised header fields.
         case libertinusSerifItalic  = "LibertinusSerif-Italic"
+        /// Bold serif face, for text a font directive asks to be bold (issue #186).
+        case libertinusSerifBold    = "LibertinusSerif-Bold"
+        /// Bold italic serif face, for text a font directive asks to be both.
+        case libertinusSerifBoldItalic = "LibertinusSerif-BoldItalic"
 
         /// The family name a renderer matches on — the `font-family` value in the
-        /// emitted SVG. Both Libertinus faces share one family, distinguished by style.
+        /// emitted SVG. The Libertinus faces share one family, distinguished by weight and
+        /// style.
         public var familyName: String {
             self == .bravura ? "Bravura" : "Libertinus Serif"
         }
 
-        /// Whether this face is the italic member of its family.
-        public var isItalic: Bool { self == .libertinusSerifItalic }
+        /// Whether this face is an italic member of its family.
+        public var isItalic: Bool {
+            self == .libertinusSerifItalic || self == .libertinusSerifBoldItalic
+        }
+
+        /// Whether this face is a bold member of its family.
+        public var isBold: Bool {
+            self == .libertinusSerifBold || self == .libertinusSerifBoldItalic
+        }
     }
 
     /// The file URL of a bundled face inside the module bundle.

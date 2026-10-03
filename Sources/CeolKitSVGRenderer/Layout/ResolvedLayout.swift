@@ -278,6 +278,9 @@ public struct TuneBlock: Sendable {
     /// or `%%writefields W false` suppresses them (issue #187).  An empty string is a blank
     /// line, which takes its height and draws nothing.
     public let words: [String]
+    /// How the tune's text is set, from its font directives (issue #186); `nil` for a block
+    /// assembled by hand, which gets CeolKit's defaults.
+    let textStyles: TextStyles?
 
     public init(systemGroups: [JustifiedSystemGroup], titleRows: [ResolvedTitleRow] = [],
                 titleBlockHeight: Double = 0, scale: Double = 1.0,
@@ -287,6 +290,22 @@ public struct TuneBlock: Sendable {
                 graceSlurs: Bool? = nil,
                 pageBreaks: [ForcedPageBreak] = [],
                 words: [String] = []) {
+        self.init(systemGroups: systemGroups, titleRows: titleRows,
+                  titleBlockHeight: titleBlockHeight, scale: scale,
+                  graceNoteSpacing: graceNoteSpacing, stemDirection: stemDirection,
+                  straightFlags: straightFlags, graceSlurs: graceSlurs,
+                  pageBreaks: pageBreaks, words: words, textStyles: nil)
+    }
+
+    init(systemGroups: [JustifiedSystemGroup], titleRows: [ResolvedTitleRow] = [],
+                titleBlockHeight: Double = 0, scale: Double = 1.0,
+                graceNoteSpacing: Double = SVGRenderConfig().graceNoteSpacing,
+                stemDirection: StemDirection? = nil,
+                straightFlags: Bool? = nil,
+                graceSlurs: Bool? = nil,
+                pageBreaks: [ForcedPageBreak] = [],
+                words: [String] = [],
+                textStyles: TextStyles?) {
         self.systemGroups = systemGroups
         self.titleRows = titleRows
         self.titleBlockHeight = titleBlockHeight
@@ -297,6 +316,7 @@ public struct TuneBlock: Sendable {
         self.graceSlurs = graceSlurs
         self.pageBreaks = pageBreaks
         self.words = words
+        self.textStyles = textStyles
     }
 
     /// Convenience for single-voice music: each system becomes a group of one staff.
@@ -492,10 +512,19 @@ public struct ResolvedTitleRow: Sendable {
         /// what gets drawn where nobody replaces it — and the emitter wraps the item in a
         /// group a downstream consumer can find and redraw (issue #137).
         public let tag: String?
+        /// The face a font directive chose for this item (issue #186); `nil` sets it in
+        /// Libertinus Serif, italic or not by ``isItalic``.
+        let face: TextFace?
 
         public init(text: String, x: Double, baselineY: Double,
                     anchor: TextAnchor, fontSize: Double, isItalic: Bool = false,
                     tag: String? = nil) {
+            self.init(text: text, x: x, baselineY: baselineY, anchor: anchor,
+                      fontSize: fontSize, isItalic: isItalic, tag: tag, face: nil)
+        }
+
+        init(text: String, x: Double, baselineY: Double, anchor: TextAnchor,
+             fontSize: Double, isItalic: Bool = false, tag: String? = nil, face: TextFace?) {
             self.text = text
             self.x = x
             self.baselineY = baselineY
@@ -503,7 +532,19 @@ public struct ResolvedTitleRow: Sendable {
             self.fontSize = fontSize
             self.isItalic = isItalic
             self.tag = tag
+            self.face = face
         }
+
+        /// An item set in `style`.
+        init(text: String, x: Double, baselineY: Double, anchor: TextAnchor,
+             style: TextStyle) {
+            self.init(text: text, x: x, baselineY: baselineY, anchor: anchor,
+                      fontSize: style.size, isItalic: style.face?.isItalic ?? style.italic,
+                      face: style.face)
+        }
+
+        /// The style the item is drawn in.
+        var style: TextStyle { TextStyle(face: face, size: fontSize, italic: isItalic) }
     }
 
     public let items: [Item]
@@ -740,6 +781,10 @@ public struct ResolvedSystem: Sendable {
     /// one.  It is drawn there and not again at the head of the bar — the opening measure is
     /// sized without it for exactly that reason (#134).
     public let headerKeyChange: KeyChange?
+
+    /// How the tune's text is set (issue #186), for the emitter to draw it as the layout
+    /// spaced it.  `nil` on a layout assembled by hand, which gets CeolKit's defaults.
+    var textStyles: TextStyles? = nil
 
     /// What the staff's first voice asked for; see ``System/stemDirection``.
     public var stemDirection: StemDirection { voiceStemDirections.first ?? .auto }

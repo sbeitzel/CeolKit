@@ -134,23 +134,24 @@ struct AnnotationSpacing: Sendable {
     /// Width of the widest line `event` draws in `band`, `0` where it draws none.
     private func textWidth(of event: Event, band: Band) -> Double {
         guard let (chordSymbol, annotations) = Self.text(of: event) else { return 0 }
-        let lines: [AnnotationBand.Line] = switch band {
-        case .above: AnnotationBand.linesAbove(chordSymbol: chordSymbol, annotations: annotations)
-        case .below: AnnotationBand.linesBelow(annotations: annotations).map { [.text($0)] }
+        let lines: [(line: AnnotationBand.Line, isChordLine: Bool)] = switch band {
+        case .above:
+            AnnotationBand.styledLinesAbove(chordSymbol: chordSymbol, annotations: annotations)
+        case .below:
+            AnnotationBand.linesBelow(annotations: annotations).map { ([.text($0)], false) }
         }
-        let fontSize = AnnotationBand.fontSize(staffSize: metrics.config.staffSize)
         return lines.map {
-            AnnotationBand.width(of: $0, font: metrics.lyricFont, metadata: metrics.metadata,
-                                 fontSize: fontSize)
+            let style = $0.isChordLine ? metrics.styles.chordSymbol : metrics.styles.annotation
+            return AnnotationBand.width(of: $0.line, font: style.measuringFont,
+                                        metadata: metrics.metadata, fontSize: style.size)
         }.max() ?? 0
     }
 
     /// Width of the widest `<` or `>` line beside `event`'s notehead.
     private func sideWidth(of event: Event, position: AnnotationPosition) -> Double {
         guard let (_, annotations) = Self.text(of: event) else { return 0 }
-        let fontSize = AnnotationBand.fontSize(staffSize: metrics.config.staffSize)
         return AnnotationBand.texts(in: annotations, at: position).map {
-            AnnotationBand.width(of: $0, font: metrics.lyricFont, fontSize: fontSize)
+            metrics.styles.annotation.width(of: $0)
         }.max() ?? 0
     }
 

@@ -71,6 +71,43 @@ enum AnnotationBand {
         LyricBand.width(of: text, font: font, fontSize: fontSize)
     }
 
+    // MARK: - Styled metrics (issue #186)
+
+    /// What one band's lines are laid out with, from the text styles that print in it.
+    struct Metrics: Sendable {
+        let lineHeight: Double
+        let ascent: Double
+        let descent: Double
+    }
+
+    /// The band above the staff holds chord symbols and annotations together, so it is
+    /// spaced for the larger of the two.
+    static func aboveMetrics(_ styles: TextStyles) -> Metrics {
+        metrics(styles.chordSymbol.size >= styles.annotation.size
+                ? styles.chordSymbol : styles.annotation)
+    }
+
+    /// The band below the staff holds `_` annotations only.
+    static func belowMetrics(_ styles: TextStyles) -> Metrics { metrics(styles.annotation) }
+
+    private static func metrics(_ style: TextStyle) -> Metrics {
+        Metrics(lineHeight: lineHeightRatio * style.size, ascent: style.ascent,
+                descent: style.descent)
+    }
+
+    static func height(lines: Int, metrics: Metrics, staffSize: Double) -> Double {
+        guard lines > 0 else { return 0 }
+        return padRatio * staffSize + Double(lines) * metrics.lineHeight
+    }
+
+    static func aboveBaselineOffset(line: Int, metrics: Metrics, staffSize: Double) -> Double {
+        padRatio * staffSize + metrics.descent + Double(line) * metrics.lineHeight
+    }
+
+    static func belowBaselineOffset(line: Int, metrics: Metrics, staffSize: Double) -> Double {
+        padRatio * staffSize + metrics.ascent + Double(line) * metrics.lineHeight
+    }
+
     // MARK: - Chord symbol accidentals
 
     /// Bravura's chord-symbol accidentals are drawn at the text's own size: SMuFL designs
@@ -123,6 +160,15 @@ enum AnnotationBand {
     }
 
     // MARK: - What a note carries
+
+    /// ``linesAbove(chordSymbol:annotations:)``, each line marked with whether it is on the
+    /// chord line — set in the chord symbol's font — or a `^` annotation.
+    static func styledLinesAbove(chordSymbol: ChordSymbol?, annotations: [Annotation])
+        -> [(line: Line, isChordLine: Bool)] {
+        let annotationLines = texts(in: annotations, at: .above).count
+        return linesAbove(chordSymbol: chordSymbol, annotations: annotations)
+            .enumerated().map { ($1, $0 >= annotationLines) }
+    }
 
     /// One line of a band: runs of text, and the accidentals of a chord symbol between them.
     /// Text that is not a chord symbol is always a single run, printed as written.

@@ -88,6 +88,9 @@ struct SVGEmitter: Sendable {
     /// Resolves the notehead, dot and accidental collisions of one column of a shared staff
     /// (issue #79).  Consulted only where a staff carries more than one voice.
     let collisions: NoteheadCollisions
+    /// How a `Q:` written in the music is set on the system being emitted (issue #186);
+    /// `nil` for the default.
+    var tempoChangeStyle: TextStyle? = nil
 
     init(config: SVGRenderConfig, metadata: BravuraMetadata,
          stemDirection: StemDirection = .auto,
@@ -112,16 +115,40 @@ struct SVGEmitter: Sendable {
 
     // MARK: - Public entry point
 
+    /// Every bundled face the font directives of `layout`'s tunes draw text in.
+    private static func bundledFaces(in layout: ResolvedLayout) -> Set<CeolKitFonts.Face> {
+        var faces: Set<CeolKitFonts.Face> = []
+        for page in layout.pages {
+            for system in page.systems { faces.formUnion(system.textStyles?.bundledFaces ?? []) }
+            for row in page.titleRows + page.footerRows {
+                for item in row.items { if let face = item.face?.bundledFace { faces.insert(face) } }
+            }
+        }
+        return faces
+    }
+
     func emit(_ layout: ResolvedLayout) throws -> [String] {
         // Each is skipped when the mode does not need it: reading and base64-encoding three
         // OTFs is the emitter's most expensive step, and parsing them for outlines is not
         // free either.
-        let embeddedFaces = config.textRendering.embedsFontFaces
+        var embeddedFaces = config.textRendering.embedsFontFaces
             ? EmbeddedFaces(
                 bravura: try CeolKitFonts.base64(for: .bravura),
                 libertinusSerif: try LibertinusSerifMetrics.loadBase64(),
                 libertinusSerifItalic: try LibertinusSerifMetrics.loadItalicBase64())
             : nil
+        // The bold faces travel only with a document a font directive set something bold
+        // in (issue #186): every other document carries exactly the three it always did.
+        if embeddedFaces != nil {
+            let used = Self.bundledFaces(in: layout)
+            if used.contains(.libertinusSerifBold) {
+                embeddedFaces?.libertinusSerifBold = try CeolKitFonts.base64(for: .libertinusSerifBold)
+            }
+            if used.contains(.libertinusSerifBoldItalic) {
+                embeddedFaces?.libertinusSerifBoldItalic =
+                    try CeolKitFonts.base64(for: .libertinusSerifBoldItalic)
+            }
+        }
         let fonts = config.textRendering.emitsOutlines ? try FontProvider(config: config) : nil
         // Threaded across every page/system so ties and slurs that span a system or page
         // break (#27) are resolved with dangling arcs instead of being silently dropped.
@@ -199,6 +226,12 @@ struct SVGEmitter: Sendable {
     /// document's — resolving from ``documentStemDirection`` rather than from
     /// ``stemDirection`` keeps that from mattering.
     private func configured(for system: ResolvedSystem) -> SVGEmitter {
+        var emitter = configuredForMusic(system)
+        emitter.tempoChangeStyle = system.textStyles?.tempoChange
+        return emitter
+    }
+
+    private func configuredForMusic(_ system: ResolvedSystem) -> SVGEmitter {
         let tuneStem = system.tuneStemDirection ?? documentStemDirection
         let systemStem = system.stemDirection != .auto ? system.stemDirection : tuneStem
         let straightFlags = system.straightFlags ?? config.straightFlags
@@ -378,6 +411,12 @@ struct SVGEmitter: Sendable {
     private func emitTitleBlock(_ rows: [ResolvedTitleRow], builder: inout SVGBuilder) {
         for row in rows {
             for item in row.items {
+                // Set in a face a font directive chose (issue #186).
+                if let face = item.face {
+                    builder.text(item.text, x: item.x, y: item.baselineY, face: face,
+                                 fontSize: item.fontSize, textAnchor: item.anchor.rawValue)
+                    continue
+                }
                 builder.text(
                     item.text,
                     x: item.x,
@@ -595,19 +634,22 @@ struct SVGEmitter: Sendable {
     private func emitLyrics(_ system: ResolvedSystem, builder: inout SVGBuilder) {
         let verses = LyricBand.verseCount(of: system)
         guard verses > 0 else { return }
-        let staffSize = config.staffSize
+        let style = textStyles(for: system).vocal
         // The band is the foot of the system: the layout engine put it below everything else
         // the staff reaches down to, so it is found by measuring back up from the bottom.
         let bandTop = system.origin.y + system.totalHeight
-            - LyricBand.height(verses: verses, staffSize: staffSize)
+            - LyricBand.height(verses: verses, style: style)
         let anchors = lyricAnchors(in: system)
-        let font = OutlineFontSet.textFace()
         for verse in 0..<verses {
-            emitVerse(verse, anchors: anchors, font: font,
-                      baselineY: bandTop + LyricBand.baselineOffset(verse: verse,
-                                                                    staffSize: staffSize),
+            emitVerse(verse, anchors: anchors, style: style,
+                      baselineY: bandTop + LyricBand.baselineOffset(verse: verse, style: style),
                       builder: &builder)
         }
+    }
+
+    /// How `system`'s tune sets its text (issue #186): what the layout spaced it for.
+    private func textStyles(for system: ResolvedSystem) -> TextStyles {
+        system.textStyles ?? .standard(staffSize: config.staffSize)
     }
 
     /// Every syllable-carrying event of `system`, left to right, at the centre of its
@@ -634,11 +676,10 @@ struct SVGEmitter: Sendable {
     /// extender lines under its melismas (§4.18).
     private func emitVerse(_ verse: Int,
                            anchors: [(x: Double, lyrics: [LyricSyllable?])],
-                           font: OpenTypeFont?,
+                           style: TextStyle,
                            baselineY: Double,
                            builder: inout SVGBuilder) {
         let staffSize = config.staffSize
-        let fontSize = LyricBand.fontSize(staffSize: staffSize)
         // Clear of the syllable at either end, so an extender or hyphen never touches a
         // letterform.
         let clearance = staffSize * 0.5
@@ -666,14 +707,13 @@ struct SVGEmitter: Sendable {
             switch syllable {
             case .text(let text, let connection):
                 let content = LyricBand.displayText(text.value)
-                let halfWidth = LyricBand.width(of: content, font: font, fontSize: fontSize) / 2
+                let halfWidth = style.width(of: content) / 2
                 flushMelisma(before: anchor.x - halfWidth)
                 if let from = hyphenFrom {
                     emitLyricHyphen(from: from, to: anchor.x - halfWidth, baselineY: baselineY,
-                                    font: font, fontSize: fontSize, builder: &builder)
+                                    style: style, builder: &builder)
                 }
-                builder.text(content, x: anchor.x, y: baselineY,
-                             fontFamily: "Libertinus Serif", fontSize: fontSize,
+                builder.text(content, x: anchor.x, y: baselineY, style: style,
                              textAnchor: "middle")
                 melismaFrom = anchor.x + halfWidth + clearance
                 hyphenFrom = connection == .hyphen ? anchor.x + halfWidth : nil
@@ -694,7 +734,7 @@ struct SVGEmitter: Sendable {
         // syllable, since the one it joins to is on the next system.
         if let from = hyphenFrom {
             emitLyricHyphen(from: from, to: from + 2 * clearance, baselineY: baselineY,
-                            font: font, fontSize: fontSize, builder: &builder)
+                            style: style, builder: &builder)
         }
     }
 
@@ -702,12 +742,10 @@ struct SVGEmitter: Sendable {
     /// Dropped where the gap is too narrow to hold it — the syllables then read as adjacent,
     /// which is what an engraver does rather than crowd a hyphen between them.
     private func emitLyricHyphen(from: Double, to: Double, baselineY: Double,
-                                 font: OpenTypeFont?, fontSize: Double,
-                                 builder: inout SVGBuilder) {
-        let width = LyricBand.width(of: "-", font: font, fontSize: fontSize)
+                                 style: TextStyle, builder: inout SVGBuilder) {
+        let width = style.width(of: "-")
         guard to - from > width else { return }
-        builder.text("-", x: (from + to) / 2, y: baselineY,
-                     fontFamily: "Libertinus Serif", fontSize: fontSize, textAnchor: "middle")
+        builder.text("-", x: (from + to) / 2, y: baselineY, style: style, textAnchor: "middle")
     }
 
     // MARK: - Chord symbols and annotations
@@ -730,27 +768,32 @@ struct SVGEmitter: Sendable {
         let floors = system.annotationFloors
             ?? AnnotationFloors(above: AnnotationBand.floorRatio * s,
                                 below: AnnotationBand.floorRatio * s)
-        let fontSize = AnnotationBand.fontSize(staffSize: s)
-        let font = OutlineFontSet.textFace()
-        let raised = raisedAnnotations(in: system, font: font)
+        // Chord symbols and annotations each in their own font (§11.4.2; issue #186); the
+        // bands are spaced for them as the layout engine spaced them.
+        let styles = textStyles(for: system)
+        let chordStyle = styles.chordSymbol, annotationStyle = styles.annotation
+        let aboveMetrics = AnnotationBand.aboveMetrics(styles)
+        let belowMetrics = AnnotationBand.belowMetrics(styles)
+        let raised = raisedAnnotations(in: system, font: OutlineFontSet.textFace())
 
-        func draw(_ text: String, x: Double, y: Double, anchor: String = "start") {
+        func draw(_ text: String, style: TextStyle, x: Double, y: Double,
+                  anchor: String = "start") {
             guard !text.isEmpty else { return }
-            builder.text(text, x: x, y: y, fontFamily: "Libertinus Serif", fontSize: fontSize,
-                         textAnchor: anchor)
+            builder.text(text, x: x, y: y, style: style, textAnchor: anchor)
         }
 
         /// Draws a band's line left to right from `x`: its text runs in the text face and a
         /// chord symbol's accidentals as Bravura's chord-symbol signs (issue #184).  A line
         /// of one run — every line with no accidental in it — is drawn exactly as `draw`
         /// draws it.
-        func draw(_ line: AnnotationBand.Line, x: Double, y: Double) {
+        func draw(_ line: AnnotationBand.Line, style: TextStyle, x: Double, y: Double) {
+            let fontSize = style.size
             var penX = x
             for segment in line {
                 switch segment {
                 case .text(let text):
-                    draw(text, x: penX, y: y)
-                    penX += AnnotationBand.width(of: text, font: font, fontSize: fontSize)
+                    draw(text, style: style, x: penX, y: y)
+                    penX += style.width(of: text)
                 case .accidental(let alteration):
                     guard let glyph = AnnotationBand.glyph(for: alteration) else { continue }
                     let size = fontSize * AnnotationBand.accidentalSizeRatio
@@ -777,20 +820,26 @@ struct SVGEmitter: Sendable {
                 let x = event.origin.x
 
                 // Above: first listed at the top, the chord symbol nearest the staff.
-                var above = AnnotationBand.linesAbove(chordSymbol: chordSymbol, annotations: annotations)
+                var above = AnnotationBand.styledLinesAbove(chordSymbol: chordSymbol,
+                                                            annotations: annotations)
                 if let spot = raised[EventIndex(measure: m, event: e)], !above.isEmpty {
-                    draw(above.removeFirst(), x: spot.x, y: spot.y)
+                    let first = above.removeFirst()
+                    draw(first.line, style: first.isChordLine ? chordStyle : annotationStyle,
+                         x: spot.x, y: spot.y)
                 }
                 for (i, text) in above.enumerated() {
                     let line = above.count - 1 - i
-                    draw(text, x: x, y: topY - floors.above
-                         - AnnotationBand.aboveBaselineOffset(line: line, staffSize: s))
+                    draw(text.line, style: text.isChordLine ? chordStyle : annotationStyle,
+                         x: x, y: topY - floors.above
+                            - AnnotationBand.aboveBaselineOffset(line: line, metrics: aboveMetrics,
+                                                                 staffSize: s))
                 }
 
                 // Below: first listed nearest the staff.
                 for (line, text) in AnnotationBand.linesBelow(annotations: annotations).enumerated() {
-                    draw(text, x: x, y: bottomY + floors.below
-                         + AnnotationBand.belowBaselineOffset(line: line, staffSize: s))
+                    draw(text, style: annotationStyle, x: x, y: bottomY + floors.below
+                         + AnnotationBand.belowBaselineOffset(line: line, metrics: belowMetrics,
+                                                              staffSize: s))
                 }
 
                 // Beside the notehead, and at a stated offset from it.  A chord's are centred
@@ -799,8 +848,9 @@ struct SVGEmitter: Sendable {
                 guard let highest = ys.min(), let lowest = ys.max() else { continue }
                 let centreY = (highest + lowest) / 2
                 // Half a cap height below the centre puts the letterforms' middle on it.
-                let sideBaseline = centreY + fontSize * LibertinusSerifMetrics.capHeightRatio / 2
-                let lineHeight = AnnotationBand.lineHeight(staffSize: s)
+                let sideBaseline = centreY
+                    + annotationStyle.size * LibertinusSerifMetrics.capHeightRatio / 2
+                let lineHeight = AnnotationBand.lineHeightRatio * annotationStyle.size
                 /// Where line `i` of `n` stacked beside the note stands: first at the top.
                 func sideY(_ i: Int, of n: Int) -> Double {
                     sideBaseline + (Double(i) - Double(n - 1) / 2) * lineHeight
@@ -811,7 +861,8 @@ struct SVGEmitter: Sendable {
                 let accidental = notes.map { accidentalMetrics.reservation(for: $0.displayedAccidental) }
                     .max() ?? 0
                 for (i, text) in left.enumerated() {
-                    draw(text, x: x - accidental - gap, y: sideY(i, of: left.count), anchor: "end")
+                    draw(text, style: annotationStyle, x: x - accidental - gap,
+                         y: sideY(i, of: left.count), anchor: "end")
                 }
 
                 let right = AnnotationBand.texts(in: annotations, at: .right)
@@ -820,13 +871,14 @@ struct SVGEmitter: Sendable {
                 }
                 let rightX = x + noteheadWidth() + gap + (dotted ? s : 0)
                 for (i, text) in right.enumerated() {
-                    draw(text, x: rightX, y: sideY(i, of: right.count))
+                    draw(text, style: annotationStyle, x: rightX, y: sideY(i, of: right.count))
                 }
 
                 // `@x,y`: offset in staff spaces from the notehead, y upward.
                 for annotation in annotations {
                     guard case .absolute(let dx, let dy) = annotation.position else { continue }
-                    draw(annotation.text.value, x: x + dx * s, y: sideBaseline - dy * s)
+                    draw(annotation.text.value, style: annotationStyle, x: x + dx * s,
+                         y: sideBaseline - dy * s)
                 }
             }
         }
@@ -1518,9 +1570,9 @@ struct SVGEmitter: Sendable {
         case .tempoChange(let t):
             let text = tempoAnnotationText(t)
             if !text.isEmpty {
-                let fontSize = config.staffSize * 1.5
+                let style = tempoChangeStyle ?? TextStyle(size: config.staffSize * 1.5)
                 builder.text(text, x: event.origin.x, y: topStaffY - config.staffSize * 1.5,
-                             fontFamily: "Libertinus Serif", fontSize: fontSize)
+                             style: style)
             }
         }
         return nil

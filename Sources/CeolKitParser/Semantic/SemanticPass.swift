@@ -249,6 +249,7 @@ struct SemanticPass {
             || name == "dateformat" || name == "footer"
             || name == "straightflags" || name == "graceslurs"
             || name == "score" || name == "staves" || name == "newpage"
+            || TextFontRole(rawValue: name) != nil
     }
 
     /// The argument of a `%%newpage` (ABC v2.2 §11.4.7, issue #140): the number the new page
@@ -1071,7 +1072,8 @@ struct SemanticPass {
                 source: source))
         case "landscape", "flatbeams", "ceolkit:justifylast", "ceolkit:scale",
              "ceolkit:gracenotespacing", "writefields",
-             "dateformat", "footer", "straightflags", "graceslurs":
+             "dateformat", "footer", "straightflags", "graceslurs",
+             _ where TextFontRole(rawValue: name) != nil:
             var tempDiags: [Diagnostic] = []
             if let d = parseCeolKitDirective(name: name, payload: payload, source: source, diagnostics: &tempDiags) {
                 ctx.bodyTuneDirectives.append(CeolKitDirectiveScope(directive: d, scope: .tuneGlobal, source: source))
@@ -1536,6 +1538,9 @@ struct SemanticPass {
             diagnostics.append(Diagnostic(severity: .warning, code: .unknownDirective,
                 message: "%%ceolkit:justifylast expects 'true' or 'false'", source: source))
             return nil
+        case _ where TextFontRole(rawValue: name) != nil:
+            return parseFontDirective(name: name, payload: trimmed, source: source,
+                                      diagnostics: &diagnostics)
         case "writefields":
             // Syntax: <fieldList> [true|false]
             // The field list is a run of letters; an optional logical value follows.
@@ -1614,6 +1619,52 @@ struct SemanticPass {
     }
 
     // Strips a single pair of surrounding double-quotes (e.g. `"text"` → `text`).
+    /// A §11.4.2 font directive: `%%<role>font <font name> [<size>]`.
+    ///
+    /// The name may be quoted, for a family with spaces in it (`"Times New Roman" 12`, as
+    /// abc2svg allows), and `*` keeps the face in force, as abcm2ps has it.  The spec asks
+    /// for an integer size but makes it optional; a fractional one is taken as written.  A
+    /// payload that is not that shape is reported and the directive dropped, rather than
+    /// half-applied.
+    private func parseFontDirective(name: String, payload: String, source: SourceRange,
+                                    diagnostics: inout [Diagnostic]) -> CeolKitDirective? {
+        guard let role = TextFontRole(rawValue: name) else { return nil }
+        func malformed(_ why: String) -> CeolKitDirective? {
+            diagnostics.append(Diagnostic(
+                severity: .warning, code: .invalidFontDirective,
+                message: "%%\(name) \(why); expected %%\(name) <font name> [<size>]",
+                source: source))
+            return nil
+        }
+
+        var rest = Substring(payload)
+        let fontName: Substring
+        if rest.first == "\"" {
+            guard let close = rest.dropFirst().firstIndex(of: "\"") else {
+                return malformed("has an unterminated quoted font name")
+            }
+            fontName = rest[rest.index(after: rest.startIndex)..<close]
+            rest = rest[rest.index(after: close)...]
+        } else {
+            fontName = rest.prefix { !$0.isWhitespace }
+            rest = rest.dropFirst(fontName.count)
+        }
+        guard !fontName.isEmpty else { return malformed("names no font") }
+
+        let words = rest.split(whereSeparator: \.isWhitespace)
+        guard words.count <= 1 else {
+            return malformed("has \"\(words.dropFirst().joined(separator: " "))\" after the size")
+        }
+        var size: Double?
+        if let word = words.first {
+            guard let value = Double(word), value > 0, value.isFinite else {
+                return malformed("has \"\(word)\" where a size belongs")
+            }
+            size = value
+        }
+        return .font(role, FontSpec(name: fontName == "*" ? nil : String(fontName), size: size))
+    }
+
     private func stripQuotes(_ s: String) -> String {
         guard s.count >= 2, s.first == "\"", s.last == "\"" else { return s }
         return String(s.dropFirst().dropLast())

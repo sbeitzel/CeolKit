@@ -697,6 +697,8 @@ struct BodyContext {
     /// `%%newpage` met in the body, in source order, each already carrying the stave it
     /// breaks before.
     var bodyPageBreaks: [PageBreak] = []
+    /// `W:` lines met in the body, in source order (issue #187).
+    var bodyWords: [TextString] = []
     /// `%%landscape` met in the body, in source order, each carrying the stave it was written
     /// in.  Paired with the `%%newpage` breaking before that stave once the tune is whole —
     /// see `SemanticPass.resolvingOrientations` (issue #158).

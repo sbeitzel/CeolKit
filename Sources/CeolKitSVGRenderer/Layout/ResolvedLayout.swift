@@ -274,6 +274,10 @@ public struct TuneBlock: Sendable {
     /// The `%%newpage` breaks this tune asks for, in system order (issue #140).  Empty for
     /// almost every tune, and an empty list is the pagination this engine has always done.
     public let pageBreaks: [ForcedPageBreak]
+    /// The `W:` lines printed below the tune, in source order; empty where the tune has none
+    /// or `%%writefields W false` suppresses them (issue #187).  An empty string is a blank
+    /// line, which takes its height and draws nothing.
+    public let words: [String]
 
     public init(systemGroups: [JustifiedSystemGroup], titleRows: [ResolvedTitleRow] = [],
                 titleBlockHeight: Double = 0, scale: Double = 1.0,
@@ -281,7 +285,8 @@ public struct TuneBlock: Sendable {
                 stemDirection: StemDirection? = nil,
                 straightFlags: Bool? = nil,
                 graceSlurs: Bool? = nil,
-                pageBreaks: [ForcedPageBreak] = []) {
+                pageBreaks: [ForcedPageBreak] = [],
+                words: [String] = []) {
         self.systemGroups = systemGroups
         self.titleRows = titleRows
         self.titleBlockHeight = titleBlockHeight
@@ -291,6 +296,7 @@ public struct TuneBlock: Sendable {
         self.straightFlags = straightFlags
         self.graceSlurs = graceSlurs
         self.pageBreaks = pageBreaks
+        self.words = words
     }
 
     /// Convenience for single-voice music: each system becomes a group of one staff.

@@ -10,10 +10,18 @@ import Foundation
 struct OutlineFontSet: Sendable {
 
     /// Identifies a face in the emitted document, so every glyph gets a stable `<defs>` id.
-    enum FaceKey: String, Sendable, CaseIterable {
-        case bravura
-        case libertinusSerif
-        case libertinusSerifItalic
+    ///
+    /// Open-ended since faces can come from a host's ``FontLibrary`` or the system as well
+    /// as the bundle (issue #190).  The bundled faces keep the ids they have always had, so
+    /// a document that draws only them is written exactly as before.
+    struct FaceKey: RawRepresentable, Hashable, Sendable {
+        let rawValue: String
+
+        init(rawValue: String) { self.rawValue = rawValue }
+
+        static let bravura = FaceKey(rawValue: "bravura")
+        static let libertinusSerif = FaceKey(rawValue: "libertinusSerif")
+        static let libertinusSerifItalic = FaceKey(rawValue: "libertinusSerifItalic")
 
         init(_ face: CeolKitFonts.Face) {
             switch face {
@@ -21,6 +29,16 @@ struct OutlineFontSet: Sendable {
             case .libertinusSerifRegular: self = .libertinusSerif
             case .libertinusSerifItalic:  self = .libertinusSerifItalic
             }
+        }
+
+        /// The key for a face found outside the bundle: its PostScript name, reduced to the
+        /// characters an XML id may hold and prefixed so it can never collide with a
+        /// bundled face's.
+        init(postScriptName: String) {
+            rawValue = "f-" + String(postScriptName.unicodeScalars.map {
+                $0.properties.isAlphabetic || ("0"..."9").contains($0) || $0 == "-"
+                    ? Character($0) : "_"
+            })
         }
     }
 

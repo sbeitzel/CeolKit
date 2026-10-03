@@ -113,6 +113,15 @@ struct OpenTypeFont: Sendable {
 
     /// The face's PostScript name (`name` ID 6), where it records one.
     let postScriptName: String?
+    /// The face's family: its typographic family (`name` ID 16) where it records one, its
+    /// legacy family (ID 1) otherwise — "Courier New", not "Courier New Bold".
+    let familyName: String?
+    /// `OS/2.usWeightClass`: 400 regular, 700 bold.  Where the face has no `OS/2`, 700 or
+    /// 400 by `head.macStyle`'s bold bit.
+    let weightClass: Int
+    /// Whether the face is italic or oblique: `OS/2.fsSelection` bit 0, or `head.macStyle`
+    /// bit 1 where there is no `OS/2`.
+    let isItalic: Bool
     /// What the face's licence lets a document do with it, from `OS/2.fsType`.
     let embedding: EmbeddingPermissions
 
@@ -152,7 +161,7 @@ struct OpenTypeFont: Sendable {
         let bytes = FontBytes(data)
         for directory in try faceDirectories(bytes) {
             let tables = try readTableDirectory(bytes, at: directory)
-            if try readPostScriptName(bytes, tables: tables) == postScriptName {
+            if try readName(6, bytes, tables: tables) == postScriptName {
                 return try parse(bytes, directory: directory)
             }
         }
@@ -164,7 +173,7 @@ struct OpenTypeFont: Sendable {
     static func postScriptNames(in data: Data) throws -> [String?] {
         let bytes = FontBytes(data)
         return try faceDirectories(bytes).map {
-            try readPostScriptName(bytes, tables: try readTableDirectory(bytes, at: $0))
+            try readName(6, bytes, tables: try readTableDirectory(bytes, at: $0))
         }
     }
 
@@ -209,11 +218,20 @@ struct OpenTypeFont: Sendable {
             throw OpenTypeError.missingTable("CFF ")
         }
 
+        let os2 = tables["OS/2"]
+        let macStyle = try bytes.u16(head + 44, "head")
         return OpenTypeFont(
             unitsPerEm: Double(unitsPerEm),
             ascender: Double(ascender),
             descender: Double(descender),
-            postScriptName: try readPostScriptName(bytes, tables: tables),
+            postScriptName: try readName(6, bytes, tables: tables),
+            familyName: try readName(16, bytes, tables: tables)
+                ?? readName(1, bytes, tables: tables),
+            // `head.macStyle` bit 0 for a face with no `OS/2` — macOS's own Courier.ttc.
+            weightClass: try os2.map { try bytes.u16($0 + 4, "OS/2") }
+                ?? (macStyle & 0x0001 != 0 ? 700 : 400),
+            isItalic: try os2.map { try bytes.u16($0 + 62, "OS/2") & 0x0001 != 0 }
+                ?? (macStyle & 0x0002 != 0),
             embedding: EmbeddingPermissions(
                 fsType: try tables["OS/2"].map { try bytes.u16($0 + 8, "OS/2") } ?? 0),
             cmap: cmap,
@@ -253,19 +271,22 @@ struct OpenTypeFont: Sendable {
 
     // MARK: Names
 
-    /// `name` ID 6, the PostScript name: Unicode (platform 0) or Windows (3) records in
-    /// UTF-16BE, Macintosh (1) in Roman, which for the ASCII a PostScript name is limited to
-    /// is ASCII.  `nil` where the face has no `name` table or no such record.
-    private static func readPostScriptName(_ bytes: FontBytes,
-                                           tables: [String: Int]) throws -> String? {
+    /// A `name` record: Unicode (platform 0) or Windows (3) records in UTF-16BE, preferring
+    /// US English among Windows ones; Macintosh (1) Roman records read as ASCII, which is all
+    /// a PostScript name may hold and what nearly every family name is.  `nil` where the face
+    /// has no `name` table or no record for `nameID`.
+    private static func readName(_ nameID: Int, _ bytes: FontBytes,
+                                 tables: [String: Int]) throws -> String? {
         guard let name = tables["name"] else { return nil }
         let count = try bytes.u16(name + 2, "name")
         let storage = name + (try bytes.u16(name + 4, "name"))
         var fallback: String?
+        var unicode: String?
         for i in 0..<count {
             let record = name + 6 + 12 * i
-            guard try bytes.u16(record + 6, "name") == 6 else { continue }
+            guard try bytes.u16(record + 6, "name") == nameID else { continue }
             let platform = try bytes.u16(record, "name")
+            let language = try bytes.u16(record + 4, "name")
             let length = try bytes.u16(record + 8, "name")
             let start = storage + (try bytes.u16(record + 10, "name"))
             guard start >= 0, start + length <= bytes.count else {
@@ -277,14 +298,17 @@ struct OpenTypeFont: Sendable {
                 let units = stride(from: raw.startIndex, to: raw.endIndex - 1, by: 2).map {
                     UInt16(raw[$0]) << 8 | UInt16(raw[$0 + 1])
                 }
-                return String(decoding: units, as: UTF16.self)
+                let decoded = String(decoding: units, as: UTF16.self)
+                // Windows US English (0x0409) is the record every tool reads first.
+                if platform == 3 && language == 0x0409 { return decoded }
+                unicode = unicode ?? decoded
             case 1:
                 fallback = fallback ?? String(decoding: raw, as: UTF8.self)
             default:
                 continue
             }
         }
-        return fallback
+        return unicode ?? fallback
     }
 
     /// Horizontal advances per glyph, in font units.

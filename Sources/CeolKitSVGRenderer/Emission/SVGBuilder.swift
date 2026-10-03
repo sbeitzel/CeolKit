@@ -22,8 +22,10 @@ struct SVGBuilder: Sendable {
     private(set) var elements: [String] = []
 
     let textRendering: TextRendering
-    /// The parsed faces outlines are read from. `nil` leaves every run on `<text>`.
-    let fonts: OutlineFontSet?
+    /// Where the faces outlines are read from — the bundle, and the host's and system's
+    /// fonts where the configuration allows them (issue #190).  `nil` leaves every run on
+    /// `<text>`.
+    let fonts: FontProvider?
 
     /// Glyph outline path data by `<defs>` id; an empty string records a glyph that is
     /// known to have no outline (a space, say) so it is not decoded again.
@@ -35,7 +37,7 @@ struct SVGBuilder: Sendable {
     /// name still get unique `id`s — see ``tagGroup(name:x:y:fontFamily:fontSize:textAnchor:_:)``.
     private var tagCounts: [String: Int] = [:]
 
-    init(textRendering: TextRendering = .fontFace, fonts: OutlineFontSet? = nil) {
+    init(textRendering: TextRendering = .fontFace, fonts: FontProvider? = nil) {
         self.textRendering = textRendering
         self.fonts = fonts
     }

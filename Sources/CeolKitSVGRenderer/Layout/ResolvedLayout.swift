@@ -500,7 +500,13 @@ public struct ResolvedPage: Sendable {
 /// A single rendered row in the title block, with absolute page coordinates.
 public struct ResolvedTitleRow: Sendable {
     public struct Item: Sendable {
+        /// The text as it reads.  Font switches (`$1` … `$4`, §11.4.2) are taken out of a
+        /// title, composer, or other text a tune sets; ``written`` keeps them.
         public let text: String
+        /// The text as the tune wrote it, switches and all, which is what is drawn.  The
+        /// same as ``text`` on an item made by the public initialiser: a footer's `$` marks
+        /// are its own (issue #137), not font switches.
+        let written: String
         public let x: Double
         public let baselineY: Double
         public let anchor: TextAnchor
@@ -515,6 +521,8 @@ public struct ResolvedTitleRow: Sendable {
         /// The face a font directive chose for this item (issue #186); `nil` sets it in
         /// Libertinus Serif, italic or not by ``isItalic``.
         let face: TextFace?
+        /// What the switches in ``written`` select (issue #204).
+        let switches: FontSwitchStyles?
 
         public init(text: String, x: Double, baselineY: Double,
                     anchor: TextAnchor, fontSize: Double, isItalic: Bool = false,
@@ -525,7 +533,16 @@ public struct ResolvedTitleRow: Sendable {
 
         init(text: String, x: Double, baselineY: Double, anchor: TextAnchor,
              fontSize: Double, isItalic: Bool = false, tag: String? = nil, face: TextFace?) {
+            self.init(text: text, written: text, x: x, baselineY: baselineY, anchor: anchor,
+                      fontSize: fontSize, isItalic: isItalic, tag: tag, face: face,
+                      switches: nil)
+        }
+
+        private init(text: String, written: String, x: Double, baselineY: Double,
+                     anchor: TextAnchor, fontSize: Double, isItalic: Bool, tag: String?,
+                     face: TextFace?, switches: FontSwitchStyles?) {
             self.text = text
+            self.written = written
             self.x = x
             self.baselineY = baselineY
             self.anchor = anchor
@@ -533,18 +550,30 @@ public struct ResolvedTitleRow: Sendable {
             self.isItalic = isItalic
             self.tag = tag
             self.face = face
+            self.switches = switches
         }
 
-        /// An item set in `style`.
+        /// An item set in `style`, `text` as the tune wrote it: any font switches in it
+        /// are followed (issue #204).
         init(text: String, x: Double, baselineY: Double, anchor: TextAnchor,
              style: TextStyle) {
-            self.init(text: text, x: x, baselineY: baselineY, anchor: anchor,
-                      fontSize: style.size, isItalic: style.face?.isItalic ?? style.italic,
-                      face: style.face)
+            self.init(text: FontSwitch.plainText(text), written: text, x: x,
+                      baselineY: baselineY, anchor: anchor, fontSize: style.size,
+                      isItalic: style.face?.isItalic ?? style.italic, tag: nil,
+                      face: style.face, switches: style.switches)
+        }
+
+        /// The same item `dy` further down the page.
+        func offset(by dy: Double) -> Item {
+            Item(text: text, written: written, x: x, baselineY: baselineY + dy,
+                 anchor: anchor, fontSize: fontSize, isItalic: isItalic, tag: tag,
+                 face: face, switches: switches)
         }
 
         /// The style the item is drawn in.
-        var style: TextStyle { TextStyle(face: face, size: fontSize, italic: isItalic) }
+        var style: TextStyle {
+            TextStyle(face: face, size: fontSize, italic: isItalic, switches: switches)
+        }
     }
 
     public let items: [Item]

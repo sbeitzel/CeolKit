@@ -14,10 +14,16 @@ import CeolKitModel
 /// A music line may be followed by several `w:` lines, one per verse.  Each is aligned
 /// against the same events, and `verse` says which slot of `Note.lyrics` it writes into,
 /// so a second verse stacks under the first rather than replacing it.
+///
+/// A font switch (`$1` … `$4`, §11.4.2) holds from the syllable it is written in to the end
+/// of its `w:` line, or to a `$0`, as abcm2ps sets it (issue #204).  Each syllable is
+/// written with the switch in force where it starts, so it says by itself how it is set —
+/// a renderer measuring one note's syllables need not read the line from its start.
 struct LyricAligner {
     static func align(tokens: [LyricToken], to events: [Event], verse: Int = 0) -> [Event] {
         var result = events
         var noteIdx = 0  // index into result, pointing at the next note to fill
+        var font: FontSwitch.Font = 0  // the switch in force, carried from syllable to syllable
 
         func advanceToNote() -> Int? {
             while noteIdx < result.count {
@@ -33,8 +39,10 @@ struct LyricAligner {
             switch token {
             case .syllable(let text, let connection):
                 guard let idx = advanceToNote() else { break }
+                let written = font == 0 || startsWithSwitch(text) ? text : "$\(font)" + text
+                font = FontSwitch.runs(in: text, startingWith: font).endFont
                 let syllable = LyricSyllable.text(
-                    TextString(value: text, source: dummySource),
+                    TextString(value: written, source: dummySource),
                     connection: connection
                 )
                 result[idx] = withLyric(syllable, verse: verse, result[idx])
@@ -60,6 +68,13 @@ struct LyricAligner {
             }
         }
         return result
+    }
+
+    /// Whether `text` opens with a switch of its own, which overrides the one carried in.
+    private static func startsWithSwitch(_ text: String) -> Bool {
+        guard text.first == "$", let digit = text.dropFirst().first?.wholeNumberValue
+        else { return false }
+        return (0...FontSwitch.maxFont).contains(digit)
     }
 
     private static var dummySource: SourceRange {

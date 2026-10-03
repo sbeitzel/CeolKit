@@ -143,20 +143,41 @@ enum AnnotationBand {
         return (width + 2 * accidentalBearing) * space
     }
 
-    /// How wide `line` draws: its text runs measured in `font`, its accidentals by their
-    /// glyphs' advances.
-    static func width(of line: Line, font: OpenTypeFont?, metadata: BravuraMetadata,
-                      fontSize: Double) -> Double {
-        line.reduce(0) { total, segment in
-            switch segment {
+    /// How wide `line` draws in `style`: its text runs measured as they are set, font
+    /// switches and all (issue #204), its accidentals by their glyphs' advances.
+    static func width(of line: Line, style: TextStyle, metadata: BravuraMetadata) -> Double {
+        styledSegments(of: line, style: style).reduce(0) { total, segment in
+            switch segment.segment {
             case .text(let text):
-                return total + width(of: text, font: font, fontSize: fontSize)
+                return total + segment.style.width(ofRun: text)
             case .accidental(let alteration):
                 return total + (glyph(for: alteration).map {
-                    advance(of: $0, metadata: metadata, fontSize: fontSize)
+                    advance(of: $0, metadata: metadata, fontSize: segment.style.size)
                 } ?? 0)
             }
         }
+    }
+
+    /// `line`'s segments, each with the style it is set in.  A font switch in a text run
+    /// holds on past the accidentals after it, to the end of the line or the next switch —
+    /// `"$1Bb7"` is bold throughout, its flat drawn at the bold run's size (issue #204).
+    static func styledSegments(of line: Line, style: TextStyle)
+        -> [(segment: ChordSymbol.Segment, style: TextStyle)] {
+        var font: FontSwitch.Font = 0
+        var result: [(segment: ChordSymbol.Segment, style: TextStyle)] = []
+        for segment in line {
+            switch segment {
+            case .text(let text):
+                let split = FontSwitch.runs(in: text, startingWith: font)
+                for run in split.runs {
+                    result.append((.text(run.text), style.switched(to: run.font)))
+                }
+                font = split.endFont
+            case .accidental:
+                result.append((segment, style.switched(to: font)))
+            }
+        }
+        return result
     }
 
     // MARK: - What a note carries

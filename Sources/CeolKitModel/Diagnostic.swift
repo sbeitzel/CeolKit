@@ -152,4 +152,7 @@ public enum DiagnosticCode: String, Codable, Sendable {
     /// A report `%%ceolkit:fontlist` asked for: one face, or what one kind of text is set in
     /// (issue #191).  Always `.info`.
     case fontList
+    /// Text switches with `$1` … `$4` to a `%%setfont-n` no directive set; the run keeps
+    /// the face it is in, at abcm2ps's default size (issue #204).
+    case unsetFontSwitch
 }

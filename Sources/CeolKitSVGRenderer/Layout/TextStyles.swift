@@ -36,11 +36,33 @@ struct TextStyle: Sendable {
     let size: Double
     /// Whether the default face is the italic one; read only where `face` is `nil`.
     let italic: Bool
+    /// What `$1` … `$4` in text of this style switch to (issue #204); `nil` keeps this style.
+    var switches: FontSwitchStyles?
 
-    init(face: TextFace? = nil, size: Double, italic: Bool = false) {
+    init(face: TextFace? = nil, size: Double, italic: Bool = false,
+         switches: FontSwitchStyles? = nil) {
         self.face = face
         self.size = size
         self.italic = italic
+        self.switches = switches
+    }
+
+    /// The style a run after the switch `$font` is set in: this one for `$0`, or the
+    /// `%%setfont-n` face and size, keeping this face where the directive named none.
+    func switched(to font: FontSwitch.Font) -> TextStyle {
+        guard font > 0, let switches, font <= switches.slots.count else { return self }
+        let slot = switches.slots[font - 1]
+        guard let slotFace = slot.face else {
+            return TextStyle(face: face, size: slot.size, italic: italic, switches: switches)
+        }
+        return TextStyle(face: slotFace, size: slot.size, switches: switches)
+    }
+
+    /// `text` split at its font switches (§11.4.2), each run with the style it is set in.
+    /// Text with no switch is one run in this style, exactly as written.
+    func runs(of text: String) -> [(text: String, style: TextStyle)] {
+        guard text.contains("$") else { return [(text, self)] }
+        return FontSwitch.runs(in: text).runs.map { ($0.text, switched(to: $0.font)) }
     }
 
     /// The face the text is set in: the directive's, or the Libertinus Serif face the
@@ -62,9 +84,16 @@ struct TextStyle: Sendable {
         face?.font ?? OutlineFontSet.textFace()
     }
 
-    /// How wide `text` is drawn in this style.
+    /// How wide `text` is drawn in this style, each run after a font switch measured in
+    /// the face it switches to (issue #204).
     func width(of text: String) -> Double {
-        LyricBand.width(of: text, font: measuringFont, fontSize: size)
+        runs(of: text).reduce(0) { $0 + $1.style.width(ofRun: $1.text) }
+    }
+
+    /// How wide `run` is drawn in this style, taken as written: a run is what is left once
+    /// the switches are read out, so a `$` in it is a dollar sign.
+    func width(ofRun run: String) -> Double {
+        LyricBand.width(of: run, font: measuringFont, fontSize: size)
     }
 
     /// The face's typographic ascender and descender at this size, the descender positive.
@@ -78,11 +107,67 @@ struct TextStyle: Sendable {
     }
 }
 
+/// The faces the in-string switches `$1` … `$4` select (ABC v2.2 §11.4.2; issue #204).
+struct FontSwitchStyles: Sendable {
+    /// What one `%%setfont-n` sets.
+    struct Slot: Sendable {
+        /// The face the directive named, or `nil` where it named none — `*`, or no
+        /// directive at all — and the text keeps the face of the string it is in.
+        let face: TextFace?
+        let size: Double
+    }
+
+    /// `$1` … `$4`, in that order.
+    let slots: [Slot]
+
+    /// abcm2ps's default for every `%%setfont-n`, "(none) 12": the string's own face, at 12
+    /// in abcm2ps's units, scaled by `k` like every other size.
+    static func standard(k: Double) -> FontSwitchStyles {
+        FontSwitchStyles(slots: Array(
+            repeating: Slot(face: nil, size: TextStyles.defaultSize(.set1) * k),
+            count: FontSwitch.maxFont))
+    }
+
+    /// The `%%setfont-n` directive role for switch `font`.
+    static func role(_ font: FontSwitch.Font) -> TextFontRole? {
+        switch font {
+        case 1: return .set1
+        case 2: return .set2
+        case 3: return .set3
+        case 4: return .set4
+        default: return nil
+        }
+    }
+}
+
 extension SVGBuilder {
     /// Draws `content` in `style`: through the face a directive chose, or as Libertinus Serif
     /// by family name, exactly as text without a style is drawn.
+    ///
+    /// Text with font switches in it (§11.4.2; issue #204) is drawn run by run, left to
+    /// right from wherever `textAnchor` puts the whole string, each run in its own style.
     mutating func text(_ content: String, x: Double, y: Double, style: TextStyle,
                        textAnchor: String = "start") {
+        let runs = style.runs(of: content)
+        if runs.count == 1, let run = runs.first {
+            textRun(run.text, x: x, y: y, style: run.style, textAnchor: textAnchor)
+            return
+        }
+        var penX = x
+        switch textAnchor {
+        case "middle": penX -= style.width(of: content) / 2
+        case "end":    penX -= style.width(of: content)
+        default:       break
+        }
+        for run in runs {
+            textRun(run.text, x: penX, y: y, style: run.style)
+            penX += run.style.width(ofRun: run.text)
+        }
+    }
+
+    /// Draws one run, `content` taken as written: a `$` in it is a dollar sign.
+    mutating func textRun(_ content: String, x: Double, y: Double, style: TextStyle,
+                                  textAnchor: String = "start") {
         guard let face = style.face else {
             text(content, x: x, y: y, fontFamily: "Libertinus Serif", fontSize: style.size,
                  textAnchor: textAnchor, fontStyle: style.italic ? "italic" : nil)
@@ -141,19 +226,26 @@ struct TextStyles: Sendable {
     /// scaled with the staff, in Libertinus Serif.
     static func standard(staffSize: Double) -> TextStyles {
         let k = staffSize / nominalStaffSize
+        let switches = FontSwitchStyles.standard(k: k)
         func size(_ role: TextFontRole) -> Double { defaultSize(role) * k }
+        func style(_ role: TextFontRole, italic: Bool = false) -> TextStyle {
+            TextStyle(size: size(role), italic: italic, switches: switches)
+        }
         return TextStyles(
-            title: TextStyle(size: size(.title)),
-            subtitle: TextStyle(size: size(.subtitle), italic: true),
-            composer: TextStyle(size: size(.composer), italic: true),
-            info: TextStyle(size: size(.info), italic: true),
-            tempo: TextStyle(size: size(.tempo)),
-            words: TextStyle(size: size(.words)),
-            chordSymbol: TextStyle(size: size(.chordSymbol)),
-            annotation: TextStyle(size: size(.annotation)),
-            vocal: TextStyle(size: size(.vocal)),
-            tempoChange: TextStyle(size: size(.tempo)))
+            title: style(.title),
+            subtitle: style(.subtitle, italic: true),
+            composer: style(.composer, italic: true),
+            info: style(.info, italic: true),
+            tempo: style(.tempo),
+            words: style(.words),
+            chordSymbol: style(.chordSymbol),
+            annotation: style(.annotation),
+            vocal: style(.vocal),
+            tempoChange: style(.tempo))
     }
+
+    /// What `$1` … `$4` switch to in every role; the same for all of them.
+    var switches: FontSwitchStyles? { title.switches }
 
     /// One role's font, as a directive resolved it, for reporting.
     struct Resolution: Sendable {
@@ -175,16 +267,33 @@ struct TextStyles: Sendable {
         var resolutions: [Resolution] = []
         let k = staffSize / nominalStaffSize
 
-        func style(_ role: TextFontRole, _ base: TextStyle) -> TextStyle {
-            guard let spec = specs[role] else { return base }
-            let size = spec.size.map { $0 * k } ?? base.size
-            guard let name = spec.name, let provider else {
-                return TextStyle(face: base.face, size: size, italic: base.italic)
-            }
+        func face(_ role: TextFontRole, named name: String?) -> TextFace? {
+            guard let name, let provider else { return nil }
             let resolved = provider.resolve(FontRequest(postScriptName: name))
             resolutions.append(Resolution(role: role, resolution: resolved.resolution,
                                           source: sources[role]))
-            return TextStyle(face: TextFace(resolved), size: size)
+            return TextFace(resolved)
+        }
+
+        // `%%setfont-n` first, since every other role's text can switch to it (issue #204).
+        // A directive's `*` keeps the face of whatever string the switch is written in.
+        let switches = FontSwitchStyles(slots: (1...FontSwitch.maxFont).map { font in
+            let role = FontSwitchStyles.role(font)!
+            let size = specs[role]?.size.map { $0 * k } ?? defaultSize(role) * k
+            return FontSwitchStyles.Slot(face: face(role, named: specs[role]?.name), size: size)
+        })
+
+        func style(_ role: TextFontRole, _ base: TextStyle) -> TextStyle {
+            guard let spec = specs[role] else {
+                return TextStyle(face: base.face, size: base.size, italic: base.italic,
+                                 switches: switches)
+            }
+            let size = spec.size.map { $0 * k } ?? base.size
+            guard let named = face(role, named: spec.name) else {
+                return TextStyle(face: base.face, size: size, italic: base.italic,
+                                 switches: switches)
+            }
+            return TextStyle(face: named, size: size, switches: switches)
         }
 
         styles.title = style(.title, styles.title)
@@ -218,18 +327,29 @@ struct TextStyles: Sendable {
     }
 
     /// What each kind of text drawn is set in, and what was asked for it (issue #191).
+    ///
+    /// A `%%setfont-n` is reported where a directive names its face; one that does not
+    /// keeps the face of whatever it is written in, which is no one face to report.
     func report(specs: [TextFontRole: FontSpec],
                 sources: [TextFontRole: SourceRange]) -> [TextFontReport] {
         TextFontRole.allCases.compactMap { role in
-            guard let style = style(for: role) else { return nil }
+            guard let style = style(for: role) ?? switchStyle(for: role) else { return nil }
             return TextFontReport(role: role, requested: specs[role], source: sources[role],
                                   resolution: style.resolution, size: style.size)
         }
     }
 
+    /// The face and size `%%setfont-n` names, where it names a face.
+    private func switchStyle(for role: TextFontRole) -> TextStyle? {
+        guard let font = (1...FontSwitch.maxFont).first(where: { FontSwitchStyles.role($0) == role }),
+              let slot = switches?.slots[font - 1], let face = slot.face else { return nil }
+        return TextStyle(face: face, size: slot.size)
+    }
+
     /// Every bundled face the styles draw with, for `fontFace` mode to embed.
     var bundledFaces: Set<CeolKitFonts.Face> {
-        Set([title, subtitle, composer, info, tempo, words, chordSymbol, annotation, vocal,
-             tempoChange].compactMap { $0.face?.bundledFace })
+        Set(([title, subtitle, composer, info, tempo, words, chordSymbol, annotation, vocal,
+              tempoChange].map(\.face) + (switches?.slots.map(\.face) ?? []))
+            .compactMap { $0?.bundledFace })
     }
 }

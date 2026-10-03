@@ -33,7 +33,7 @@ struct AnnotationSpacingTests {
     private func texts(in system: ResolvedSystem, below: Bool = false) throws
         -> [(x: Double, width: Double)] {
         let metadata = try BravuraMetadata.load()
-        let font = OutlineFontSet.textFace()
+        let style = TextStyle(size: fontSize)
         return system.measures.flatMap(\.events).compactMap { event in
             let (chordSymbol, annotations): (ChordSymbol?, [Annotation])
             switch event.kind {
@@ -46,7 +46,7 @@ struct AnnotationSpacingTests {
                 : AnnotationBand.linesAbove(chordSymbol: chordSymbol, annotations: annotations)
             guard !lines.isEmpty else { return nil }
             let width = lines.map {
-                AnnotationBand.width(of: $0, font: font, metadata: metadata, fontSize: fontSize)
+                AnnotationBand.width(of: $0, style: style, metadata: metadata)
             }.max() ?? 0
             return (event.origin.x, width)
         }

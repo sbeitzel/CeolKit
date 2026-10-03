@@ -168,7 +168,7 @@ struct AnnotationRenderingTests {
         let (svg, _) = try render(tune(#"C "@0,0 here""@2,3 there"B E F|]"#))
         let here = try run("here", in: svg)
         let there = try run("there", in: svg)
-        let s = 6.0  // the default staff size, which `%%ceolkit:scale` leaves alone here
+        let s = SVGRenderConfig().scaledStaffSize
         #expect(abs((there.x - here.x) - 2 * s) < 1e-6)
         #expect(abs((here.y - there.y) - 3 * s) < 1e-6)
     }

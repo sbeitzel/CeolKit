@@ -79,7 +79,7 @@ struct FontReportTests {
         #expect(roles.allSatisfy { $0.resolution.origin == .bundled && $0.resolution.isExact })
         let composer = try #require(roles.first { $0.role == .composer })
         #expect(composer.resolution.postScriptName == "LibertinusSerif-Italic")
-        #expect(composer.summary == "composerfont → LibertinusSerif-Italic 12 (bundled, default)")
+        #expect(composer.summary == "composerfont → LibertinusSerif-Italic 10.50 (bundled, default)")
     }
 
     @Test("A font directive's request, source and substitute are reported")
@@ -89,11 +89,12 @@ struct FontReportTests {
         let title = try #require(roles.first { $0.role == .title })
         #expect(title.requested == FontSpec(name: "Times-Bold", size: 20))
         #expect(title.source?.line == 1)
-        #expect(title.size == 20)
+        // The size drawn: the 20 asked for, at the default `%%scale 0.75` (issue #203).
+        #expect(title.size == 15)
         #expect(title.resolution.postScriptName == "LibertinusSerif-Bold")
         #expect(!title.resolution.isExact)
         #expect(title.summary
-                == "titlefont Times-Bold 20 → LibertinusSerif-Bold 20 (bundled, substituted)")
+                == "titlefont Times-Bold 20 → LibertinusSerif-Bold 15 (bundled, substituted)")
         #expect(roles.filter { $0.requested != nil }.map(\.role) == [.title])
     }
 
@@ -105,8 +106,8 @@ struct FontReportTests {
         func chord(_ tune: Int) -> Double? {
             fonts[tune].roles.first { $0.role == .chordSymbol }?.size
         }
-        #expect(chord(0) == 12)
-        #expect(chord(1) == 16)
+        #expect(chord(0) == 9)     // abcm2ps's 12, at the default `%%scale 0.75`
+        #expect(chord(1) == 12)
     }
 
     // MARK: - %%ceolkit:fontlist

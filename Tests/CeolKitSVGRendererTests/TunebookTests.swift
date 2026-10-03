@@ -73,7 +73,9 @@ struct TunebookTests {
         let renderer = textProbeRenderer()
         let pages = try renderer.render(score)
 
-        #expect(pages.count == 16, "Expected to find 16 pages")
+        // At abcm2ps's default `%%scale 0.75` (issue #203); abcm2ps 8.14 also makes 15 pages
+        // of this file.
+        #expect(pages.count == 15, "Expected to find 15 pages")
     }
 
     @Test func midTunePageBreaks() async throws {
@@ -106,8 +108,10 @@ struct TunebookTests {
         // Tunes appear in order across pages.
         #expect(archieBeagPage == 2, "Archie Beag should start on page 2 (assignments: \(pageAssignments))")
         #expect(radarPage == 3, "The Radar Racketeer should start on page 3 (assignments: \(pageAssignments))")
-        #expect(partingPage == 4, "The Parting Glass should start on page 4 (assignments: \(pageAssignments))")
-        #expect(sandyPage == 5, "PM Sandy Gordon should start on page 5 (assignments: \(pageAssignments))")
+        // At the default `%%scale 0.75` the short Parting Glass fits under the Radar
+        // Racketeer, and PM Sandy Gordon then opens the next page (issue #203).
+        #expect(partingPage == 3, "The Parting Glass should start on page 3 (assignments: \(pageAssignments))")
+        #expect(sandyPage == 4, "PM Sandy Gordon should start on page 4 (assignments: \(pageAssignments))")
     }
 
     @Test func rhythmAndComposerOnSameRowInTitleBlock() async throws {

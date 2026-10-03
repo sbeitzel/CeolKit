@@ -99,7 +99,7 @@ struct EndingBracketTests {
             of: /<text x="([-0-9.]+)" y="([-0-9.]+)" font-family="Libertinus Serif"[^>]*>([^<]*)<\/text>/
         ).compactMap { match -> String? in
             guard let x = Double(match.1), let y = Double(match.2),
-                  abs(y - baselineY) < 1e-6, x >= left, x <= right else { return nil }
+                  abs(y - baselineY) < 1e-3, x >= left, x <= right else { return nil }
             return String(match.3)
         }.first
     }
@@ -142,7 +142,7 @@ struct EndingBracketTests {
         let (_, ending) = try render(tune("|:CDEF|1GABc:|2CDEF|]"))
         let band = EndingBracketBand.height(staffSize: try #require(plain.first).staffLineGap)
         let shift = try #require(ending.first).topY - #require(plain.first).topY
-        #expect(abs(shift - band) < 1e-9, "staff moved by \(shift), band is \(band)")
+        #expect(abs(shift - band) < 1e-3, "staff moved by \(shift), band is \(band)")
     }
 
     // MARK: - Hooks

@@ -25,7 +25,7 @@ struct AnnotationSpacingTests {
         return try SVGRenderer().renderDocument(score).layout
     }
 
-    private let staffSize = SVGRenderConfig().staffSize
+    private let staffSize = SVGRenderConfig().scaledStaffSize
     private var fontSize: Double { AnnotationBand.fontSize(staffSize: staffSize) }
 
     /// Each note of `system` that carries text in a band, with where it starts and how wide

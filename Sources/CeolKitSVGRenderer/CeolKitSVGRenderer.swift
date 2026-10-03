@@ -128,7 +128,7 @@ public struct SVGRenderer: CeolKitRenderer {
                                               portrait: config.pageSize)
             runningPageSize = pageSizes.closing
             // Resolved per tune, from the file baseline rather than from the tune before it:
-            // a tune header applies to its own tune (ABC v2.2 §4.23), so a `%%ceolkit:scale`
+            // a tune header applies to its own tune (ABC v2.2 §4.23), so a `%%scale`
             // in tune 1's header must not still be in force in tune 2 (issue #153).
             let layout = fileLayout.layering(tune)
             // The music scales; the page does not. Sizing and header widths are therefore
@@ -141,7 +141,7 @@ public struct SVGRenderer: CeolKitRenderer {
             // host's house style and CeolKit's defaults (§11.4.2; issue #186).
             let (styles, fontResolutions) = TextStyles.resolve(
                 layout.fonts, sources: layout.fontSources, provider: fontProvider,
-                staffSize: tuneConfig.staffSize, scale: layout.scale)
+                staffSize: tuneConfig.staffSize)
             for found in fontResolutions {
                 guard let source = found.source,
                       reportedFonts.insert("\(found.role.rawValue)@\(source.byteOffset)").inserted
@@ -155,8 +155,7 @@ public struct SVGRenderer: CeolKitRenderer {
                 fileReport: {
                     TextStyles.resolve(
                         fileLayout.fonts, sources: fileLayout.fontSources, provider: fontProvider,
-                        staffSize: effectiveConfig.scaled(by: fileLayout.scale).staffSize,
-                        scale: fileLayout.scale
+                        staffSize: effectiveConfig.scaled(by: fileLayout.scale).staffSize
                     ).styles.report(specs: fileLayout.fonts, sources: fileLayout.fontSources)
                 })
             let sizer = MeasureSizer(config: tuneConfig, metadata: metadata, styles: styles)
@@ -399,7 +398,8 @@ public struct SVGRenderer: CeolKitRenderer {
             // Centred on the page the tune's title actually prints on, which is the one it
             // opens on: a tune that turns the page landscape is titled across the landscape
             // width, not the document's (issue #158).
-            var titleConfig = effectiveConfig
+            // Scaled like the music: abcm2ps's `%%scale` sizes the title block too (#203).
+            var titleConfig = tuneConfig
             titleConfig.pageSize = PageSize(width: pageSizes.opening.width,
                                             height: pageSizes.opening.height)
             let (titleRows, titleBlockHeight) = SpecTitleBlockBuilder(

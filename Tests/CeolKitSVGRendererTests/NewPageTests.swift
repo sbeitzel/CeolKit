@@ -194,7 +194,7 @@ struct NewPageTests {
     @Test func aBreakOnAStaveTheLayoutSplitLandsOnTheFirstOfItsSystems() throws {
         // The stave after the break is too wide for one line, so the packer makes several
         // systems out of it.  The break belongs in front of the first of them.
-        let bars = Array(repeating: "GABG|", count: 12).joined()
+        let bars = Array(repeating: "GABG|", count: 24).joined()
         let pages = try systemLines(of: """
         X:1
         T:Wide

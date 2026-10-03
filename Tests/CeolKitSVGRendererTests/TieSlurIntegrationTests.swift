@@ -142,7 +142,7 @@ struct TieSlurIntegrationTests {
 struct TieSlurTaperTests {
 
     private let metadata = try! BravuraMetadata.load()
-    private let staffSize = SVGRenderConfig().staffSize
+    private let staffSize = SVGRenderConfig().scaledStaffSize
 
     /// Coordinates come out of the emitter rounded to three decimals, and the midpoint
     /// measurement averages eight of them, so anything beyond this is a real discrepancy.

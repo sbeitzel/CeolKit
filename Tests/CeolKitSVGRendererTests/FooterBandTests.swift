@@ -22,7 +22,7 @@ struct FooterBandTests {
     /// The issue's reproduction: one tune of `lines` identical lines.
     private func longTune(lines: Int, preamble: String) -> String {
         preamble + """
-            %%ceolkit:scale 0.88
+            %%pagescale 0.88
             X:1
             T:Footer collision
             M:4/4
@@ -35,7 +35,7 @@ struct FooterBandTests {
     /// A tune of `lines` lines followed by a one-line tune, which may share its page.
     private func twoTunes(lines: Int, scale: Double, preamble: String) -> String {
         preamble + """
-            %%ceolkit:scale \(scale)
+            %%pagescale \(scale)
             X:1
             T:Long
             M:4/4

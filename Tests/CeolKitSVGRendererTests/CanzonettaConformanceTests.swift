@@ -36,11 +36,11 @@ struct CanzonettaConformanceTests {
 
     /// The tune rendered, as a whole and page by page.
     ///
-    /// §14.4 asks for its title, composer and lyrics in larger fonts than CeolKit's defaults
+    /// §14.4 asks for its title, composer and lyrics in larger fonts than the defaults
     /// (`%%titlefont Times-Bold 32`, `%%vocalfont Times-Roman 14`, …), which are honoured
-    /// (issue #186), and for `%%scale 0.7`, which abcm2ps uses to shrink the whole page back
-    /// and CeolKit does not implement.  The tune therefore runs onto a second page, so every
-    /// check that pairs a bracket with its staves makes the pairing within one page.
+    /// (issue #186), and for `%%scale 0.7`, which shrinks the whole page back (issue #203).
+    /// Checks that pair a bracket with its staves still make the pairing page by page, so
+    /// they hold wherever the page breaks fall.
     private func render() throws -> (svg: String, staves: [SystemGeometry],
                                      diagnostics: [Diagnostic],
                                      pages: [(svg: String, staves: [SystemGeometry])]) {
@@ -97,6 +97,21 @@ struct CanzonettaConformanceTests {
         let complaints = try render().diagnostics.filter { $0.severity != .info }
         #expect(complaints.isEmpty,
                 "Unexpected diagnostics: \(complaints.map { "line \($0.source.line): \($0.message)" })")
+    }
+
+    // MARK: - Page scale (issue #203)
+
+    @Test("At its own %%scale 0.7 the tune fits one page, as abcm2ps prints it")
+    func fitsOnePageAtItsOwnScale() throws {
+        #expect(try render().pages.count == 1)
+    }
+
+    @Test("The 32-point title is drawn at %%scale 0.7: 22.4 points")
+    func titleIsScaled() throws {
+        let result = CeolKitParser().parse(canzonettaABC, options: .default)
+        let fonts = try SVGRenderer(config: config).renderDocument(result.score).fonts
+        let title = try #require(fonts.first?.roles.first { $0.role == .title })
+        #expect(abs(title.size - 22.4) < 1e-9)
     }
 
     // MARK: - Systems

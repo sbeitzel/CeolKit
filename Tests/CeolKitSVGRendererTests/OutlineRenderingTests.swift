@@ -269,7 +269,7 @@ struct OutlineEmissionTests {
     /// glyph on the page.
     @Test func glyphScaleFactorsKeepEnoughPrecision() throws {
         let page = try #require(try render(.outlines, abc: sampleABC.replacing(
-            "X:1", with: "%%ceolkit:scale 0.85\nX:1")).first)
+            "X:1", with: "%%pagescale 0.85\nX:1")).first)
         let scales = page
             .components(separatedBy: "scale(")
             .dropFirst()

@@ -18,9 +18,11 @@ struct SpecTitleBlockBuilder {
     var styles: TextStyles? = nil
 
     func build() -> (rows: [ResolvedTitleRow], height: Double) {
-        let lineHeight    = layoutConfig.staffSize * 2.5
         let styles = self.styles ?? .standard(staffSize: layoutConfig.staffSize)
         let defaults = TextStyles.standard(staffSize: layoutConfig.staffSize)
+        // One row at the default sizes: the title set at 1.2 times the line, the proportion
+        // the block has always kept.  It scales with the page, as the text in it does.
+        let lineHeight = defaults.title.size / 1.2
         // The reference number is set as the info fields used to be, whatever they become.
         let referenceStyle = TextStyle(size: defaults.info.size)
 

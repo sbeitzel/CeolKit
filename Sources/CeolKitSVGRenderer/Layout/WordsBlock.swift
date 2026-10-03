@@ -5,10 +5,9 @@
 /// pages like any other content; its rows travel on the page with the title rows, which are
 /// drawn the same way.
 ///
-/// Sizes are absolute, like the title block's: `%%ceolkit:scale` sizes the music, not the
-/// text around it.  `%%wordsfont` will set them once the font directives are honoured (#186).
+/// Sizes follow `%%wordsfont`, which is scaled with the page like every other text (#203).
 enum WordsBlock {
-    /// Text size of a line of words, in points.
+    /// Text size of a line of words, in points, at the default page scale.
     static let fontSize = 12.0
 
     /// Distance from one line's top to the next's.

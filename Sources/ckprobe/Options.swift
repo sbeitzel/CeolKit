@@ -14,7 +14,7 @@ import Foundation
 struct Options {
     /// `nil` only with `--fonts`, which needs no ABC file.
     var file: URL?
-    /// Override `%%ceolkit:scale` before rendering.
+    /// Override the page scale (`%%scale`, as abcm2ps's `-s` does) before rendering.
     var scale: Double?
     /// Override `%%ceolkit:gracenotespacing` before rendering.
     var graceSpacing: Double?
@@ -43,10 +43,11 @@ struct Options {
         Includes (I:abc-include) resolve against the file's own directory.
 
         Options:
-          --scale <factor>      Override %%ceolkit:scale before rendering.
+          --scale <factor>      Override %%scale (abcm2ps -s; default 0.75) before
+                                rendering.
           --grace-spacing <f>   Override %%ceolkit:gracenotespacing (>= 1) before
                                 rendering.
-          --sweep <f,f,…>       Render at each factor; print a systems/pages table.
+          --sweep <f,f,…>       Render at each %%scale; print a systems/pages table.
           --natural             Force %%ceolkit:justifylast false, so system widths
                                 are reported unstretched.
           --out <dir>           Write page0.svg, page1.svg, … into <dir>.

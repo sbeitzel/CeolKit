@@ -178,7 +178,7 @@ struct SVGEmitter: Sendable {
         emitScrollSyncMetadata(for: page, pageNumber: pageNumber, builder: &builder)
         emitTitleBlock(page.titleRows, builder: &builder)
         for system in page.systems {
-            // Systems on one page can come from tunes with different %%ceolkit:scale factors
+            // Systems on one page can come from tunes with different %%scale factors
             // and grace spacings, so each is emitted through a copy of self configured for
             // that system.
             configured(for: system)
@@ -1570,7 +1570,8 @@ struct SVGEmitter: Sendable {
         case .tempoChange(let t):
             let text = tempoAnnotationText(t)
             if !text.isEmpty {
-                let style = tempoChangeStyle ?? TextStyle(size: config.staffSize * 1.5)
+                let style = tempoChangeStyle
+                    ?? TextStyles.standard(staffSize: config.staffSize).tempoChange
                 builder.text(text, x: event.origin.x, y: topStaffY - config.staffSize * 1.5,
                              style: style)
             }

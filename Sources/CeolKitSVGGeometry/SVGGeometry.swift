@@ -95,7 +95,7 @@ public enum SVGGeometry {
     /// The second filter is stroke width: the emitter draws stems thinner than the staff
     /// lines and barlines thicker (0.12, 0.13 and 0.16 staff sizes respectively), so the
     /// staff's own stroke width is the threshold between them, and it scales with
-    /// `%%ceolkit:scale` exactly as the two things being separated do.
+    /// the page scale (`%%scale`) exactly as the two things being separated do.
     ///
     /// The stroke has to *start* at the staff's top line, but it is allowed to run past
     /// the bottom one: in a multi-voice system every staff but the last has its barlines

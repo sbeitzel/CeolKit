@@ -92,7 +92,7 @@ struct VoiceOverlayLayoutTests {
         // exactly the parts.  Every note of the middle part sits between the outer two.
         let stems = probedStemsByPitchGroup(
             in: try svg("X:1\nM:6/8\nL:1/8\nK:C\ncdefga & AAAAAA & FEDCB,A, |]\n"),
-            staffSize: config.staffSize, metadata: metadata, bucketCount: 3)
+            staffSize: config.scaledStaffSize, metadata: metadata, bucketCount: 3)
         try #require(stems.count == 3)
         // Highest part up, lowest down; the middle one keeps the pitch rule (#77).
         #expect(stems[0].allSatisfy { $0.isUp })
@@ -129,7 +129,7 @@ struct VoiceOverlayLayoutTests {
         // different lines of their files, and the scroll-sync anchor says so.
         func drawn(_ svg: String) -> ([String], [String]) {
             (noteheads(in: svg).map { "\($0.x),\($0.y)" }.sorted(),
-             probedStems(in: svg, staffSize: config.staffSize, metadata: metadata)
+             probedStems(in: svg, staffSize: config.scaledStaffSize, metadata: metadata)
                  .map { "\($0.x),\($0.noteheadY),\($0.tipY)" }.sorted())
         }
         let (heads, stems) = drawn(overlaid)

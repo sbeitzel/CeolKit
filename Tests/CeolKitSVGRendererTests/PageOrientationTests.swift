@@ -271,9 +271,9 @@ struct PageOrientationTests {
 
     @Test("Orientation changes how much music a page holds")
     func paginationFollowsTheOrientation() throws {
-        // Eleven staves of one bar each: more than a portrait page holds, and the landscape
+        // Seventeen staves of one bar each: more than a portrait page holds, and the landscape
         // page that follows is shorter still, so the page counts differ between the two.
-        let staves = Array(repeating: "CDEF|", count: 11).joined(separator: "\n")
+        let staves = Array(repeating: "CDEF|", count: 17).joined(separator: "\n")
         let head = """
         X:1
         T:Only

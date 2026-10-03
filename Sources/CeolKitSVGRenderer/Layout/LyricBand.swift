@@ -13,9 +13,9 @@ import CeolKitModel
 /// keeps every page of every tune without lyrics exactly as it was.
 enum LyricBand {
 
-    /// Syllable size as a multiple of the staff space.  Twelve points against a 24-point
-    /// staff, which is what abcm2ps sets `%%vocalfont` at.
-    static let fontSizeRatio = 2.0
+    /// Syllable size as a multiple of the staff space: abcm2ps's default `%%vocalfont` size,
+    /// 13 against a 24-unit staff.
+    static let fontSizeRatio = TextStyles.defaultSize(.vocal) / TextStyles.nominalStaffSize
 
     /// Distance between one verse's baseline and the next, as a multiple of the syllable
     /// size.  Enough to clear a descender in the verse above and leave a little air.

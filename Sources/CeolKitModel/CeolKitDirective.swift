@@ -11,7 +11,10 @@ public enum CeolKitDirective: Hashable, Sendable {
     case pipeFormat(Bool)              // %%ceolkit:pipeformat true|false
     case pageNumber(Int)               // %%ceolkit:pagenumber N  (N >= 1)
     case stemAlignment(Int)            // %%ceolkit:stemalignment N  (signed integer)
-    case scale(Double)                 // %%ceolkit:scale F  (F > 0)
+    /// The page scale, as abcm2ps's `%%scale` value (issue #203): `0.75` is abcm2ps's — and
+    /// CeolKit's — default.  `%%scale S` is `.scale(S)`; `%%pagescale F` and the deprecated
+    /// `%%ceolkit:scale F` are both `.scale(0.75 × F)`.
+    case scale(Double)                 // %%scale S | %%pagescale F | %%ceolkit:scale F  (> 0)
     case graceNoteSpacing(Double)      // %%ceolkit:gracenotespacing F  (F >= 1)
     case landscape(Bool)               // %%landscape 0|1  (ABC v2.2 §9.1)
     case flatBeams(Bool)               // %%flatbeams true|false  (abcm2ps; implicit in pipeFormat)

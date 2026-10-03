@@ -72,14 +72,16 @@ struct FontDirectiveRenderingTests {
 
     // MARK: - Defaults
 
-    @Test("With no directive, every kind of text is set as it always was")
-    func defaultsUnchanged() throws {
+    @Test("With no directive, text is set at abcm2ps's sizes, at its default scale")
+    func defaults() throws {
+        // abcm2ps's 20, 16, 14, 12 and 16, at `%%scale 0.75` (issue #203).
         let all = try runs(tune())
-        #expect(try run("Main Title", in: all).size == 18)
+        #expect(try run("Main Title", in: all).size == 15)
         #expect(try run("Second Title", in: all).size == 12)
         #expect(try run("Second Title", in: all).style == "italic")
+        #expect(try run("Composer Name", in: all).size == 10.5)
         #expect(try run("Composer Name", in: all).style == "italic")
-        #expect(try run("Am", in: all).size == 12)
+        #expect(try run("Am", in: all).size == 9)
         #expect(try run("words line", in: all).size == 12)
         #expect(all.allSatisfy { $0.family != "Libertinus Serif" || $0.weight == nil })
     }
@@ -100,17 +102,18 @@ struct FontDirectiveRenderingTests {
     ])
     func sizes(_ directive: String, _ text: String, _ size: Double) throws {
         let all = try runs(tune(preamble: "%%\(directive) * \(size)\n"))
-        #expect(try run(text, in: all).size == size)
+        // Drawn at the default `%%scale 0.75`, as abcm2ps draws it.
+        #expect(try run(text, in: all).size == size * 0.75)
         // `*` keeps the face: the default italic roles stay italic.
         if ["subtitlefont", "composerfont", "infofont"].contains(directive) {
             #expect(try run(text, in: all).style == "italic")
         }
     }
 
-    @Test("Staff text scales with %%ceolkit:scale; page text does not")
+    @Test("Every kind of text scales with %%scale, page text included")
     func scaling() throws {
         let all = try runs(tune(preamble: """
-            %%ceolkit:scale 0.5
+            %%scale 0.5
             %%gchordfont * 16
             %%vocalfont * 14
             %%tempofont * 14
@@ -120,10 +123,10 @@ struct FontDirectiveRenderingTests {
             """))
         #expect(try run("Am", in: all).size == 8)
         #expect(try run("la", in: all).size == 7)
-        #expect(try run("Main Title", in: all).size == 30)
-        #expect(try run("words line", in: all).size == 16)
-        // The header tempo is page text, the change in the music staff text.
-        #expect(try run("♩ = 120", in: all).size == 14)
+        #expect(try run("Main Title", in: all).size == 15)
+        #expect(try run("words line", in: all).size == 8)
+        // The tempo in the header and the change in the music are both set in `tempofont`.
+        #expect(try run("♩ = 120", in: all).size == 7)
         #expect(try run("♩ = 90", in: all).size == 7)
     }
 
@@ -157,7 +160,7 @@ struct FontDirectiveRenderingTests {
     func tuneOverridesFile() throws {
         let two = tune(preamble: "%%gchordfont * 16\n") + "\n" + tune("%%gchordfont * 10\n")
         let chords = try runs(two).filter { $0.content == "Am" }.map(\.size)
-        #expect(chords == [16, 10])
+        #expect(chords == [12, 7.5])    // 16 and 10 at the default `%%scale 0.75`
     }
 
     @Test("The host's house style applies, and a directive in the document still wins")
@@ -167,12 +170,13 @@ struct FontDirectiveRenderingTests {
                             .title: FontSpec(name: nil, size: 24)]
         let house = try runs(tune(), config: config)
         #expect(try run("Composer Name", in: house).weight == "bold")
-        #expect(try run("Composer Name", in: house).size == 20)
-        #expect(try run("Main Title", in: house).size == 24)
+        // Sizes in abcm2ps's units, drawn at the default `%%scale 0.75` like a directive's.
+        #expect(try run("Composer Name", in: house).size == 15)
+        #expect(try run("Main Title", in: house).size == 18)
 
         let overridden = try runs(tune(preamble: "%%composerfont * 13\n"), config: config)
         let composer = try run("Composer Name", in: overridden)
-        #expect(composer.size == 13)
+        #expect(composer.size == 9.75)
         #expect(composer.weight == "bold", "the size-only directive keeps the house face")
     }
 

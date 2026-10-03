@@ -105,7 +105,7 @@ struct StaffBraceTests {
         // The glyph stands on its baseline, so its foot is the group's bottom staff line…
         #expect(abs(brace.y - bottomLine(of: staves[1])) < 1e-3)
         // …and its head, `naturalHeight` scaled, is the top staff line of the first staff.
-        let head = brace.y - natural.height * config.staffSize * brace.yScale
+        let head = brace.y - natural.height * config.scaledStaffSize * brace.yScale
         #expect(abs(head - staves[0].topY) < 1e-3)
     }
 
@@ -123,8 +123,8 @@ struct StaffBraceTests {
         let brace = try #require(braces(in: svg).first)
         let box = try #require(metadata.glyphBBoxes["brace"])
 
-        let ink = (left: brace.x + box.swX * config.staffSize * brace.xScale,
-                   right: brace.x + box.neX * config.staffSize * brace.xScale)
+        let ink = (left: brace.x + box.swX * config.scaledStaffSize * brace.xScale,
+                   right: brace.x + box.neX * config.scaledStaffSize * brace.xScale)
         #expect(ink.left >= config.margins.left - 1e-9)
         #expect(ink.right < staves[0].left)
     }
@@ -161,7 +161,7 @@ struct StaffBraceTests {
     func braceScalesWithTheTune() throws {
         let box = try #require(metadata.glyphBBoxes["brace"])
         let full = renderWithText(voices(2, "%%score {1 2}"))
-        let half = renderWithText(voices(2, "%%score {1 2}\n%%ceolkit:scale 0.5"))
+        let half = renderWithText(voices(2, "%%score {1 2}\n%%pagescale 0.5"))
         let fullBrace = try #require(braces(in: full.svg).first)
         let halfBrace = try #require(braces(in: half.svg).first)
 
@@ -191,7 +191,7 @@ struct StaffBraceTests {
         let font = try #require(OutlineFontSet.shared().resolve(family: "Bravura", italic: false))
         // The outline carries the em-to-point factor in the same transform, and flips out of
         // font design space; the `<text>` route has it in `font-size` instead.
-        let em = 4.0 * config.staffSize / font.font.unitsPerEm
+        let em = 4.0 * config.scaledStaffSize / font.font.unitsPerEm
 
         #expect(abs(outline.x - text.x) < 1e-3)
         #expect(abs(outline.y - text.y) < 1e-3)
@@ -213,7 +213,7 @@ struct StaffBraceTests {
         // The brace covers the first two staves, and the bracket all three.
         let natural = try #require(metadata.glyphBBoxes["brace"])
         #expect(abs(brace.y - bottomLine(of: staves[1])) < 1e-3)
-        #expect(abs(brace.y - natural.height * config.staffSize * brace.yScale
+        #expect(abs(brace.y - natural.height * config.scaledStaffSize * brace.yScale
                     - staves[0].topY) < 1e-3)
     }
 

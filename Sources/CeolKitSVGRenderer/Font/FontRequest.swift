@@ -95,6 +95,11 @@ public struct FontRequest: Sendable, Hashable, Codable, CustomStringConvertible 
         }
     }
 
+    /// Every family some request falls back to, for listing what is installed.
+    static let standInFamilies: [String] = ["Times", "Helvetica", "Courier"].flatMap {
+        FontRequest(family: $0).aliases
+    }
+
     /// A family name with case, spaces and hyphens taken out, so that "Times New Roman",
     /// "TimesNewRoman" and "times-new-roman" compare equal.
     static func normalised(_ family: String) -> String {

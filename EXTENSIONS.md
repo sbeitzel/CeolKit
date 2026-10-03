@@ -9,6 +9,70 @@ CeolKit makes where the standard asks for an outcome but names no rule for reach
 
 ---
 
+## `%%ceolkit:fontlist`
+
+**Syntax:** `%%ceolkit:fontlist [resolved|available]`
+
+**Type:** keyword (case-insensitive)
+
+**Default:** `resolved`, where the directive is written without one
+
+**Scope:** reports on the scope it is written in — the file preamble, or a tune (header or
+body)
+
+### Description
+
+Reports which fonts the renderer actually used, from inside the document — for someone who
+has only the app and the `.abc` file and wants to know why the text does not look the way
+the font directives asked. The report arrives as notes (`info` diagnostics, code
+`fontList`) at the directive's line, so it changes nothing on the page.
+
+- `resolved` gives one note per kind of text the renderer draws: the font directive's
+  request, if any, the face and size used, and where the face came from (`registered`,
+  `system` or `bundled`). It also says `substituted` when that face is not the one asked
+  for, and `default` when nothing asked:
+
+  ```
+  titlefont Times-Bold 20 → LibertinusSerif-Bold 20 (bundled, substituted)
+  gchordfont → LibertinusSerif-Regular 12 (bundled, default)
+  ```
+
+- `available` gives one note per face the renderer could draw text in under the host's
+  configuration: the faces the host registered, the machine's installed fonts where the
+  host turned system lookup on, and the bundled faces.
+
+A malformed keyword is a warning, and the directive is dropped.
+
+### Scoping
+
+Font directives are scoped, not positional: one anywhere in a tune sets that tune's text
+throughout. So a `resolved` list written in a tune, header or body, reports the fonts the
+whole tune is set in. A list written in the file preamble reports the document's baseline,
+from the preamble's font directives, before any tune's own directives apply.
+
+### Examples
+
+```abc
+%%titlefont Times-Bold 20
+
+X:1
+T:The Kesh
+%%wordsfont Courier-Bold 16
+%%ceolkit:fontlist
+K:G
+...
+```
+
+Without system font lookup, both faces are reported as substituted by Libertinus Serif
+Bold. With it, on a machine that has them, as `Times-Bold` and `Courier-Bold` from the
+`system`.
+
+Host apps can read the same information without the directive, from
+`RenderedDocument.fonts` and `CeolKitFonts.availableFaces(config:)`; `ckprobe` prints it in
+a `fonts:` section, and lists the available faces with `--fonts`.
+
+---
+
 ## `%%ceolkit:gracenotespacing`
 
 **Syntax:** `%%ceolkit:gracenotespacing <number ≥ 1>`

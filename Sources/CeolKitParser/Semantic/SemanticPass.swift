@@ -1071,7 +1071,7 @@ struct SemanticPass {
                 restartingAt: parseNewPage(payload, source: source, diagnostics: &diagnostics),
                 source: source))
         case "landscape", "flatbeams", "ceolkit:justifylast", "ceolkit:scale",
-             "ceolkit:gracenotespacing", "writefields",
+             "ceolkit:gracenotespacing", "ceolkit:fontlist", "writefields",
              "dateformat", "footer", "straightflags", "graceslurs",
              _ where TextFontRole(rawValue: name) != nil:
             var tempDiags: [Diagnostic] = []
@@ -1537,6 +1537,13 @@ struct SemanticPass {
             if let value = parseLogical(trimmed) { return .justifyLast(value) }
             diagnostics.append(Diagnostic(severity: .warning, code: .unknownDirective,
                 message: "%%ceolkit:justifylast expects 'true' or 'false'", source: source))
+            return nil
+        case "ceolkit:fontlist":
+            if trimmed.isEmpty { return .fontList(.resolved) }
+            if let mode = FontListMode(rawValue: trimmed.lowercased()) { return .fontList(mode) }
+            diagnostics.append(Diagnostic(severity: .warning, code: .invalidFontDirective,
+                message: "%%ceolkit:fontlist expects 'resolved' or 'available' (got '\(trimmed)')",
+                source: source))
             return nil
         case _ where TextFontRole(rawValue: name) != nil:
             return parseFontDirective(name: name, payload: trimmed, source: source,

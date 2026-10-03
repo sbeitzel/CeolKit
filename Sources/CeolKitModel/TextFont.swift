@@ -54,3 +54,11 @@ public struct FontSpec: Sendable, Hashable, Codable {
         FontSpec(name: name ?? base?.name, size: size ?? base?.size)
     }
 }
+
+/// What `%%ceolkit:fontlist` reports (issue #191).
+public enum FontListMode: String, CaseIterable, Sendable, Hashable, Codable {
+    /// The face and size each kind of text is set in, and what the document asked for.
+    case resolved
+    /// Every face the renderer could draw with under the host's configuration.
+    case available
+}

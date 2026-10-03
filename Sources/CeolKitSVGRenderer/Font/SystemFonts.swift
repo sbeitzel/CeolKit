@@ -42,6 +42,78 @@ enum SystemFonts {
         }
     }
 
+    /// Every installed face in a format the parser reads, for listing (issue #191).
+    ///
+    /// Described by CoreText rather than parsed: reading every font file on a machine takes
+    /// minutes, and a listing needs only names, weight, style, format and the licence's
+    /// embedding bits — all of which CoreText has, the last two straight from the `OS/2`
+    /// table the provider itself reads.  Remembered after the first call.
+    static var listing: [FontFaceInfo] {
+        listingLock.lock(); defer { listingLock.unlock() }
+        if let listingCache { return listingCache }
+        #if canImport(CoreText)
+        let collection = CTFontCollectionCreateFromAvailableFonts(nil)
+        let descriptors = CTFontCollectionCreateMatchingFontDescriptors(collection)
+            as? [CTFontDescriptor] ?? []
+        var faces = descriptors.compactMap(describe)
+        // macOS leaves some faces out of the collection — Courier and Times among them —
+        // that a lookup by name still finds, so the families a document is likeliest to
+        // name are asked for by name as well.
+        var seen = Set(faces.map(\.postScriptName))
+        for family in FontRequest.standInFamilies {
+            let match = CTFontDescriptorCreateWithAttributes(
+                [kCTFontFamilyNameAttribute: family] as CFDictionary)
+            let required: Set<String> = [kCTFontFamilyNameAttribute as String]
+            for found in CTFontDescriptorCreateMatchingFontDescriptors(match, required as CFSet)
+                    as? [CTFontDescriptor] ?? [] {
+                guard let face = describe(found), seen.insert(face.postScriptName).inserted
+                else { continue }
+                faces.append(face)
+            }
+        }
+        #else
+        let faces: [FontFaceInfo] = []
+        #endif
+        listingCache = faces
+        return faces
+    }
+
+    private nonisolated(unsafe) static var listingCache: [FontFaceInfo]?
+    private static let listingLock = NSLock()
+
+    #if canImport(CoreText)
+    private static func describe(_ descriptor: CTFontDescriptor) -> FontFaceInfo? {
+        guard let name = CTFontDescriptorCopyAttribute(descriptor, kCTFontNameAttribute) as? String,
+              let family = CTFontDescriptorCopyAttribute(descriptor, kCTFontFamilyNameAttribute) as? String,
+              let rawFormat = CTFontDescriptorCopyAttribute(descriptor, kCTFontFormatAttribute) as? UInt32
+        else { return nil }
+        let format: FontFaceInfo.Format
+        switch CTFontFormat(rawValue: rawFormat) {
+        case .openTypePostScript:        format = .cff
+        case .openTypeTrueType, .trueType: format = .trueType
+        default:                         return nil   // Type 1, bitmap: not read
+        }
+        let font = CTFontCreateWithFontDescriptor(descriptor, 12, nil)
+        // OS/2: usWeightClass at 4, fsType at 8.  No table reads as regular and
+        // unrestricted, as ``OpenTypeFont`` reads it.
+        var weightClass = 400, fsType = 0
+        if let os2 = CTFontCopyTable(font, CTFontTableTag(kCTFontTableOS2), []) as Data?,
+           os2.count >= 10 {
+            let bytes = [UInt8](os2.prefix(10))
+            weightClass = Int(bytes[4]) << 8 | Int(bytes[5])
+            fsType = Int(bytes[8]) << 8 | Int(bytes[9])
+        } else if CTFontGetSymbolicTraits(font).contains(.traitBold) {
+            weightClass = 700
+        }
+        return FontFaceInfo(
+            postScriptName: name, family: family,
+            weight: weightClass >= 600 ? .bold : .regular,
+            style: CTFontGetSymbolicTraits(font).contains(.traitItalic) ? .italic : .upright,
+            origin: .system, format: format,
+            embeddable: EmbeddingPermissions(fsType: fsType).allowsOutlineEmbedding)
+    }
+    #endif
+
     // MARK: - Cache
 
     // Process-wide: what is installed does not change during a render, and parsing a system

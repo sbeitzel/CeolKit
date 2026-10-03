@@ -32,19 +32,47 @@ do {
     fail("\(error)", usage: true)
 }
 
-guard let source = try? String(contentsOf: options.file, encoding: .utf8) else {
-    fail("cannot read \(options.file.path)")
+let renderConfig: SVGRenderConfig = {
+    var config = SVGRenderConfig(textRendering: options.textRendering)
+    config.systemFonts = options.systemFonts
+    if !options.fontFiles.isEmpty {
+        do {
+            config.fontLibrary = try FontLibrary(fonts: options.fontFiles.map { try Data(contentsOf: $0) })
+        } catch FontLibraryError.unreadableFont(let index) {
+            fail("cannot read a font from \(options.fontFiles[index].path)")
+        } catch {
+            fail("cannot read font file: \(error)")
+        }
+    }
+    return config
+}()
+
+// MARK: - Font list mode
+
+if options.listFonts {
+    let faces = CeolKitFonts.availableFaces(config: renderConfig)
+    if options.json {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        print(String(decoding: (try? encoder.encode(faces)) ?? Data(), as: UTF8.self))
+    } else {
+        print(Report.fontTable(faces))
+    }
+    exit(0)
+}
+
+guard let file = options.file else { fail("expected an ABC file", usage: true) }
+guard let source = try? String(contentsOf: file, encoding: .utf8) else {
+    fail("cannot read \(file.path)")
 }
 
 /// Parses with the file's own directory as the include base, so `I:abc-include` resolves
 /// the way it does for a host application opening the same file.
 func parse(_ abc: String) -> ParseResult {
-    CeolKitParser(for: options.file.deletingLastPathComponent(),
+    CeolKitParser(for: file.deletingLastPathComponent(),
                   fileResolver: CeolKitParser.defaultFileResolver)
         .parse(abc, options: .default)
 }
-
-let renderConfig = SVGRenderConfig(textRendering: options.textRendering)
 
 func render(_ abc: String) throws -> [String] {
     try SVGRenderer(config: renderConfig).render(parse(abc).score)
@@ -100,10 +128,11 @@ if let directory = options.outputDirectory {
 }
 
 do {
-    let report = Report(file: options.file,
+    let report = Report(file: file,
                         score: result.score,
                         diagnostics: result.diagnostics + renderDiagnostics,
                         placements: rendered.placements,
+                        fonts: rendered.fonts,
                         pages: try SVGGeometry.pages(from: svgs))
     if options.json {
         let encoder = JSONEncoder()

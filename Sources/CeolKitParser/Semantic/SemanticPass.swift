@@ -1244,42 +1244,88 @@ struct SemanticPass {
     /// — but it must be *made* of them: `"Fine"` is text, not an F chord of quality `ine`
     /// (issue #177).
     private func parseChordSymbol(_ raw: String, source: SourceRange) -> ChordSymbol? {
-        var body = Substring(raw.trimmingCharacters(in: .whitespaces))
-        // An alternate chord, "G(Em)": only for printing, but it has to be a chord too.
-        if body.hasSuffix(")"), let open = body.firstIndex(of: "("), open != body.startIndex {
+        let text = raw.trimmingCharacters(in: .whitespaces)
+        var body = Substring(text)
+        var accidentals: [ChordAccidental] = []
+        // An alternate chord, "G(Em)": only for printing, but it has to be a chord too.  Where
+        // the parentheses also read as part of the type — "C7(b9)", "G7(#11)" — they are taken
+        // that way: an alteration is written so far more often than an alternate chord
+        // spelled in lower case, and reading it as one would print the `b` as a letter.
+        if parseChordSpelling(body) == nil,
+           body.hasSuffix(")"), let open = body.firstIndex(of: "("), open != body.startIndex {
             let alternate = body[body.index(after: open)..<body.index(before: body.endIndex)]
-            if parseChordSpelling(alternate) != nil { body = body[..<open] }
+            if let spelling = parseChordSpelling(alternate) {
+                body = body[..<open]
+                accidentals = spelling.accidentals
+            }
         }
-        guard let (root, quality, bassNote) = parseChordSpelling(body) else { return nil }
-        return ChordSymbol(root: root, quality: quality, bassNote: bassNote, raw: raw, source: source)
+        guard let (root, quality, bassNote, own) = parseChordSpelling(body) else { return nil }
+        return ChordSymbol(root: root, quality: quality, bassNote: bassNote, raw: raw,
+                           segments: chordSegments(text, accidentals: own + accidentals),
+                           source: source)
     }
 
-    /// `<note><accidental><type></bass>`, the whole of `text` and nothing else.
+    /// One character of a chord symbol read as an accidental: where it is, and what it is.
+    private typealias ChordAccidental = (index: String.Index, alteration: Alteration)
+
+    /// `text` split into runs of text and the accidentals at `accidentals`.
+    private func chordSegments(_ text: String,
+                               accidentals: [ChordAccidental]) -> [ChordSymbol.Segment] {
+        var segments: [ChordSymbol.Segment] = []
+        var runStart = text.startIndex
+        for accidental in accidentals.sorted(by: { $0.index < $1.index }) {
+            if runStart < accidental.index {
+                segments.append(.text(String(text[runStart..<accidental.index])))
+            }
+            segments.append(.accidental(accidental.alteration))
+            runStart = text.index(after: accidental.index)
+        }
+        if runStart < text.endIndex { segments.append(.text(String(text[runStart...]))) }
+        return segments
+    }
+
+    /// `<note><accidental><type></bass>`, the whole of `text` and nothing else, with every
+    /// character of it that was read as an accidental.
     private func parseChordSpelling(_ text: Substring)
-        -> (root: PitchClass, quality: String, bassNote: PitchClass?)? {
+        -> (root: PitchClass, quality: String, bassNote: PitchClass?,
+            accidentals: [ChordAccidental])? {
         var rest = text
         var bassNote: PitchClass? = nil
+        var accidentals: [ChordAccidental] = []
         if let slash = rest.lastIndex(of: "/") {
             var bass = rest[rest.index(after: slash)...]
-            guard let bassRoot = parsePitchClass(&bass), bass.isEmpty else { return nil }
+            guard let bassRoot = parsePitchClass(&bass, accidentals: &accidentals),
+                  bass.isEmpty else { return nil }
             bassNote = bassRoot
             rest = rest[..<slash]
         }
-        guard let root = parsePitchClass(&rest), isChordQuality(rest) else { return nil }
-        return (root, String(rest), bassNote)
+        guard let root = parsePitchClass(&rest, accidentals: &accidentals),
+              isChordQuality(rest, accidentals: &accidentals) else { return nil }
+        return (root, String(rest), bassNote, accidentals)
     }
 
     /// A note letter and its optional accidental, consumed from the front of `text`.
-    private func parsePitchClass(_ text: inout Substring) -> PitchClass? {
+    private func parsePitchClass(_ text: inout Substring,
+                                 accidentals: inout [ChordAccidental]) -> PitchClass? {
         guard let first = text.first, let step = letterToDiatonicStep(first) else { return nil }
         text = text.dropFirst()
         var alteration = Alteration.natural
-        switch text.first {
-        case "#", "♯": alteration = .sharp; text = text.dropFirst()
-        case "b", "♭": alteration = .flat;  text = text.dropFirst()
-        default: break
+        if let sign = text.first, let read = Self.chordAccidental(sign), read != .natural {
+            alteration = read
+            accidentals.append((text.startIndex, read))
+            text = text.dropFirst()
         }
         return PitchClass(step: step, alteration: alteration)
+    }
+
+    /// The accidental a character of a chord symbol spells, where it spells one.
+    private static func chordAccidental(_ character: Character) -> Alteration? {
+        switch character {
+        case "#", "♯": return .sharp
+        case "b", "♭": return .flat
+        case "♮":      return .natural
+        default:       return nil
+        }
     }
 
     /// The words and signs a chord's type is spelled with, longest first so that `maj`
@@ -1290,17 +1336,26 @@ struct SemanticPass {
     ]
 
     /// Whether `text` is empty or wholly made of ``chordQualityTokens`` and numbers.
-    private func isChordQuality(_ text: Substring) -> Bool {
+    ///
+    /// Every `b` and `#` a type can hold is an accidental — none of the words it is spelled
+    /// with contains either — so each one found is added to `accidentals`.
+    private func isChordQuality(_ text: Substring,
+                                accidentals: inout [ChordAccidental]) -> Bool {
         var rest = text
+        var found: [ChordAccidental] = []
         while let first = rest.first {
             if first.isASCII, first.isNumber {
                 rest = rest.drop(while: { $0.isASCII && $0.isNumber })
             } else if let token = Self.chordQualityTokens.first(where: { rest.hasPrefix($0) }) {
+                if token.count == 1, let read = Self.chordAccidental(first) {
+                    found.append((rest.startIndex, read))
+                }
                 rest = rest.dropFirst(token.count)
             } else {
                 return false
             }
         }
+        accidentals += found
         return true
     }
 

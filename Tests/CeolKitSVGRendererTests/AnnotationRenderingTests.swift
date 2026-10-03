@@ -255,4 +255,47 @@ struct AnnotationRenderingTests {
         let (svg, _) = try render(tune("C D E F|]"))
         #expect(runs(in: svg).map(\.content) == ["Annotations"])
     }
+
+    // MARK: - Chord symbol accidentals (issue #184)
+
+    /// Every Bravura `<text>` run in `svg`, as (x, y, content).
+    private func bravuraRuns(in svg: String) -> [(x: Double, y: Double, content: String)] {
+        svg.matches(
+            of: /<text x="([-0-9.]+)" y="([-0-9.]+)" font-family="Bravura"[^>]*>([^<]*)<\/text>/
+        ).compactMap { m in
+            guard let x = Double(m.1), let y = Double(m.2) else { return nil }
+            return (x, y, String(m.3))
+        }
+    }
+
+    @Test("\"Bb\" and \"F#m\" are drawn with chord-symbol signs, not letters")
+    func chordAccidentalsAreSigns() throws {
+        let (svg, _) = try render(tune(#""Bb"B "F#m"A "Gb7"G "C"C|]"#))
+        let flat = String(SMuFLGlyph.csymAccidentalFlat.character)
+        let sharp = String(SMuFLGlyph.csymAccidentalSharp.character)
+        let signs = bravuraRuns(in: svg).filter { [flat, sharp].contains($0.content) }
+        #expect(signs.map(\.content) == [flat, sharp, flat])
+
+        // The letters around them stay text, and the sign sits between them on one baseline.
+        let b = try run("B", in: svg)
+        let m = try run("m", in: svg)
+        let f = try run("F", in: svg)
+        #expect(signs[0].y == b.y)
+        #expect(signs[0].x > b.x)
+        #expect(signs[1].x > f.x && signs[1].x < m.x)
+        #expect(runs(in: svg).contains { $0.content == "7" })
+        #expect(!runs(in: svg).contains { $0.content.contains("Bb") || $0.content.contains("#") })
+        // A chord with no accidental is one run, exactly as before.
+        _ = try run("C", in: svg)
+    }
+
+    @Test("Text that is not a chord keeps its letters")
+    func nonChordTextIsUntouched() throws {
+        let (svg, _) = try render(tune(#""Fine"F "^Bb here"B|]"#))
+        _ = try run("Fine", in: svg)
+        _ = try run("Bb here", in: svg)
+        #expect(bravuraRuns(in: svg).allSatisfy {
+            $0.content != String(SMuFLGlyph.csymAccidentalFlat.character)
+        })
+    }
 }

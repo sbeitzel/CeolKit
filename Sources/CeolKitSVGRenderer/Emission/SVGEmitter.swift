@@ -740,6 +740,29 @@ struct SVGEmitter: Sendable {
                          textAnchor: anchor)
         }
 
+        /// Draws a band's line left to right from `x`: its text runs in the text face and a
+        /// chord symbol's accidentals as Bravura's chord-symbol signs (issue #184).  A line
+        /// of one run — every line with no accidental in it — is drawn exactly as `draw`
+        /// draws it.
+        func draw(_ line: AnnotationBand.Line, x: Double, y: Double) {
+            var penX = x
+            for segment in line {
+                switch segment {
+                case .text(let text):
+                    draw(text, x: penX, y: y)
+                    penX += AnnotationBand.width(of: text, font: font, fontSize: fontSize)
+                case .accidental(let alteration):
+                    guard let glyph = AnnotationBand.glyph(for: alteration) else { continue }
+                    let size = fontSize * AnnotationBand.accidentalSizeRatio
+                    builder.text(String(glyph.character),
+                                 x: penX + AnnotationBand.accidentalBearing * size / 4, y: y,
+                                 fontFamily: "Bravura", fontSize: size)
+                    penX += AnnotationBand.advance(of: glyph, metadata: metadata,
+                                                   fontSize: fontSize)
+                }
+            }
+        }
+
         for (m, measure) in system.measures.enumerated() {
             for (e, event) in measure.events.enumerated() {
                 let chordSymbol: ChordSymbol?

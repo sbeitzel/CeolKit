@@ -29,6 +29,10 @@ public struct FontResolution: Sendable, Hashable {
     /// Faces that matched but were passed over because their licence forbids embedding
     /// (`OS/2.fsType`; see ``TextRendering/outlines``), by PostScript name.
     public let refusedForEmbedding: [String]
+    /// Whether the system's fonts were searched (``SVGRenderConfig/systemFonts``).  With the
+    /// lookup off, falling back to a bundled face is what the configuration asked for, and
+    /// is reported as a note rather than a warning (issue #186).
+    public let searchedSystemFonts: Bool
 
     /// Whether the face is the one asked for: the requested PostScript name, or the
     /// requested family in the requested weight and style.
@@ -40,9 +44,9 @@ public struct FontResolution: Sendable, Hashable {
     }
 
     /// What a document naming this font should be told, reported at `source`: nothing for
-    /// an exact match; a substitution otherwise — a note where a standard family was
-    /// answered by one that stands in for it, a warning where the family was not found at
-    /// all — and a warning for each face refused for its licence.
+    /// an exact match; a substitution otherwise — a warning where the system's fonts were
+    /// searched and neither the family nor a stand-in for it was there, a note in every
+    /// other case — and a warning for each face refused for its licence.
     public func diagnostics(at source: SourceRange) -> [Diagnostic] {
         var out = refusedForEmbedding.map { name in
             Diagnostic(severity: .warning, code: .fontNotEmbeddable,
@@ -55,7 +59,7 @@ public struct FontResolution: Sendable, Hashable {
             FontRequest.normalised($0) == FontRequest.normalised(family)
         }
         out.append(Diagnostic(
-            severity: standIn ? .info : .warning, code: .fontSubstituted,
+            severity: standIn || !searchedSystemFonts ? .info : .warning, code: .fontSubstituted,
             message: "\(requested) not found; using \(postScriptName)", source: source))
         return out
     }
@@ -112,9 +116,11 @@ final class FontProvider: @unchecked Sendable {
 
     /// The face the emitter's `font-family` / `font-style` pair names.  The bundled
     /// families go straight to the bundle; anything else is a ``FontRequest``.
-    func resolve(family: String, italic: Bool) -> (key: OutlineFontSet.FaceKey, font: OpenTypeFont)? {
-        if let face = bundled.resolve(family: family, italic: italic) { return face }
-        let resolved = resolve(FontRequest(family: family, style: italic ? .italic : .upright))
+    func resolve(family: String, italic: Bool,
+                 bold: Bool = false) -> (key: OutlineFontSet.FaceKey, font: OpenTypeFont)? {
+        if let face = bundled.resolve(family: family, italic: italic, bold: bold) { return face }
+        let resolved = resolve(FontRequest(family: family, weight: bold ? .bold : .regular,
+                                           style: italic ? .italic : .upright))
         return (resolved.key, resolved.font)
     }
 
@@ -151,8 +157,13 @@ final class FontProvider: @unchecked Sendable {
                     return resolved(face, origin: origin, request: request, refused: refused)
                 }
             }
+            // The bundle is a source like the others, searched last: a document may name
+            // `LibertinusSerif-Bold` or `Bravura` outright.
+            if let face = bundledFace(for: wanted) {
+                return bundledResolution(face, request: request, refused: refused)
+            }
         }
-        return bundledFallback(request, refused: refused)
+        return bundledResolution(fallbackFace(for: request), request: request, refused: refused)
     }
 
     private func candidateSources(for request: FontRequest) -> [(FontOrigin, [OpenTypeFont])] {
@@ -203,24 +214,45 @@ final class FontProvider: @unchecked Sendable {
                 family: face.familyName ?? request.family,
                 weight: face.weightClass >= 600 ? .bold : .regular,
                 style: face.isItalic ? .italic : .upright,
-                origin: origin, refusedForEmbedding: refused))
+                origin: origin, refusedForEmbedding: refused,
+                searchedSystemFonts: systemFonts))
     }
 
-    /// The bundle's answer, which always exists: Bravura for Bravura, Libertinus Serif in
-    /// the requested style for everything else.  The bundle has no bold.
-    private func bundledFallback(_ request: FontRequest, refused: [String]) -> Resolved {
-        let face: CeolKitFonts.Face =
-            FontRequest.normalised(request.family) == "bravura" ? .bravura
-            : request.style == .italic ? .libertinusSerifItalic : .libertinusSerifRegular
-        let key = OutlineFontSet.FaceKey(face)
+    /// The bundled face `request` names, where it names one: Bravura, or Libertinus Serif
+    /// in any weight and style.
+    private func bundledFace(for request: FontRequest) -> CeolKitFonts.Face? {
+        let family = FontRequest.normalised(request.family)
+        if family == FontRequest.normalised(CeolKitFonts.Face.bravura.familyName) {
+            return .bravura
+        }
+        guard family == FontRequest.normalised(CeolKitFonts.Face.libertinusSerifRegular.familyName)
+        else { return nil }
+        return fallbackFace(for: request)
+    }
+
+    /// The bundle's answer to a request nothing else answered: Libertinus Serif in the
+    /// requested weight and style.
+    private func fallbackFace(for request: FontRequest) -> CeolKitFonts.Face {
+        switch (request.weight, request.style) {
+        case (.regular, .upright): return .libertinusSerifRegular
+        case (.regular, .italic):  return .libertinusSerifItalic
+        case (.bold, .upright):    return .libertinusSerifBold
+        case (.bold, .italic):     return .libertinusSerifBoldItalic
+        }
+    }
+
+    private func bundledResolution(_ face: CeolKitFonts.Face, request: FontRequest,
+                                   refused: [String]) -> Resolved {
         // `shared()` succeeded in `init`, so every bundled face is there.
-        let font = bundled.resolve(family: face.familyName, italic: face.isItalic)!.font
+        let font = bundled.resolve(family: face.familyName, italic: face.isItalic,
+                                   bold: face.isBold)!.font
         return Resolved(
-            key: key, font: font,
+            key: OutlineFontSet.FaceKey(face), font: font,
             resolution: FontResolution(
                 requested: request, postScriptName: font.postScriptName ?? face.rawValue,
-                family: face.familyName, weight: .regular,
+                family: face.familyName, weight: face.isBold ? .bold : .regular,
                 style: face.isItalic ? .italic : .upright,
-                origin: .bundled, refusedForEmbedding: refused))
+                origin: .bundled, refusedForEmbedding: refused,
+                searchedSystemFonts: systemFonts))
     }
 }

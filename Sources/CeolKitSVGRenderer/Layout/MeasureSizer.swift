@@ -14,7 +14,12 @@ public struct MeasureSizer: Sendable {
     private let annotationSpacing: AnnotationSpacing
 
     public init(config: SVGRenderConfig, metadata: BravuraMetadata) {
-        self.metrics = ColumnMetrics(config: config, metadata: metadata)
+        self.init(config: config, metadata: metadata, styles: nil)
+    }
+
+    /// - Parameter styles: how the tune's text is set (issue #186); `nil` for the defaults.
+    init(config: SVGRenderConfig, metadata: BravuraMetadata, styles: TextStyles?) {
+        self.metrics = ColumnMetrics(config: config, metadata: metadata, styles: styles)
         self.merger = SharedStaffMerger(metrics: metrics)
         self.annotationSpacing = AnnotationSpacing(metrics: metrics)
     }

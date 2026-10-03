@@ -16,16 +16,17 @@ struct ColumnMetrics: Sendable {
     let metadata: BravuraMetadata
     let graceMetrics: GraceMetrics
     let accidentalMetrics: AccidentalMetrics
-    /// The face syllables are measured in, read once here rather than per column.  `nil`
-    /// where the bundled resource could not be read; see ``LyricBand/width(of:font:fontSize:)``.
-    let lyricFont: OpenTypeFont?
+    /// How the tune's text is set — the faces and sizes the font directives chose (issue
+    /// #186).  Syllables, chord symbols and annotations are measured in these, so the
+    /// columns are spaced for the text as it will be drawn.
+    let styles: TextStyles
 
-    init(config: SVGRenderConfig, metadata: BravuraMetadata) {
+    init(config: SVGRenderConfig, metadata: BravuraMetadata, styles: TextStyles? = nil) {
         self.config = config
         self.metadata = metadata
         self.graceMetrics = GraceMetrics(config: config, metadata: metadata)
         self.accidentalMetrics = AccidentalMetrics(config: config, metadata: metadata)
-        self.lyricFont = OutlineFontSet.textFace()
+        self.styles = styles ?? .standard(staffSize: config.staffSize)
     }
 
     // MARK: - Column width
@@ -110,10 +111,10 @@ struct ColumnMetrics: Sendable {
         guard !lyrics.isEmpty || !nextLyrics.isEmpty else { return 0 }
         let s = config.staffSize
         return LyricBand.columnReservation(
-            own:  LyricBand.widestSyllable(in: lyrics, staffSize: s, font: lyricFont),
-            next: LyricBand.widestSyllable(in: nextLyrics, staffSize: s, font: lyricFont),
+            own:  LyricBand.widestSyllable(in: lyrics, style: styles.vocal),
+            next: LyricBand.widestSyllable(in: nextLyrics, style: styles.vocal),
             hyphenated: LyricBand.isHyphenated(lyrics),
-            staffSize: s, font: lyricFont)
+            staffSize: s, style: styles.vocal)
     }
 
     /// The verses `event` carries, empty for everything that cannot be sung.

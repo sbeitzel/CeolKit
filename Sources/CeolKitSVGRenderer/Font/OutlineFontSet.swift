@@ -22,12 +22,16 @@ struct OutlineFontSet: Sendable {
         static let bravura = FaceKey(rawValue: "bravura")
         static let libertinusSerif = FaceKey(rawValue: "libertinusSerif")
         static let libertinusSerifItalic = FaceKey(rawValue: "libertinusSerifItalic")
+        static let libertinusSerifBold = FaceKey(rawValue: "libertinusSerifBold")
+        static let libertinusSerifBoldItalic = FaceKey(rawValue: "libertinusSerifBoldItalic")
 
         init(_ face: CeolKitFonts.Face) {
             switch face {
             case .bravura:                self = .bravura
             case .libertinusSerifRegular: self = .libertinusSerif
             case .libertinusSerifItalic:  self = .libertinusSerifItalic
+            case .libertinusSerifBold:    self = .libertinusSerifBold
+            case .libertinusSerifBoldItalic: self = .libertinusSerifBoldItalic
             }
         }
 
@@ -107,17 +111,31 @@ struct OutlineFontSet: Sendable {
 
     /// The face the emitter's `font-family` / `font-style` pair names, or `nil` for a
     /// family this renderer does not bundle.
-    func resolve(family: String, italic: Bool) -> (key: FaceKey, font: OpenTypeFont)? {
+    func resolve(family: String, italic: Bool,
+                 bold: Bool = false) -> (key: FaceKey, font: OpenTypeFont)? {
         let key: FaceKey
         switch family {
         case CeolKitFonts.Face.bravura.familyName:
             key = .bravura
         case CeolKitFonts.Face.libertinusSerifRegular.familyName:
-            key = italic ? .libertinusSerifItalic : .libertinusSerif
+            switch (bold, italic) {
+            case (false, false): key = .libertinusSerif
+            case (false, true):  key = .libertinusSerifItalic
+            case (true, false):  key = .libertinusSerifBold
+            case (true, true):   key = .libertinusSerifBoldItalic
+            }
         default:
             return nil
         }
         guard let font = fonts[key] else { return nil }
         return (key, font)
+    }
+
+    /// Every bundled face with the key its glyphs are stored under, in
+    /// ``CeolKitFonts/Face`` order.
+    var faces: [(key: FaceKey, font: OpenTypeFont)] {
+        CeolKitFonts.Face.allCases.compactMap { face in
+            fonts[FaceKey(face)].map { (FaceKey(face), $0) }
+        }
     }
 }

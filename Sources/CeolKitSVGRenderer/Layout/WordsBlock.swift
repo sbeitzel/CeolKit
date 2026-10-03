@@ -24,4 +24,13 @@ enum WordsBlock {
     static func height(lines: Int) -> Double {
         lines == 0 ? 0 : topGap + Double(lines) * lineHeight
     }
+
+    // MARK: - In a `%%wordsfont` (issue #186)
+
+    /// The same measures for words set in `style`: they scale with its size.
+    static func lineHeight(_ style: TextStyle) -> Double { style.size * 1.25 }
+    static func topGap(_ style: TextStyle) -> Double { style.size }
+    static func height(lines: Int, style: TextStyle) -> Double {
+        lines == 0 ? 0 : topGap(style) + Double(lines) * lineHeight(style)
+    }
 }

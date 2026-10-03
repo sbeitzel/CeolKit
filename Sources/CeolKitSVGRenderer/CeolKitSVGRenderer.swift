@@ -62,6 +62,13 @@ public struct SVGRenderer: CeolKitRenderer {
         let labelFont = score.tunes.contains(where: \.hasVoiceLabels)
             ? OutlineFontSet.textFace() : nil
 
+        // Where the faces font directives name are looked up (issues #186, #190), shared by
+        // every tune so each face is found once.  `nil` only where the bundled faces cannot
+        // be read, which leaves every directive's size honoured and its face unchanged.
+        let fontProvider = try? FontProvider(config: effectiveConfig)
+        // Each font directive is reported once, however many tunes it governs.
+        var reportedFonts: Set<String> = []
+
         let breaker   = LineBreaker(overflowTolerance: effectiveConfig.lineOverflowTolerance)
         let justifier = Justifier(maxStretch: effectiveConfig.maxSystemStretch)
         // Footers are stamped on after layout, and which one a page gets depends on the tune
@@ -99,7 +106,7 @@ public struct SVGRenderer: CeolKitRenderer {
             var resolved = LayoutDirectives(config: effectiveConfig)
             for scope in score.tunes.first?.directives ?? [] {
                 guard case .fileGlobal = scope.scope else { continue }
-                resolved.apply(scope.directive)
+                resolved.apply(scope.directive, source: scope.source)
             }
             return resolved
         }()
@@ -129,7 +136,18 @@ public struct SVGRenderer: CeolKitRenderer {
             // A ratio within the grace group, not a size derived from the staff, so it is
             // set after `scaled(by:)` and never multiplied by the scale factor.
             tuneConfig.graceNoteSpacing = layout.graceNoteSpacing
-            let sizer = MeasureSizer(config: tuneConfig, metadata: metadata)
+            // How this tune's text is set: the font directives in force for it, over the
+            // host's house style and CeolKit's defaults (§11.4.2; issue #186).
+            let (styles, fontResolutions) = TextStyles.resolve(
+                layout.fonts, sources: layout.fontSources, provider: fontProvider,
+                staffSize: tuneConfig.staffSize, scale: layout.scale)
+            for found in fontResolutions {
+                guard let source = found.source,
+                      reportedFonts.insert("\(found.role.rawValue)@\(source.byteOffset)").inserted
+                else { continue }
+                diagnostics += found.resolution.diagnostics(at: source)
+            }
+            let sizer = MeasureSizer(config: tuneConfig, metadata: metadata, styles: styles)
 
             // §11.1: a `%%score` / `%%staves` plan decides which voices are printed and in
             // what order, and one written in the tune body resets that part-way through.
@@ -373,7 +391,8 @@ public struct SVGRenderer: CeolKitRenderer {
             titleConfig.pageSize = PageSize(width: pageSizes.opening.width,
                                             height: pageSizes.opening.height)
             let (titleRows, titleBlockHeight) = SpecTitleBlockBuilder(
-                tune: tune, writeFields: tuneWriteFields, layoutConfig: titleConfig
+                tune: tune, writeFields: tuneWriteFields, layoutConfig: titleConfig,
+                styles: styles
             ).build()
             tuneBlocks.append(TuneBlock(systemGroups: tuneGroups, titleRows: titleRows,
                                         titleBlockHeight: titleBlockHeight, scale: layout.scale,
@@ -386,7 +405,8 @@ public struct SVGRenderer: CeolKitRenderer {
                                             portrait: config.pageSize),
                                         // §11.4.6: `W` is in the default `%%writefields` set.
                                         words: tuneWriteFields.includes("W")
-                                            ? tune.words.map(\.value) : []))
+                                            ? tune.words.map(\.value) : [],
+                                        textStyles: styles))
         }
 
         let firstPageNumber = Self.firstPageNumber(of: score)

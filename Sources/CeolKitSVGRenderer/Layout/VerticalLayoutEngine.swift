@@ -63,6 +63,7 @@ public struct VerticalLayoutEngine: Sendable {
         for (index, jsystem) in systems.enumerated() {
             let runs = endingRuns[index][0]
             let extent = verticalExtent(of: jsystem, staffSize: config.staffSize,
+                                        styles: .standard(staffSize: config.staffSize),
                                         hasEndingBracket: !runs.isEmpty)
             let (extraAbove, extraBelow) = (extent.extraAbove, extent.extraBelow)
             let totalHeight = extraAbove + staffHeight + extraBelow
@@ -213,6 +214,7 @@ public struct VerticalLayoutEngine: Sendable {
             let staffHeight = 4.0 * staffSize
             let systemGap   = tuneConfig.systemGap
             let tuneGap     = tuneConfig.tuneGap
+            let styles      = block.textStyles ?? .standard(staffSize: staffSize)
 
             // A `%%newpage` standing before the tune moves its title block too, so it is
             // honoured ahead of everything else this block does.
@@ -242,13 +244,14 @@ public struct VerticalLayoutEngine: Sendable {
                 pageTitleRows.append(ResolvedTitleRow(items: row.items.map {
                     ResolvedTitleRow.Item(
                         text: $0.text, x: $0.x, baselineY: $0.baselineY + y,
-                        anchor: $0.anchor, fontSize: $0.fontSize, isItalic: $0.isItalic)
+                        anchor: $0.anchor, fontSize: $0.fontSize, isItalic: $0.isItalic,
+                        face: $0.face)
                 }))
             }
             y += block.titleBlockHeight
 
             for (gi, group) in groups.enumerated() {
-                let metrics = groupMetrics(of: group, config: tuneConfig,
+                let metrics = groupMetrics(of: group, config: tuneConfig, styles: styles,
                                            endingRuns: endingRuns[gi])
 
                 // The tune's own breaks, resolved to the system each stands in front of.
@@ -273,7 +276,11 @@ public struct VerticalLayoutEngine: Sendable {
                     tuneStemDirection: block.stemDirection,
                     straightFlags: block.straightFlags, graceSlurs: block.graceSlurs,
                     abcLine: abcLine,
-                    endingRuns: endingRuns[gi]))
+                    endingRuns: endingRuns[gi]).map {
+                        var system = $0
+                        system.textStyles = styles
+                        return system
+                    })
 
                 let isLastInBlock = gi == groups.count - 1
                 // The tune's gap follows its words, where it has any, not its last system.
@@ -284,10 +291,11 @@ public struct VerticalLayoutEngine: Sendable {
             // The `W:` words, a line at a time below the last system, so a long set of
             // verses carries on over the page like the music does (issue #187).
             if !block.words.isEmpty {
-                y += WordsBlock.topGap
+                let words = styles.words
+                y += WordsBlock.topGap(words)
                 for line in block.words {
                     let pageHasContent = !pageSystems.isEmpty || !pageTitleRows.isEmpty
-                    if pageHasContent && y + WordsBlock.lineHeight > floorY(pageHeight: pageSize.height) {
+                    if pageHasContent && y + WordsBlock.lineHeight(words) > floorY(pageHeight: pageSize.height) {
                         flushPage()
                         // A blank line only separates verses; at the top of a page there is
                         // nothing above it to separate from.
@@ -297,10 +305,9 @@ public struct VerticalLayoutEngine: Sendable {
                     if !line.isEmpty {
                         pageTitleRows.append(ResolvedTitleRow(items: [ResolvedTitleRow.Item(
                             text: line, x: config.margins.left,
-                            baselineY: y + WordsBlock.baselineOffset,
-                            anchor: .start, fontSize: WordsBlock.fontSize)]))
+                            baselineY: y + words.ascent, anchor: .start, style: words)]))
                     }
-                    y += WordsBlock.lineHeight
+                    y += WordsBlock.lineHeight(words)
                 }
                 y += tuneGap
             }
@@ -356,7 +363,7 @@ public struct VerticalLayoutEngine: Sendable {
     }
 
     private func groupMetrics(of group: JustifiedSystemGroup,
-                              config: SVGRenderConfig,
+                              config: SVGRenderConfig, styles: TextStyles,
                               endingRuns: [[EndingBracketBand.Run]]) -> GroupMetrics {
         // Parallel to `group.staves` by construction: `EndingBracketBand.runs(in:)` walks
         // the very groups this is being called for, one entry per staff of each.
@@ -371,7 +378,7 @@ public struct VerticalLayoutEngine: Sendable {
         var startWidth = 0.0
         for (i, staff) in group.staves.enumerated() {
             let extent = verticalExtent(
-                of: staff, staffSize: staffSize,
+                of: staff, staffSize: staffSize, styles: styles,
                 hasEndingBracket: !endingRuns[i].isEmpty)
             let (extraAbove, extraBelow) = (extent.extraAbove, extent.extraBelow)
             staves.append((extraAbove, extraBelow, offset + extraAbove, extent.annotationFloors))
@@ -492,13 +499,14 @@ public struct VerticalLayoutEngine: Sendable {
     private func totalHeight(of block: TuneBlock,
                             endingRuns: [[[EndingBracketBand.Run]]]) -> Double {
         let tuneConfig = config.scaled(by: block.scale)
+        let styles = block.textStyles ?? .standard(staffSize: tuneConfig.staffSize)
         var h = block.titleBlockHeight
         for (i, group) in block.systemGroups.enumerated() {
-            h += groupMetrics(of: group, config: tuneConfig,
+            h += groupMetrics(of: group, config: tuneConfig, styles: styles,
                               endingRuns: endingRuns[i]).totalHeight
             if i < block.systemGroups.count - 1 { h += tuneConfig.systemGap }
         }
-        return h + WordsBlock.height(lines: block.words.count)
+        return h + WordsBlock.height(lines: block.words.count, style: styles.words)
     }
 
     /// Width of the clef + key signature + time signature run that precedes the first
@@ -549,6 +557,7 @@ public struct VerticalLayoutEngine: Sendable {
     /// with the extent for the emitter to find them again (issue #171).
     private func verticalExtent(of system: JustifiedSystem,
                                 staffSize: Double,
+                                styles: TextStyles,
                                 hasEndingBracket: Bool
     ) -> (extraAbove: Double, extraBelow: Double, annotationFloors: AnnotationFloors) {
         var maxLedgerAbove = 0
@@ -576,19 +585,26 @@ public struct VerticalLayoutEngine: Sendable {
         let floor = AnnotationBand.floorRatio * s
         let floorAbove = Double(maxLedgerAbove) * s + graceOvershoot + (lines.above > 0 ? floor : 0)
         let floorBelow = Double(maxLedgerBelow) * s + (lines.below > 0 ? floor : 0)
-        let baseAbove = floorAbove + AnnotationBand.height(lines: lines.above, staffSize: s)
+        let baseAbove = floorAbove + AnnotationBand.height(
+            lines: lines.above, metrics: AnnotationBand.aboveMetrics(styles), staffSize: s)
         // Tempo annotations (from inline Q: events) are placed 1.5 staffSizes above the top
         // staff line; font size is 1.5 staffSizes, so the bounding box extends ~3× above.
         let hasTempoChanges = system.measures.contains { jm in
             jm.source.measure.events.contains { if case .tempoChange = $0 { return true }; return false }
         }
-        var extraAbove = hasTempoChanges ? max(baseAbove, s * 3) : baseAbove
+        // A tempo change stands 1.5 staff spaces above the staff and rises a full em of its
+        // own size above that — three staff spaces at the default size.
+        let tempoReach = styles.tempoChange.size == s * 1.5 ? s * 3
+            : s * 1.5 + styles.tempoChange.size
+        var extraAbove = hasTempoChanges ? max(baseAbove, tempoReach) : baseAbove
         if hasEndingBracket { extraAbove += EndingBracketBand.height(staffSize: s) }
         // The verses hang below the ledger lines and the annotations, so the three are added
         // rather than maxed: a low note and what is written under it need the space each of
         // them asked for.
-        let extraBelow = floorBelow + AnnotationBand.height(lines: lines.below, staffSize: s)
-            + LyricBand.height(verses: verses, staffSize: s)
+        let extraBelow = floorBelow
+            + AnnotationBand.height(lines: lines.below, metrics: AnnotationBand.belowMetrics(styles),
+                                    staffSize: s)
+            + LyricBand.height(verses: verses, style: styles.vocal)
         return (extraAbove, extraBelow, AnnotationFloors(above: floorAbove, below: floorBelow))
     }
 

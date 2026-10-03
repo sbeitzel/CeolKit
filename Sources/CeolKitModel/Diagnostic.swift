@@ -70,6 +70,9 @@ public enum DiagnosticCode: String, Codable, Sendable {
     case misplacedStemAlignment
     case invalidScale
     case invalidGraceNoteSpacing
+    /// A font directive (§11.4.2) whose payload is not `<font name> [<size>]`: no name, a
+    /// size that is not a positive number, or words after the size.
+    case invalidFontDirective
     // Directives
     case unknownDirective
     case redundantDirective

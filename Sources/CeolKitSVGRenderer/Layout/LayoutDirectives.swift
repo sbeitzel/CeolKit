@@ -37,16 +37,28 @@ struct LayoutDirectives {
     /// each tune's pages their own label (issue #168).
     var label: String = ""
 
+    /// The font each kind of text is asked to be set in (§11.4.2; issue #186): the host's
+    /// ``SVGRenderConfig/textFonts``, with the font directives in force laid over it.
+    var fonts: [TextFontRole: FontSpec] = [:]
+    /// Where the directive that last named a role's face was written, for reporting what
+    /// became of the font it asked for.  A role the host's configuration styles and no
+    /// directive restates has none.
+    var fontSources: [TextFontRole: SourceRange] = [:]
+
     /// The document baseline before any directive has been read: what the config asks for.
     init(config: SVGRenderConfig) {
+        fonts = config.textFonts
         justifyLastSystem = config.justifyLastSystem
         graceNoteSpacing = config.graceNoteSpacing
         straightFlags = config.straightFlags
         graceSlurs = config.graceSlurs
     }
 
-    mutating func apply(_ directive: CeolKitDirective) {
+    mutating func apply(_ directive: CeolKitDirective, source: SourceRange? = nil) {
         switch directive {
+        case .font(let role, let spec):
+            fonts[role] = spec.overriding(fonts[role])
+            if spec.name != nil { fontSources[role] = source }
         // `false` has to put the direction back, not merely fail to set it: a tune header
         // saying `pipeformat false` under a preamble saying `true` is asking for the
         // ordinary pitch rule, and nothing else in the tune can ask for it.
@@ -70,7 +82,7 @@ struct LayoutDirectives {
     /// later tune carries none of them at all.  ``WriteFieldsConfig`` is layered the same way.
     func layering(_ tune: Tune) -> LayoutDirectives {
         var resolved = self
-        for scope in tune.directives { resolved.apply(scope.directive) }
+        for scope in tune.directives { resolved.apply(scope.directive, source: scope.source) }
         return resolved
     }
 }

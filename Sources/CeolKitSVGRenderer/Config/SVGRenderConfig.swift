@@ -1,3 +1,4 @@
+import CeolKitModel
 import Foundation
 
 public struct SVGRenderConfig: Sendable {
@@ -57,6 +58,12 @@ public struct SVGRenderConfig: Sendable {
     /// depend on the machine it is rendered on; the SVG that results is still portable in
     /// ``TextRendering/outlines`` mode, which carries the glyphs with it.
     public var systemFonts: Bool
+    /// A house style: the font for each kind of text, before the document says anything
+    /// (issue #186).  Laid over CeolKit's own defaults and under the document's font
+    /// directives (§11.4.2) — a `%%composerfont` in the ABC still wins — so a host can, say,
+    /// set every composer line in Zapf Chancery and leave everything else as it is.  Each
+    /// spec's `nil` half keeps the default's.
+    public var textFonts: [TextFontRole: FontSpec]
 
     public init(
         pageSize: PageSize = .letter,
@@ -74,7 +81,8 @@ public struct SVGRenderConfig: Sendable {
         lineOverflowTolerance: Double = 0.02,
         maxSystemStretch: Double = 3.0,
         fontLibrary: FontLibrary? = nil,
-        systemFonts: Bool = false
+        systemFonts: Bool = false,
+        textFonts: [TextFontRole: FontSpec] = [:]
     ) {
         self.pageSize = pageSize
         self.margins = margins
@@ -92,6 +100,7 @@ public struct SVGRenderConfig: Sendable {
         self.maxSystemStretch = maxSystemStretch
         self.fontLibrary = fontLibrary
         self.systemFonts = systemFonts
+        self.textFonts = textFonts
     }
 
     /// Returns a copy with `staffSize` and the vertical gaps derived from it multiplied

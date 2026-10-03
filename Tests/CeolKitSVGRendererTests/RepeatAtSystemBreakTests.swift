@@ -125,19 +125,57 @@ struct RepeatAtSystemBreakTests {
         }
     }
 
-    @Test(arguments: ["|:", "::"])
-    func midLineRepeatIsDrawnWhole(sign: String) {
+    @Test(arguments: ["|:", "[|:"])
+    func midLineStartRepeatIsThickThinDots(sign: String) {
         let (svg, staves) = render("GAB cde \(sign) dcB A3 :|")
         try! #require(staves.count == 1)
         let staff = staves[0]
-        // The middle bar is the only thick stroke short of the closing `:|`.
+        // Issue #208: abcm2ps draws `|:` as it draws `[|:` — thick, thin, dots.
+        let middle = barStrokes(in: svg, on: staff).filter {
+            $0.x > staff.left + staff.staffLineGap && $0.x < staff.right - 2 * staff.staffLineGap
+        }
+        try! #require(middle.count == 2)
+        #expect(isThick(middle[0], on: staff))
+        #expect(!isThick(middle[1], on: staff))
+        let around = dots(in: svg, on: staff).filter { abs($0.x - middle[1].x) < 2 * staff.staffLineGap }
+        #expect(around.count == 2)
+        #expect(around.allSatisfy { $0.x > middle[1].x })
+    }
+
+    @Test func midLineStartRepeatDrawsAsSectionRepeatStart() {
+        // The same bar complex, the same width: the two signs draw identically.
+        let plain   = render("GAB cde |: dcB A3 :|")
+        let section = render("GAB cde [|: dcB A3 :|")
+        try! #require(plain.staves.count == 1 && section.staves.count == 1)
+        let a = barStrokes(in: plain.svg, on: plain.staves[0])
+        let b = barStrokes(in: section.svg, on: section.staves[0])
+        #expect(a.map(\.x) == b.map(\.x))
+        #expect(a.map(\.width) == b.map(\.width))
+        #expect(dots(in: plain.svg, on: plain.staves[0]).map(\.x)
+                == dots(in: section.svg, on: section.staves[0]).map(\.x))
+    }
+
+    @Test func midLineDoubleRepeatIsDotsThickThickDots() {
+        let (svg, staves) = render("GAB cde :: dcB A3 :|")
+        try! #require(staves.count == 1)
+        let staff = staves[0]
+        // Issue #208: abcm2ps draws `::` as `:][:` (its `%%dblrepbar` default).
         let thick = barStrokes(in: svg, on: staff).filter { isThick($0, on: staff) && $0.x < staff.right - staff.staffLineGap }
-        try! #require(thick.count == 1)
-        let bar = thick[0]
-        let around = dots(in: svg, on: staff).filter { abs($0.x - bar.x) < 2 * staff.staffLineGap }
-        let right = around.filter { $0.x > bar.x }
-        let left  = around.filter { $0.x < bar.x }
-        #expect(right.count == 2)
-        #expect(left.count == (sign == "::" ? 2 : 0))
+        try! #require(thick.count == 2)
+        #expect(barStrokes(in: svg, on: staff).filter { !isThick($0, on: staff) && $0.x < staff.right - staff.staffLineGap }.isEmpty)
+        let (first, second) = (thick[0], thick[1])
+        // The bars stand `barlineSeparation` apart, edge to edge.
+        let gap = (second.x - first.x - thickWidth * staff.staffLineGap) / staff.staffLineGap
+        #expect(abs(gap - engravingDefaults.barlineSeparation) < 1e-6)
+        let around = dots(in: svg, on: staff).filter { $0.x > first.x - 2 * staff.staffLineGap && $0.x < second.x + 2 * staff.staffLineGap }
+        #expect(around.filter { $0.x < first.x }.count == 2)
+        #expect(around.filter { $0.x > second.x }.count == 2)
+        #expect(around.count == 4)
+        // The dots stand clear of the thick bars: `repeatBarlineDotSeparation` from their
+        // edges, not from their centres.
+        let clearance = (thickWidth / 2 + engravingDefaults.repeatBarlineDotSeparation) * staff.staffLineGap
+        for dot in around where dot.x > second.x {
+            #expect(abs(dot.x - second.x - clearance) < 1e-6)
+        }
     }
 }

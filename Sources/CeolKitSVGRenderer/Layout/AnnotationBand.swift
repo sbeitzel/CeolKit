@@ -71,7 +71,62 @@ enum AnnotationBand {
         LyricBand.width(of: text, font: font, fontSize: fontSize)
     }
 
+    // MARK: - Chord symbol accidentals
+
+    /// Bravura's chord-symbol accidentals are drawn at the text's own size: SMuFL designs
+    /// them for exactly that, standing on the text baseline and rising three staff spaces —
+    /// three quarters of an em, a little above a capital — so a flat reads as part of the
+    /// chord name rather than as an engraved accidental beside it (issue #184).
+    static let accidentalSizeRatio = 1.0
+
+    /// Air either side of a chord-symbol accidental, in Bravura staff spaces.  The glyphs'
+    /// outlines run right to their bounding boxes, where a text face's letters carry
+    /// side-bearings of their own.
+    static let accidentalBearing = 0.12
+
+    /// The sign a chord symbol's accidental is drawn with, or `nil` for an alteration no
+    /// chord-symbol glyph shows.
+    static func glyph(for alteration: Alteration) -> SMuFLGlyph? {
+        switch alteration {
+        case .flat:        return .csymAccidentalFlat
+        case .sharp:       return .csymAccidentalSharp
+        case .natural:     return .csymAccidentalNatural
+        case .doubleFlat:  return .csymAccidentalDoubleFlat
+        case .doubleSharp: return .csymAccidentalDoubleSharp
+        default:           return nil
+        }
+    }
+
+    /// The pen advance of `glyph` set beside text of size `fontSize`, bearings included.
+    static func advance(of glyph: SMuFLGlyph, metadata: BravuraMetadata,
+                        fontSize: Double) -> Double {
+        // One Bravura staff space is a quarter of the size it is drawn at.
+        let space = fontSize * accidentalSizeRatio / 4
+        let width = metadata.glyphBBoxes[glyph.rawValue]?.neX ?? 1
+        return (width + 2 * accidentalBearing) * space
+    }
+
+    /// How wide `line` draws: its text runs measured in `font`, its accidentals by their
+    /// glyphs' advances.
+    static func width(of line: Line, font: OpenTypeFont?, metadata: BravuraMetadata,
+                      fontSize: Double) -> Double {
+        line.reduce(0) { total, segment in
+            switch segment {
+            case .text(let text):
+                return total + width(of: text, font: font, fontSize: fontSize)
+            case .accidental(let alteration):
+                return total + (glyph(for: alteration).map {
+                    advance(of: $0, metadata: metadata, fontSize: fontSize)
+                } ?? 0)
+            }
+        }
+    }
+
     // MARK: - What a note carries
+
+    /// One line of a band: runs of text, and the accidentals of a chord symbol between them.
+    /// Text that is not a chord symbol is always a single run, printed as written.
+    typealias Line = [ChordSymbol.Segment]
 
     /// The lines a note puts above the staff, top to bottom.
     ///
@@ -83,10 +138,14 @@ enum AnnotationBand {
     /// Unprefixed text that is not a chord (``AnnotationPosition/chordLine``) is printed on
     /// the chord line with the chord symbol, as abcm2ps prints it; where a note has more
     /// than one, they stack in the order written, the first at the top (issue #177).
-    static func linesAbove(chordSymbol: ChordSymbol?, annotations: [Annotation]) -> [String] {
-        let chordLine = (chordSymbol.map { [($0.source.byteOffset, $0.raw)] } ?? [])
-            + annotations.filter { $0.position == .chordLine }.map { ($0.source.byteOffset, $0.text.value) }
-        return texts(in: annotations, at: .above)
+    ///
+    /// A chord symbol's line is split where it is spelled with accidentals, which are drawn
+    /// as signs (issue #184); every other line is one run of the text as written.
+    static func linesAbove(chordSymbol: ChordSymbol?, annotations: [Annotation]) -> [Line] {
+        let chordLine: [(Int, Line)] = (chordSymbol.map { [($0.source.byteOffset, $0.segments)] } ?? [])
+            + annotations.filter { $0.position == .chordLine }
+                .map { ($0.source.byteOffset, [.text($0.text.value)]) }
+        return texts(in: annotations, at: .above).map { [.text($0)] }
             + chordLine.sorted { $0.0 < $1.0 }.map(\.1)
     }
 

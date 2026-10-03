@@ -107,3 +107,43 @@ struct ChordSymbolTextTests {
         #expect(note.annotations.map(\.text.value) == ["Fine"])
     }
 }
+
+// Issue #184: which characters of a chord symbol are accidentals, so that a renderer can
+// draw ♭ and ♯ where the source spelled `b` and `#`.
+@Suite("Chord symbol accidentals are marked in its segments")
+struct ChordSymbolSegmentTests {
+
+    private func segments(_ spelling: String) throws -> [ChordSymbol.Segment] {
+        let result = parse(chordTune("\"\(spelling)\"A>ee e2 d"))
+        let measure = try #require(result.score.firstTune?.singleVoiceMeasures.first)
+        let note = try #require(measure.noteEvents.first)
+        return try #require(note.chordSymbol).segments
+    }
+
+    @Test("Accidentals in the root, the type, the bass and an alternate chord",
+          arguments: [
+            ("Bb", [ChordSymbol.Segment.text("B"), .accidental(.flat)]),
+            ("F#m", [.text("F"), .accidental(.sharp), .text("m")]),
+            ("Bbmaj7/D", [.text("B"), .accidental(.flat), .text("maj7/D")]),
+            ("D/F#", [.text("D/F"), .accidental(.sharp)]),
+            ("C7b9", [.text("C7"), .accidental(.flat), .text("9")]),
+            ("G7#11", [.text("G7"), .accidental(.sharp), .text("11")]),
+            ("G(Bb)", [.text("G(B"), .accidental(.flat), .text(")")]),
+            ("C7(b9)", [.text("C7("), .accidental(.flat), .text("9)")]),
+            ("G♭", [.text("G"), .accidental(.flat)]),
+            ("F♯", [.text("F"), .accidental(.sharp)]),
+            ("bb", [.text("b"), .accidental(.flat)]),
+            ("Am", [.text("Am")]),
+          ])
+    func accidentalsAreMarked(_ spelling: String, _ expected: [ChordSymbol.Segment]) throws {
+        #expect(try segments(spelling) == expected)
+    }
+
+    @Test("Parentheses that read as part of the type are not an alternate chord")
+    func parenthesisedAlterationIsTheType() throws {
+        let result = parse(chordTune(#""C7(b9)"A>ee e2 d"#))
+        let measure = try #require(result.score.firstTune?.singleVoiceMeasures.first)
+        let symbol = try #require(measure.noteEvents.first?.chordSymbol)
+        #expect(symbol.quality == "7(b9)")
+    }
+}

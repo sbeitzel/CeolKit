@@ -1437,6 +1437,7 @@ struct SVGEmitter: Sendable {
         let thick   = metadata.engravingDefaults.thickBarlineThickness * config.staffSize
         let sep     = metadata.engravingDefaults.barlineSeparation     * config.staffSize
         let wideSep = sep * 2.0
+        let repeatBothBarOffset = ColumnMetrics.repeatBothBarOffset(metadata: metadata, staffSize: config.staffSize)
         let footY   = lineBottomY ?? bottomY
 
         switch bar.kind {
@@ -1469,39 +1470,36 @@ struct SVGEmitter: Sendable {
             // Right-anchored: thick bar at bar.x, thin bar and dots to its left.
             let thickX = bar.x
             let thinX  = thickX - wideSep
-            emitRepeatDots(isStartSide: false, nearX: thinX, topY: topY, bottomY: bottomY, builder: &builder)
+            emitRepeatDots(isStartSide: false, nearX: thinX, barWidth: thin, topY: topY, bottomY: bottomY, builder: &builder)
             builder.line(x1: thinX,  y1: topY, x2: thinX,  y2: footY, stroke: "black", strokeWidth: thin)
             builder.line(x1: thickX, y1: topY, x2: thickX, y2: footY, stroke: "black", strokeWidth: thick)
-
-        case .repeatStart:
-            let thinX  = bar.x
-            let thickX = thinX + wideSep
-            builder.line(x1: thinX,  y1: topY, x2: thinX,  y2: footY, stroke: "black", strokeWidth: thin)
-            builder.line(x1: thickX, y1: topY, x2: thickX, y2: footY, stroke: "black", strokeWidth: thick)
-            emitRepeatDots(isStartSide: true, nearX: thickX, topY: topY, bottomY: bottomY, builder: &builder)
 
         case .repeatBoth:
-            // Right-anchored: thick bar at bar.x, thin bar to its left; start-repeat
-            // dots extend rightward past bar.x into the next measure's left margin.
-            let thickX = bar.x
-            let thinX  = thickX - wideSep
-            emitRepeatDots(isStartSide: false, nearX: thinX, topY: topY, bottomY: bottomY, builder: &builder)
-            builder.line(x1: thinX,  y1: topY, x2: thinX,  y2: footY, stroke: "black", strokeWidth: thin)
-            builder.line(x1: thickX, y1: topY, x2: thickX, y2: footY, stroke: "black", strokeWidth: thick)
-            emitRepeatDots(isStartSide: true, nearX: thickX, topY: topY, bottomY: bottomY, builder: &builder)
+            // abcm2ps draws `::` as `:][:` (its `%%dblrepbar` default, issue #208): dots, two
+            // thick bars, dots.  Right-anchored: the second thick bar at bar.x, the first to
+            // its left; start-repeat dots extend rightward past bar.x into the next
+            // measure's left margin.
+            let rightX = bar.x
+            let leftX  = rightX - repeatBothBarOffset
+            emitRepeatDots(isStartSide: false, nearX: leftX, barWidth: thick, topY: topY, bottomY: bottomY, builder: &builder)
+            builder.line(x1: leftX,  y1: topY, x2: leftX,  y2: footY, stroke: "black", strokeWidth: thick)
+            builder.line(x1: rightX, y1: topY, x2: rightX, y2: footY, stroke: "black", strokeWidth: thick)
+            emitRepeatDots(isStartSide: true, nearX: rightX, barWidth: thick, topY: topY, bottomY: bottomY, builder: &builder)
 
-        case .sectionRepeatStart:
+        case .repeatStart, .sectionRepeatStart:
+            // abcm2ps draws `|:` exactly as `[|:` — thick, thin, dots — the mirror image of
+            // `:|` (issue #208).
             let thickX = bar.x
             let thinX  = thickX + wideSep
             builder.line(x1: thickX, y1: topY, x2: thickX, y2: footY, stroke: "black", strokeWidth: thick)
             builder.line(x1: thinX,  y1: topY, x2: thinX,  y2: footY, stroke: "black", strokeWidth: thin)
-            emitRepeatDots(isStartSide: true, nearX: thinX, topY: topY, bottomY: bottomY, builder: &builder)
+            emitRepeatDots(isStartSide: true, nearX: thinX, barWidth: thin, topY: topY, bottomY: bottomY, builder: &builder)
 
         case .repeatEndSection:
             // Right-anchored: thick bar at bar.x, thin bar and dots to its left.
             let thickX = bar.x
             let thinX  = thickX - wideSep
-            emitRepeatDots(isStartSide: false, nearX: thinX, topY: topY, bottomY: bottomY, builder: &builder)
+            emitRepeatDots(isStartSide: false, nearX: thinX, barWidth: thin, topY: topY, bottomY: bottomY, builder: &builder)
             builder.line(x1: thinX,  y1: topY, x2: thinX,  y2: footY, stroke: "black", strokeWidth: thin)
             builder.line(x1: thickX, y1: topY, x2: thickX, y2: footY, stroke: "black", strokeWidth: thick)
         }
@@ -1512,8 +1510,10 @@ struct SVGEmitter: Sendable {
     /// - Parameters:
     ///   - isStartSide: `true` places dots to the right of `nearX` (start-repeat);
     ///     `false` places them to the left (end-repeat).
-    ///   - nearX: X of the bar line the dots abut.
-    private func emitRepeatDots(isStartSide: Bool, nearX: Double,
+    ///   - nearX: X of the bar line the dots abut — the centre of its stroke.
+    ///   - barWidth: That bar line's stroke width.  The gap is measured from the stroke's
+    ///     edge: from its centre, the dots run into a thick bar (`::`).
+    private func emitRepeatDots(isStartSide: Bool, nearX: Double, barWidth: Double,
                                  topY: Double, bottomY: Double, builder: inout SVGBuilder) {
         let staffSize = (bottomY - topY) / 4.0
         let fontSize  = 4.0 * staffSize
@@ -1521,7 +1521,7 @@ struct SVGEmitter: Sendable {
         // Bravura's values the two differ by more than a factor of two (0.16 vs 0.4).
         let sep       = metadata.engravingDefaults.repeatBarlineDotSeparation * staffSize
         let dotW      = metadata.glyphBBoxes["repeatDot"].map { $0.width * staffSize } ?? staffSize * 0.25
-        let dotX      = isStartSide ? nearX + sep : nearX - sep - dotW
+        let dotX      = isStartSide ? nearX + barWidth / 2 + sep : nearX - barWidth / 2 - sep - dotW
         let dotChar   = String(SMuFLGlyph.repeatDot.character)
         builder.text(dotChar, x: dotX, y: bottomY - 1.5 * staffSize, fontFamily: "Bravura", fontSize: fontSize)
         builder.text(dotChar, x: dotX, y: bottomY - 2.5 * staffSize, fontFamily: "Bravura", fontSize: fontSize)

@@ -181,13 +181,23 @@ struct ColumnMetrics: Sendable {
         let sep     = metadata.engravingDefaults.barlineSeparation * s
         let wideSep = sep * 2.0
         switch measure.closingBar.kind {
-        case .final, .repeatEnd, .repeatEndSection, .repeatBoth:
+        case .final, .repeatEnd, .repeatEndSection:
             return wideSep + s * 0.5
+        case .repeatBoth:
+            return Self.repeatBothBarOffset(metadata: metadata, staffSize: s) + s * 0.5
         case .double:
             return sep + s * 0.5
         default:
             return s * 0.5
         }
+    }
+
+    /// Centre-to-centre distance between the two thick bars of `::`, which abcm2ps draws as
+    /// `:][:`.  SMuFL has no thick–thick separation, so the bars are set `barlineSeparation`
+    /// apart edge to edge, as every other pair of bar lines is.
+    static func repeatBothBarOffset(metadata: BravuraMetadata, staffSize: Double) -> Double {
+        (metadata.engravingDefaults.thickBarlineThickness
+         + metadata.engravingDefaults.barlineSeparation) * staffSize
     }
 
     /// Left margin before the first event.
@@ -210,12 +220,19 @@ struct ColumnMetrics: Sendable {
         guard let opening = measure.openingBar else { return signatures + nhw }
         switch opening.kind {
         case .repeatStart, .sectionRepeatStart, .repeatBoth:
-            let wideSep = metadata.engravingDefaults.barlineSeparation * config.staffSize * 2.0
-            // Must match `emitRepeatDots`, which places the dots by this same measurement.
+            // Must match `emitRepeatDots`, which places the dots by this same measurement:
+            // from the edge of the bar they abut.  That is the thin bar `wideSep` right of
+            // the anchor for `|:` and `[|:`, and the thick bar on the anchor for `::`.
+            let dotBar: Double
+            if opening.kind == .repeatBoth {
+                dotBar = metadata.engravingDefaults.thickBarlineThickness * config.staffSize / 2
+            } else {
+                dotBar = metadata.engravingDefaults.barlineSeparation * config.staffSize * 2.0 + thin / 2
+            }
             let dotSep  = metadata.engravingDefaults.repeatBarlineDotSeparation * config.staffSize
             let dotW    = metadata.glyphBBoxes["repeatDot"].map { $0.width * config.staffSize }
                           ?? config.staffSize * 0.25
-            return wideSep + dotSep + dotW + signatures + nhw
+            return dotBar + dotSep + dotW + signatures + nhw
         default:
             return signatures + nhw
         }

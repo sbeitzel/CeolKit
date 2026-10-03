@@ -61,9 +61,9 @@ struct FontReportTests {
         // Hidden from CoreText's collection, so found by name: a document asking for
         // Courier must see it listed.
         #expect(faces.contains { $0.origin == .system && $0.postScriptName == "Courier" })
-        #else
-        #expect(faces.allSatisfy { $0.origin == .bundled })
         #endif
+        // Linux lists what fontconfig has, which depends on the machine; FontconfigTests
+        // checks it against fonts known to be installed.
     }
 
     // MARK: - Resolution report

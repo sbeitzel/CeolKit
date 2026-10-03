@@ -368,8 +368,9 @@ the document still overrides it.
 
 The name is read as a PostScript name — `Times-BoldItalic` is the Times family, bold, italic
 — and looked up in the faces the host registered (`SVGRenderConfig.fontLibrary`), then, where
-`SVGRenderConfig.systemFonts` allows, the fonts installed on the machine (Apple platforms),
-then the faces CeolKit bundles: Libertinus Serif in regular, italic, bold and bold italic.
+`SVGRenderConfig.systemFonts` allows, the fonts installed on the machine (through CoreText on
+Apple platforms, and fontconfig on Linux where `libfontconfig.so.1` is installed), then the
+faces CeolKit bundles: Libertinus Serif in regular, italic, bold and bold italic.
 The PostScript base 14 and the generic families `serif`, `sans-serif` and `monospace` are
 also tried under the names of the fonts that stand in for them (Times New Roman, Liberation,
 Nimbus, DejaVu). A face whose licence forbids embedding is passed over in outline output.

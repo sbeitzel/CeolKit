@@ -148,6 +148,17 @@ public struct SVGRenderer: CeolKitRenderer {
                 else { continue }
                 diagnostics += found.resolution.diagnostics(at: source)
             }
+            let unset = Set((1...FontSwitch.maxFont).filter {
+                FontSwitchStyles.role($0).map { layout.fonts[$0] == nil } ?? false
+            })
+            for use in FontSwitchUsage.firstUses(of: unset, in: tune) {
+                diagnostics.append(Diagnostic(
+                    severity: .warning, code: .unsetFontSwitch,
+                    message: "$\(use.font) switches to %%setfont-\(use.font), which is not set; "
+                        + "the text keeps its face, at the default size",
+                    source: use.source,
+                    hint: "Add %%setfont-\(use.font) <font> <size> to the file or tune header"))
+            }
             let report = styles.report(specs: layout.fonts, sources: layout.fontSources)
             fontReports.append(TuneFontReport(tuneIndex: tuneIndex, roles: report))
             diagnostics += Self.fontListDiagnostics(
@@ -599,7 +610,10 @@ public struct SVGRenderer: CeolKitRenderer {
                     template: template,
                     pageNumber: page.pageNumber ?? firstPageNumber + pageIndex,
                     pageCount: pageCount,
-                    title: (tune ?? score.tunes.first)?.titles.first?.value ?? "",
+                    // The title as it reads: a footer does not follow the title's font
+                    // switches, and must not print them either (issue #204).
+                    title: FontSwitch.plainText(
+                        (tune ?? score.tunes.first)?.titles.first?.value ?? ""),
                     config: config,
                     // The footer sits against *this* page's margins, and a document can hold
                     // both orientations at once (issue #158), so the row is laid out on the

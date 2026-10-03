@@ -352,7 +352,8 @@ size. A name with spaces may be quoted: `%%titlefont "Times New Roman" 24`.
 | `gchordfont` | chord symbols and chord-line text | Libertinus Serif 12 |
 | `annotationfont` | `^ _ < > @` annotations | Libertinus Serif 12 |
 | `vocalfont` | `w:` lyrics | Libertinus Serif 13 |
-| `partsfont`, `textfont`, `setfont-1`…`4` | parsed and scoped; see below | |
+| `setfont-1`…`4` | text after `$1`…`$4` in any string; see below | the string's own face, 12 |
+| `partsfont`, `textfont` | parsed and scoped; see below | |
 
 The default sizes are abcm2ps's; the faces are CeolKit's. Every size, a default's or a
 directive's, is in abcm2ps's nominal units and is drawn scaled by the page scale (`%%scale`,
@@ -360,6 +361,26 @@ default 0.75; see [`EXTENSIONS.md`](EXTENSIONS.md)), so a 20-point title is draw
 unless the document says otherwise. Only the `%%footer` is set in absolute points. A row of
 the title block set larger than its default grows to hold it, as do the chord, annotation and
 lyric bands, and chord symbols are measured in their own font when the notes are spaced.
+
+### Font switches in a string — `$1`…`$4`
+
+`$1`…`$4` set the rest of a string, up to the next switch, in the face and size
+`%%setfont-1`…`4` name; `$0` returns to the string's own font, and `$$` prints `$`. A `$`
+before anything else, `$5` included, prints as written. This holds for every string CeolKit
+prints: titles, subtitles, composer, `R:` and the other info fields, `Q:` text (the
+metronome mark after it is always in the tempo font), chord symbols, chord-line text,
+annotations, `w:` lyrics and `W:` words. As in abcm2ps, a switch in a `w:` line carries
+from one syllable to the next, to a `$0` or the end of the line. The switched text is
+measured in its own face, so a title stays centred and notes are spaced for it.
+
+A switch to a `%%setfont-n` no directive set keeps the string's own face, at abcm2ps's
+documented default size of 12, and is reported as an `unsetFontSwitch` warning. (abcm2ps
+itself reports a null size and falls back to 8-point Helvetica.) `%%setfont-n * 14` sets
+only the size, and the string's face is kept without a warning.
+
+`%%footer` is not affected: its `$` placeholders are its own, `$1` there prints as written,
+and `$T` gives the title without its switches. abcm2ps 8.14 does not switch font in a footer
+either.
 
 A host app can set a house style beneath the document's directives with
 `SVGRenderConfig.textFonts` — say, every composer line in Zapf Chancery — and a directive in
@@ -383,8 +404,6 @@ system was searched and nothing answered.
 
 ### What CeolKit does not do
 
-- **`$1`…`$4` font switches.** `%%setfont-n` is parsed and scoped, but switching font inside
-  a string is not implemented, and `$n` prints as written.
 - **`partsfont` and `textfont`** have nothing to style yet: `P:` part labels and `%%text`
   blocks are not printed.
 - **`%%font`** declarations, and abcm2ps's `box`/`class=` arguments, are not read; a

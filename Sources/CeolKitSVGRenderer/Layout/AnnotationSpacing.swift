@@ -142,8 +142,7 @@ struct AnnotationSpacing: Sendable {
         }
         return lines.map {
             let style = $0.isChordLine ? metrics.styles.chordSymbol : metrics.styles.annotation
-            return AnnotationBand.width(of: $0.line, font: style.measuringFont,
-                                        metadata: metrics.metadata, fontSize: style.size)
+            return AnnotationBand.width(of: $0.line, style: style, metadata: metrics.metadata)
         }.max() ?? 0
     }
 

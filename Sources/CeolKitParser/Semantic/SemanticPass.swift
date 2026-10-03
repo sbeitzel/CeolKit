@@ -1264,7 +1264,11 @@ struct SemanticPass {
     /// — but it must be *made* of them: `"Fine"` is text, not an F chord of quality `ine`
     /// (issue #177).
     private func parseChordSymbol(_ raw: String, source: SourceRange) -> ChordSymbol? {
-        let text = raw.trimmingCharacters(in: .whitespaces)
+        // Font switches (`$1` … `$4`, §11.4.2) say how the chord is set, not what it is: it
+        // is read without them, and they go back into its text runs for the renderer to
+        // follow, as abcm2ps sets `"G$1m"` (issue #204).
+        let (text, switches) = Self.removingFontSwitches(
+            raw.trimmingCharacters(in: .whitespaces))
         var body = Substring(text)
         var accidentals: [ChordAccidental] = []
         // An alternate chord, "G(Em)": only for printing, but it has to be a chord too.  Where
@@ -1281,8 +1285,87 @@ struct SemanticPass {
         }
         guard let (root, quality, bassNote, own) = parseChordSpelling(body) else { return nil }
         return ChordSymbol(root: root, quality: quality, bassNote: bassNote, raw: raw,
-                           segments: chordSegments(text, accidentals: own + accidentals),
+                           segments: Self.restoring(switches, into: chordSegments(
+                               text, accidentals: own + accidentals)),
                            source: source)
+    }
+
+    /// A font switch taken out of a chord symbol: the switch as written, and how many
+    /// characters of the remaining text stand before it.
+    private typealias RemovedSwitch = (offset: Int, written: String)
+
+    /// `text` without its `$0` … `$4` switches, and the switches.  `$$` stays: a chord is
+    /// not spelled with a dollar sign, so one is text whichever way it is read.
+    private static func removingFontSwitches(_ text: String)
+        -> (text: String, switches: [RemovedSwitch]) {
+        guard text.contains("$") else { return (text, []) }
+        var plain = ""
+        var switches: [RemovedSwitch] = []
+        var characters = Substring(text)
+        while let first = characters.first {
+            let rest = characters.dropFirst()
+            if first == "$", let next = rest.first {
+                if next == "$" {
+                    plain += "$$"
+                    characters = rest.dropFirst()
+                    continue
+                }
+                if next.isASCII, let digit = next.wholeNumberValue,
+                   (0...FontSwitch.maxFont).contains(digit) {
+                    switches.append((plain.count, "$\(digit)"))
+                    characters = rest.dropFirst()
+                    continue
+                }
+            }
+            plain.append(first)
+            characters = rest
+        }
+        return (plain, switches)
+    }
+
+    /// `segments` with `switches` written back into their text where they were taken from.
+    /// A switch never falls inside an accidental, which is one character: one before it
+    /// ends the text run ahead of it.
+    private static func restoring(_ switches: [RemovedSwitch],
+                                  into segments: [ChordSymbol.Segment]) -> [ChordSymbol.Segment] {
+        guard !switches.isEmpty else { return segments }
+        var result: [ChordSymbol.Segment] = []
+        var pending = switches[...]
+        var offset = 0
+        func appendText(_ text: String) {
+            guard !text.isEmpty else { return }
+            if case .text(let previous)? = result.last {
+                result[result.count - 1] = .text(previous + text)
+            } else {
+                result.append(.text(text))
+            }
+        }
+        func switchesHere() -> String {
+            var written = ""
+            while let next = pending.first, next.offset == offset {
+                written += next.written
+                pending.removeFirst()
+            }
+            return written
+        }
+        for segment in segments {
+            switch segment {
+            case .text(let text):
+                var written = ""
+                for character in text {
+                    written += switchesHere()
+                    written.append(character)
+                    offset += 1
+                }
+                appendText(written)
+            case .accidental:
+                appendText(switchesHere())
+                result.append(segment)
+                offset += 1
+            }
+        }
+        appendText(pending.map(\.written).joined())
+        return result
     }
 
     /// One character of a chord symbol read as an accidental: where it is, and what it is.

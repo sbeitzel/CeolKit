@@ -241,12 +241,7 @@ public struct VerticalLayoutEngine: Sendable {
             // Place this tune's title rows, offsetting their tune-relative baselineY by y.
             if !block.titleRows.isEmpty && pageOpeningTune == nil { pageOpeningTune = blockIndex }
             for row in block.titleRows {
-                pageTitleRows.append(ResolvedTitleRow(items: row.items.map {
-                    ResolvedTitleRow.Item(
-                        text: $0.text, x: $0.x, baselineY: $0.baselineY + y,
-                        anchor: $0.anchor, fontSize: $0.fontSize, isItalic: $0.isItalic,
-                        face: $0.face)
-                }))
+                pageTitleRows.append(ResolvedTitleRow(items: row.items.map { $0.offset(by: y) }))
             }
             y += block.titleBlockHeight
 

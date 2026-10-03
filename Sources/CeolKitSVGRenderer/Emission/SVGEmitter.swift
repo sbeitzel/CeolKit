@@ -411,21 +411,10 @@ struct SVGEmitter: Sendable {
     private func emitTitleBlock(_ rows: [ResolvedTitleRow], builder: inout SVGBuilder) {
         for row in rows {
             for item in row.items {
-                // Set in a face a font directive chose (issue #186).
-                if let face = item.face {
-                    builder.text(item.text, x: item.x, y: item.baselineY, face: face,
-                                 fontSize: item.fontSize, textAnchor: item.anchor.rawValue)
-                    continue
-                }
-                builder.text(
-                    item.text,
-                    x: item.x,
-                    y: item.baselineY,
-                    fontFamily: "Libertinus Serif",
-                    fontSize: item.fontSize,
-                    textAnchor: item.anchor.rawValue,
-                    fontStyle: item.isItalic ? "italic" : nil
-                )
+                // Set in a face a font directive chose (issue #186), following any font
+                // switches the text was written with (issue #204).
+                builder.text(item.written, x: item.x, y: item.baselineY, style: item.style,
+                             textAnchor: item.anchor.rawValue)
             }
         }
     }
@@ -783,17 +772,17 @@ struct SVGEmitter: Sendable {
         }
 
         /// Draws a band's line left to right from `x`: its text runs in the text face and a
-        /// chord symbol's accidentals as Bravura's chord-symbol signs (issue #184).  A line
-        /// of one run — every line with no accidental in it — is drawn exactly as `draw`
-        /// draws it.
+        /// chord symbol's accidentals as Bravura's chord-symbol signs (issue #184), each in
+        /// the style a font switch before it chose (issue #204).  A line of one run — every
+        /// line with no accidental or switch in it — is drawn exactly as `draw` draws it.
         func draw(_ line: AnnotationBand.Line, style: TextStyle, x: Double, y: Double) {
-            let fontSize = style.size
             var penX = x
-            for segment in line {
+            for (segment, style) in AnnotationBand.styledSegments(of: line, style: style) {
+                let fontSize = style.size
                 switch segment {
                 case .text(let text):
-                    draw(text, style: style, x: penX, y: y)
-                    penX += style.width(of: text)
+                    builder.textRun(text, x: penX, y: y, style: style)
+                    penX += style.width(ofRun: text)
                 case .accidental(let alteration):
                     guard let glyph = AnnotationBand.glyph(for: alteration) else { continue }
                     let size = fontSize * AnnotationBand.accidentalSizeRatio

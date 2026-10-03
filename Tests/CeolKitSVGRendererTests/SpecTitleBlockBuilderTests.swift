@@ -8,28 +8,17 @@ private let dummySrc = SourceRange(file: nil, byteOffset: 0, length: 0, line: 1,
 
 private func makeTune(
     titles: [String] = [],
-    rhythm: String? = nil,
-    composer: String? = nil,
+    rhythm: [String] = [],
+    composer: [String] = [],
     origin: [String] = [],
     reference: Int = 0,
     tempo: Tempo? = nil
 ) -> Tune {
     let titleFields = titles.map { TextString(value: $0, source: dummySrc) }
-    let rhythmField = rhythm.map   { TextString(value: $0, source: dummySrc) }
-    let compField   = composer.map { TextString(value: $0, source: dummySrc) }
     let metadata = TuneMetadata(
-        composer: compField,
+        composer: composer.map { TextString(value: $0, source: dummySrc) },
         origin: origin,
-        area: nil,
-        book: nil,
-        discography: nil,
-        fileURL: nil,
-        group: nil,
-        history: [],
-        notes: nil,
-        source: nil,
-        rhythm: rhythmField,
-        transcription: nil
+        rhythm: rhythm.map { TextString(value: $0, source: dummySrc) }
     )
     let key = KeySignature(
         tonic: PitchClass(step: .c, alteration: .natural),
@@ -158,7 +147,7 @@ struct SpecTitleBlockBuilderTests {
 
     @Test("C: composer appears right-aligned below the title")
     func composerRightAligned() {
-        let tune = makeTune(titles: ["T"], composer: "Trad.")
+        let tune = makeTune(titles: ["T"], composer: ["Trad."])
         let (rows, _) = build(tune: tune)
         #expect(rows.count == 2)
         let rightItem = rows[1].items.first { $0.anchor == .end }
@@ -168,7 +157,7 @@ struct SpecTitleBlockBuilderTests {
 
     @Test("O: origin is appended to composer in parens when both C and O are enabled")
     func originAppendedToComposer() {
-        let tune = makeTune(titles: ["T"], composer: "Trad.", origin: ["Scotland"])
+        let tune = makeTune(titles: ["T"], composer: ["Trad."], origin: ["Scotland"])
         let (rows, _) = build(tune: tune)
         let rightItem = rows[1].items.first { $0.anchor == .end }
         #expect(rightItem?.text == "Trad. (Scotland)")
@@ -178,7 +167,7 @@ struct SpecTitleBlockBuilderTests {
     func originSuppressedWhenDisabled() {
         var wf = WriteFieldsConfig.default
         wf.apply(.writeFields("O", false))
-        let tune = makeTune(titles: ["T"], composer: "Trad.", origin: ["Scotland"])
+        let tune = makeTune(titles: ["T"], composer: ["Trad."], origin: ["Scotland"])
         let (rows, _) = build(tune: tune, writeFields: wf)
         let rightItem = rows[1].items.first { $0.anchor == .end }
         #expect(rightItem?.text == "Trad.")
@@ -188,7 +177,7 @@ struct SpecTitleBlockBuilderTests {
     func composerSuppressedWhenDisabled() {
         var wf = WriteFieldsConfig.default
         wf.apply(.writeFields("C", false))
-        let tune = makeTune(titles: ["T"], composer: "Trad.")
+        let tune = makeTune(titles: ["T"], composer: ["Trad."])
         let (rows, _) = build(tune: tune, writeFields: wf)
         // Only the title row; no composer row.
         #expect(rows.count == 1)
@@ -200,7 +189,7 @@ struct SpecTitleBlockBuilderTests {
     func rhythmLeftAlignedWhenEnabled() {
         var wf = WriteFieldsConfig.default
         wf.apply(.writeFields("R", true))
-        let tune = makeTune(titles: ["T"], rhythm: "Reel")
+        let tune = makeTune(titles: ["T"], rhythm: ["Reel"])
         let (rows, _) = build(tune: tune, writeFields: wf)
         let leftItem = rows[1].items.first { $0.anchor == .start }
         #expect(leftItem?.text == "Reel")
@@ -209,7 +198,7 @@ struct SpecTitleBlockBuilderTests {
 
     @Test("R: rhythm does not appear when R is not in writeFields")
     func rhythmAbsentByDefault() {
-        let tune = makeTune(titles: ["T"], rhythm: "Reel")
+        let tune = makeTune(titles: ["T"], rhythm: ["Reel"])
         let (rows, _) = build(tune: tune)
         // Only the title row; R is not in the default set.
         #expect(rows.count == 1)
@@ -221,7 +210,7 @@ struct SpecTitleBlockBuilderTests {
     func rhythmAndComposerSameRow() {
         var wf = WriteFieldsConfig.default
         wf.apply(.writeFields("R", true))
-        let tune = makeTune(titles: ["T"], rhythm: "Jig", composer: "Trad.")
+        let tune = makeTune(titles: ["T"], rhythm: ["Jig"], composer: ["Trad."])
         let (rows, _) = build(tune: tune, writeFields: wf)
         #expect(rows.count == 2)
         let leftItem  = rows[1].items.first { $0.anchor == .start }
@@ -235,7 +224,7 @@ struct SpecTitleBlockBuilderTests {
         var wf = WriteFieldsConfig.default
         wf.apply(.writeFields("R", true))
         wf.apply(.writeFields("C", false))
-        let tune = makeTune(titles: ["T"], rhythm: "Waltz", composer: "Trad.")
+        let tune = makeTune(titles: ["T"], rhythm: ["Waltz"], composer: ["Trad."])
         let (rows, _) = build(tune: tune, writeFields: wf)
         // Title row + rhythm row.
         #expect(rows.count == 2)
@@ -243,6 +232,38 @@ struct SpecTitleBlockBuilderTests {
         #expect(rightItem == nil, "Composer should be suppressed")
         let leftItem = rows[1].items.first { $0.anchor == .start }
         #expect(leftItem?.text == "Waltz")
+    }
+
+    // MARK: - Repeated fields (issue #188)
+
+    @Test("Each C: composer prints right-aligned on a row of its own (§6.1.3)")
+    func eachComposerOnItsOwnRow() {
+        let tune = makeTune(titles: ["T"], composer: ["Lennon", "McCartney"])
+        let (rows, _) = build(tune: tune, writeFields: .default)
+        #expect(rows.count == 3)
+        #expect(rows[1].items.map(\.text) == ["Lennon"])
+        #expect(rows[2].items.map(\.text) == ["McCartney"])
+        #expect(rows[1...].allSatisfy { $0.items.allSatisfy { $0.anchor == .end } })
+        #expect(rows[2].items[0].baselineY > rows[1].items[0].baselineY)
+    }
+
+    @Test("O: origin is appended to the last composer")
+    func originFollowsLastComposer() {
+        let tune = makeTune(titles: ["T"], composer: ["A", "B"], origin: ["Ireland"])
+        let (rows, _) = build(tune: tune, writeFields: .default)
+        #expect(rows[1].items.map(\.text) == ["A"])
+        #expect(rows[2].items.map(\.text) == ["B (Ireland)"])
+    }
+
+    @Test("Repeated R: fields are joined with ';' on the first composer row")
+    func repeatedRhythmJoined() {
+        var wf = WriteFieldsConfig.default
+        wf.apply(.writeFields("R", true))
+        let tune = makeTune(titles: ["T"], rhythm: ["Reel", "Hornpipe"], composer: ["A", "B"])
+        let (rows, _) = build(tune: tune, writeFields: wf)
+        #expect(rows.count == 3)
+        #expect(rows[1].items.first { $0.anchor == .start }?.text == "Reel; Hornpipe")
+        #expect(rows[2].items.contains { $0.anchor == .start } == false)
     }
 
     // MARK: - Tempo row (issue #26 — expected to FAIL until SpecTitleBlockBuilder reads tune.tempo)
@@ -293,7 +314,7 @@ struct SpecTitleBlockBuilderTests {
 
     @Test("Block height is positive when rows are produced")
     func heightPositiveWithRows() {
-        let tune = makeTune(titles: ["T"], composer: "X")
+        let tune = makeTune(titles: ["T"], composer: ["X"])
         let (_, height) = build(tune: tune)
         #expect(height > 0)
     }

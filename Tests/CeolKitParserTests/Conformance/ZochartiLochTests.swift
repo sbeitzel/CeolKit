@@ -44,7 +44,7 @@ struct ZochartiLochTests {
     @Test("Title and composer")
     func titleAndComposer() {
         #expect(score.firstTune?.titles.first?.value == "Zocharti Loch")
-        #expect(score.firstTune?.metadata.composer?.value == "Louis Lewandowski (1821-1894)")
+        #expect(score.firstTune?.metadata.composer.map(\.value) == ["Louis Lewandowski (1821-1894)"])
     }
 
     @Test("Meter is common time")

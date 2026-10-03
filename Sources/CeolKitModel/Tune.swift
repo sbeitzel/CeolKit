@@ -48,6 +48,13 @@ public struct Tune: Sendable {
     /// The empty string is a statement, not an absence: `%%footer ""` in a tune header
     /// suppresses a file-header footer for that tune rather than inheriting it.
     public let footer: String?
+    /// The `W:` words printed as a block below the tune (ABC v2.2 §5), one entry per `W:`
+    /// line, in source order — header lines first, then the body's (issue #187).
+    ///
+    /// Each line keeps the spacing the writer gave it, bar the one space conventionally left
+    /// after the colon: writers line verses up with it.  An empty `W:` is kept as an empty
+    /// line, because tunes use one to separate verses.
+    public let words: [TextString]
     public let source: SourceRange
 
     public init(
@@ -66,6 +73,7 @@ public struct Tune: Sendable {
         staffPlans: [StaffPlanChange] = [],
         pageBreaks: [PageBreak] = [],
         footer: String? = nil,
+        words: [TextString] = [],
         source: SourceRange
     ) {
         self.reference = reference
@@ -83,6 +91,7 @@ public struct Tune: Sendable {
         self.staffPlans = staffPlans
         self.pageBreaks = pageBreaks
         self.footer = footer
+        self.words = words
         self.source = source
     }
 

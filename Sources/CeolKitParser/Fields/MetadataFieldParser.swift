@@ -3,6 +3,7 @@ import Foundation
 
 enum MetadataFieldParser {
     static func parse(code: Character, payload: String, source: SourceRange) -> (InformationField, [Diagnostic]) {
+        if code == "W" { return (.words(wordsLine(payload, source: source)), []) }
         let stripped = stripFieldComment(payload).trimmingCharacters(in: .whitespaces)
         let text = TextString(value: decodeTextEscapes(stripped), source: source)
         switch code {
@@ -22,11 +23,24 @@ enum MetadataFieldParser {
         case "S": return (.sourceText(text), [])
         case "R": return (.rhythm(text), [])
         case "Z": return (.transcription(text), [])
-        case "W": return (.words(text), [])
         case "U": return parseUserSymbol(payload: payload, source: source)
         case "P": return parseParts(payload: payload, source: source)
         default:  return (.unknown(code: code, payload: payload, source: source), [])
         }
+    }
+
+    // MARK: - W: words
+
+    /// A `W:` line, with the indentation the writer gave it (issue #187).
+    ///
+    /// Every other text field is trimmed, but words are laid out by eye: a verse indented
+    /// under the one above, a `| bis` lined up down the right.  Only trailing space and the
+    /// one space conventionally written after the colon (`W: words`) are dropped.
+    private static func wordsLine(_ payload: String, source: SourceRange) -> TextString {
+        var text = Substring(stripFieldComment(payload))
+        while let last = text.last, last == " " || last == "\t" { text = text.dropLast() }
+        if text.first == " " { text = text.dropFirst() }
+        return TextString(value: decodeTextEscapes(String(text)), source: source)
     }
 
     // MARK: - U: user symbol

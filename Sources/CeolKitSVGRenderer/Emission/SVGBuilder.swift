@@ -267,6 +267,12 @@ struct SVGBuilder: Sendable {
         textAnchor: String, fontStyle: String?, className: String?
     ) {
         var attrs = "x=\"\(fmt(x))\" y=\"\(fmt(y))\""
+        // A viewer collapses runs of spaces, and drops leading and trailing ones, unless told
+        // not to — and `W:` words are lined up with exactly those (issue #187).  Only runs
+        // that need it are marked, so ordinary text is written as it always was.
+        if content.hasPrefix(" ") || content.hasSuffix(" ") || content.contains("  ") {
+            attrs += " xml:space=\"preserve\""
+        }
         attrs += " font-family=\"\(esc(fontFamily))\" font-size=\"\(fmt(fontSize))\""
         attrs += " fill=\"\(esc(fill))\""
         if textAnchor != "start"  { attrs += " text-anchor=\"\(esc(textAnchor))\"" }

@@ -165,6 +165,7 @@ struct SemanticPass {
                     staffPlans: filePlans + tune.staffPlans,
                     pageBreaks: breaks,
                     footer: tuneFooter,
+                    words: tune.words,
                     source: tune.source
                 ))
             } else {
@@ -414,6 +415,7 @@ struct SemanticPass {
             directives: tuneDirectives + bodyCtx.bodyTuneDirectives,
             staffPlans: initialStaffPlans(from: tuneDirectives) + bodyCtx.bodyStaffPlans,
             pageBreaks: headerBreaks + bodyCtx.bodyPageBreaks,
+            words: ctx.words + bodyCtx.bodyWords,
             source: abcTune.source
         )
         return (tune, diagnostics, headerOrientations + bodyCtx.bodyOrientations)
@@ -442,6 +444,7 @@ struct SemanticPass {
         case .macro(let pat, let exp, let src):
             ctx.macros.append(MacroDefinition(pattern: pat, expansion: exp, source: src))
         case .composer(let t):          ctx.composer.append(t)
+        case .words(let t):             ctx.words.append(t)
         case .origin(let t):
             let parts = t.value.components(separatedBy: ";")
                 .map { $0.trimmingCharacters(in: .whitespaces) }
@@ -963,6 +966,10 @@ struct SemanticPass {
             ctx.applyLyrics(tokens, in: voice.primary)
         case .userSymbol(let ch, let dec, _):
             ctx.userSymbols[ch] = dec
+        case .words(let t):
+            // Usually after the last line of music (§3: W: may appear in the body).  The
+            // words print as one block below the tune wherever they were written.
+            ctx.bodyWords.append(t)
         case .instruction(let t)
             where t.value.trimmingCharacters(in: .whitespaces).lowercased().hasPrefix("abc-include"):
             diagnostics.append(Diagnostic(
@@ -1998,6 +2005,7 @@ private struct TuneContext {
     var sourceText: [TextString] = []
     var rhythm: [TextString] = []
     var transcription: [TextString] = []
+    var words: [TextString] = []
     // I:linebreak parsed per ABC 2.2 §9.2 — default is I:linebreak <EOL> $
     var linebreakChars: Set<Character> = ["$"] // $ and/or !
     var linebreakOnEOL: Bool = true            // <EOL> token

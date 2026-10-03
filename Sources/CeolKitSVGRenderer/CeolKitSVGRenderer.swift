@@ -383,7 +383,10 @@ public struct SVGRenderer: CeolKitRenderer {
                                         graceSlurs: layout.graceSlurs,
                                         pageBreaks: Self.forcedPageBreaks(
                                             tune.pageBreaks, staveOfGroup: staveOfGroup,
-                                            portrait: config.pageSize)))
+                                            portrait: config.pageSize),
+                                        // §11.4.6: `W` is in the default `%%writefields` set.
+                                        words: tuneWriteFields.includes("W")
+                                            ? tune.words.map(\.value) : []))
         }
 
         let firstPageNumber = Self.firstPageNumber(of: score)

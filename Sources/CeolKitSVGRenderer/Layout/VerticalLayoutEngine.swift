@@ -276,7 +276,33 @@ public struct VerticalLayoutEngine: Sendable {
                     endingRuns: endingRuns[gi]))
 
                 let isLastInBlock = gi == groups.count - 1
-                y += metrics.totalHeight + (isLastInBlock ? tuneGap : systemGap)
+                // The tune's gap follows its words, where it has any, not its last system.
+                let after = !isLastInBlock ? systemGap : block.words.isEmpty ? tuneGap : 0
+                y += metrics.totalHeight + after
+            }
+
+            // The `W:` words, a line at a time below the last system, so a long set of
+            // verses carries on over the page like the music does (issue #187).
+            if !block.words.isEmpty {
+                y += WordsBlock.topGap
+                for line in block.words {
+                    let pageHasContent = !pageSystems.isEmpty || !pageTitleRows.isEmpty
+                    if pageHasContent && y + WordsBlock.lineHeight > floorY(pageHeight: pageSize.height) {
+                        flushPage()
+                        // A blank line only separates verses; at the top of a page there is
+                        // nothing above it to separate from.
+                        if line.isEmpty { continue }
+                    }
+                    if pageOpeningTune == nil { pageOpeningTune = blockIndex }
+                    if !line.isEmpty {
+                        pageTitleRows.append(ResolvedTitleRow(items: [ResolvedTitleRow.Item(
+                            text: line, x: config.margins.left,
+                            baselineY: y + WordsBlock.baselineOffset,
+                            anchor: .start, fontSize: WordsBlock.fontSize)]))
+                    }
+                    y += WordsBlock.lineHeight
+                }
+                y += tuneGap
             }
 
             // A `%%newpage` written past the tune's last stave — at the foot of its body
@@ -472,7 +498,7 @@ public struct VerticalLayoutEngine: Sendable {
                               endingRuns: endingRuns[i]).totalHeight
             if i < block.systemGroups.count - 1 { h += tuneConfig.systemGap }
         }
-        return h
+        return h + WordsBlock.height(lines: block.words.count)
     }
 
     /// Width of the clef + key signature + time signature run that precedes the first

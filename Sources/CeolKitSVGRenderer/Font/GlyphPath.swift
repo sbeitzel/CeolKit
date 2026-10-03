@@ -19,12 +19,35 @@ struct GlyphPath: Sendable, Equatable {
         case move(to: Point)
         case line(to: Point)
         case curve(control1: Point, control2: Point, to: Point)
+        /// A quadratic Bézier, as TrueType (`glyf`) outlines are drawn.  Kept quadratic
+        /// rather than raised to a cubic: SVG draws it as it stands, in less path data.
+        case quadCurve(control: Point, to: Point)
         case close
     }
 
     var segments: [Segment] = []
 
     var isEmpty: Bool { segments.isEmpty }
+
+    /// The outline under the affine map `x' = a·x + c·y + dx`, `y' = b·x + d·y + dy` — how a
+    /// TrueType composite places a component.  An affine map takes a Bézier's control points
+    /// to the transformed curve's, so every segment keeps its kind.
+    func transformed(a: Double, b: Double, c: Double, d: Double,
+                     dx: Double, dy: Double) -> GlyphPath {
+        func map(_ p: Point) -> Point {
+            Point(x: a * p.x + c * p.y + dx, y: b * p.x + d * p.y + dy)
+        }
+        return GlyphPath(segments: segments.map { segment in
+            switch segment {
+            case .move(let p):                return .move(to: map(p))
+            case .line(let p):                return .line(to: map(p))
+            case .curve(let c1, let c2, let p): return .curve(control1: map(c1), control2: map(c2),
+                                                              to: map(p))
+            case .quadCurve(let c, let p):    return .quadCurve(control: map(c), to: map(p))
+            case .close:                      return .close
+            }
+        })
+    }
 
     /// The outline as an SVG `d` attribute, in font units and the font's y-up orientation.
     ///
@@ -42,6 +65,8 @@ struct GlyphPath: Sendable, Equatable {
                 out += "L\(fmt(p.x)) \(fmt(p.y))"
             case .curve(let c1, let c2, let end):
                 out += "C\(fmt(c1.x)) \(fmt(c1.y)) \(fmt(c2.x)) \(fmt(c2.y)) \(fmt(end.x)) \(fmt(end.y))"
+            case .quadCurve(let c, let end):
+                out += "Q\(fmt(c.x)) \(fmt(c.y)) \(fmt(end.x)) \(fmt(end.y))"
             case .close:
                 out += "Z"
             }
@@ -52,8 +77,9 @@ struct GlyphPath: Sendable, Equatable {
     /// Formats a font-unit coordinate as compactly as it can be written exactly.
     ///
     /// Type 2 charstrings carry integers almost exclusively, but the format also permits
-    /// 16.16 fixed-point operands, so fractional values are kept to three decimals — a
-    /// thousandth of a font unit, i.e. a millionth of an em.
+    /// 16.16 fixed-point operands — and a TrueType outline's implied on-curve points fall on
+    /// half units, its scaled composites anywhere — so fractional values are kept to three
+    /// decimals: a thousandth of a font unit, i.e. a millionth of an em.
     private func fmt(_ value: Double) -> String {
         if value == value.rounded(), abs(value) < 1e15 {
             return String(Int(value))

@@ -5,7 +5,8 @@ import CeolKitModel
 /// Layout (top to bottom):
 ///   - First T: field — centered, large font; X: reference left-aligned on the same row if enabled
 ///   - Additional T: fields — centered, small italic (alternative titles)
-///   - Rhythm/Composer row: R: left-aligned, first C: right-aligned with O: appended in parens
+///   - Rhythm/Composer rows: R: left-aligned on the first; each C: right-aligned on a row of
+///     its own (§6.1.3), with O: appended in parens to the last
 ///
 /// Fields not present in `writeFields` are omitted. An empty result means no title block.
 struct SpecTitleBlockBuilder {
@@ -50,36 +51,39 @@ struct SpecTitleBlockBuilder {
             }
         }
 
-        // Rhythm / Composer row.
-        let includeR = writeFields.includes("R")
-        let includeC = writeFields.includes("C")
+        // Rhythm / Composer rows.  Each composer gets a row of its own (§6.1.3); the rhythm
+        // shares the first, and repeated R: fields are joined with `;` (§3).  The origin
+        // follows the last composer, so it reads as qualifying the whole list.
+        let rhythm = writeFields.includes("R")
+            ? tune.metadata.rhythm.map(\.value).filter { !$0.isEmpty }.joined(separator: "; ")
+            : ""
+        var composers = writeFields.includes("C")
+            ? tune.metadata.composer.map(\.value).filter { !$0.isEmpty }
+            : []
+        if !composers.isEmpty, writeFields.includes("O"),
+           let origin = tune.metadata.origin.first, !origin.isEmpty {
+            composers[composers.count - 1] += " (\(origin))"
+        }
 
-        if includeR || includeC {
+        for line in 0..<max(rhythm.isEmpty ? 0 : 1, composers.count) {
             let baselineY = lineHeight * Double(rows.count + 1) - lineHeight * 0.25
             var items: [ResolvedTitleRow.Item] = []
 
-            if includeR, let rhythm = tune.metadata.rhythm?.value, !rhythm.isEmpty {
+            if line == 0 && !rhythm.isEmpty {
                 items.append(ResolvedTitleRow.Item(
                     text: rhythm,
                     x: leftX, baselineY: baselineY,
                     anchor: .start, fontSize: infoFontSize, isItalic: true))
             }
 
-            if includeC, let composer = tune.metadata.composer?.value, !composer.isEmpty {
-                var composerText = composer
-                if writeFields.includes("O"),
-                   let origin = tune.metadata.origin.first, !origin.isEmpty {
-                    composerText += " (\(origin))"
-                }
+            if line < composers.count {
                 items.append(ResolvedTitleRow.Item(
-                    text: composerText,
+                    text: composers[line],
                     x: rightX, baselineY: baselineY,
                     anchor: .end, fontSize: infoFontSize, isItalic: true))
             }
 
-            if !items.isEmpty {
-                rows.append(ResolvedTitleRow(items: items))
-            }
+            rows.append(ResolvedTitleRow(items: items))
         }
 
         // Tempo row (Q: field).

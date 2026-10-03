@@ -54,8 +54,8 @@ struct TextStringEscapeTests {
     func otherTextFields() {
         let abc = "X:1\nT:T\nC:50\\% Smith % remark\nN:a \\% note\nK:none\n"
         let metadata = parse(abc).score.tunes.first?.metadata
-        #expect(metadata?.composer?.value == "50% Smith")
-        #expect(metadata?.notes?.value == "a % note")
+        #expect(metadata?.composer.map(\.value) == ["50% Smith"])
+        #expect(metadata?.notes.map(\.value) == ["a % note"])
     }
 
     @Test("I: keeps \\% for the directive to read, as %%name does")

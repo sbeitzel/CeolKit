@@ -53,7 +53,7 @@ struct DirectiveScopeTests {
     }
 
     private struct StaffRun {
-        /// Distance between adjacent staff lines — the tune's staff size, after `%%ceolkit:scale`.
+        /// Distance between adjacent staff lines — the tune's staff size, after `%%pagescale`.
         let spacing: Double
         /// Right-hand end of the staff lines, which is where justification put the system.
         let rightX: Double
@@ -99,7 +99,7 @@ struct DirectiveScopeTests {
         let score = CeolKitParser().parse(abc, options: .default).score
         var diagnostics: [Diagnostic] = []
         let svg = try textProbeRenderer(config).render(score, diagnostics: &diagnostics).joined()
-        let perTune = probedStemsByPitchGroup(in: svg, staffSize: config.staffSize,
+        let perTune = probedStemsByPitchGroup(in: svg, staffSize: config.scaledStaffSize,
                                               metadata: metadata, bucketCount: tuneCount)
         return try perTune.map { stems in
             try #require(!stems.isEmpty)
@@ -111,29 +111,29 @@ struct DirectiveScopeTests {
         }
     }
 
-    // MARK: - %%ceolkit:scale
+    // MARK: - %%pagescale
 
-    @Test("A tune header %%ceolkit:scale does not resize the tune after it")
+    @Test("A tune header %%pagescale does not resize the tune after it")
     func scaleDoesNotLeakForward() throws {
-        let runs = staffRuns(in: try render(tunes(["%%ceolkit:scale 0.5", nil])))
+        let runs = staffRuns(in: try render(tunes(["%%pagescale 0.5", nil])))
         try #require(runs.count == 2)
-        #expect(abs(runs[0].spacing - SVGRenderConfig().staffSize * 0.5) < 1e-9)
-        #expect(runs[1].spacing == SVGRenderConfig().staffSize)
+        #expect(abs(runs[0].spacing - SVGRenderConfig().scaledStaffSize * 0.5) < 1e-9)
+        #expect(runs[1].spacing == SVGRenderConfig().scaledStaffSize)
     }
 
-    @Test("A preamble %%ceolkit:scale governs every tune")
+    @Test("A preamble %%pagescale governs every tune")
     func preambleScaleGovernsDocument() throws {
-        let runs = staffRuns(in: try render(tunes(preamble: "%%ceolkit:scale 0.5", [nil, nil])))
+        let runs = staffRuns(in: try render(tunes(preamble: "%%pagescale 0.5", [nil, nil])))
         try #require(runs.count == 2)
-        #expect(runs.allSatisfy { abs($0.spacing - SVGRenderConfig().staffSize * 0.5) < 1e-9 })
+        #expect(runs.allSatisfy { abs($0.spacing - SVGRenderConfig().scaledStaffSize * 0.5) < 1e-9 })
     }
 
-    @Test("A tune overriding a preamble %%ceolkit:scale does not keep governing after it")
+    @Test("A tune overriding a preamble %%pagescale does not keep governing after it")
     func tuneScaleOverrideIsNotSticky() throws {
         let runs = staffRuns(in: try render(
-            tunes(preamble: "%%ceolkit:scale 0.8", [nil, "%%ceolkit:scale 1.2", nil])))
+            tunes(preamble: "%%pagescale 0.8", [nil, "%%pagescale 1.2", nil])))
         try #require(runs.count == 3)
-        let staffSize = SVGRenderConfig().staffSize
+        let staffSize = SVGRenderConfig().scaledStaffSize
         #expect(abs(runs[0].spacing - staffSize * 0.8) < 1e-9)
         #expect(abs(runs[1].spacing - staffSize * 1.2) < 1e-9)
         #expect(abs(runs[2].spacing - staffSize * 0.8) < 1e-9)
@@ -147,7 +147,7 @@ struct DirectiveScopeTests {
     /// end (#181), which is taken off so the proportion holds exactly.
     private func graceBeamLengths(in svg: String) throws -> [Double] {
         let stem = try BravuraMetadata.load().engravingDefaults.stemThickness
-                   * SVGRenderConfig().staffSize * GraceMetrics.scale
+                   * SVGRenderConfig().scaledStaffSize * GraceMetrics.scale
         let lines = svg.matches(of: /<line x1="([\d.-]+)" y1="([\d.-]+)" x2="([\d.-]+)" y2="([\d.-]+)"/)
             .compactMap { match -> (x1: Double, x2: Double, y: Double)? in
                 guard let x1 = Double(match.1), let y1 = Double(match.2),

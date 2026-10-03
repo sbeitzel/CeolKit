@@ -207,8 +207,8 @@ public struct VerticalLayoutEngine: Sendable {
             // The same table is read by the fits-on-this-page pre-pass below and by the
             // placement that follows it, so the space reserved is the space drawn into.
             let endingRuns = EndingBracketBand.runs(in: groups)
-            // %%ceolkit:scale sizes this tune's music (and the gaps derived from staffSize)
-            // relative to the renderer default. Page size and margins stay absolute.
+            // The page scale (`%%scale`) sizes this tune's music, text and the gaps derived
+            // from staffSize. Page size and margins stay absolute.
             let tuneConfig  = config.scaled(by: block.scale)
             let staffSize   = tuneConfig.staffSize
             let staffHeight = 4.0 * staffSize
@@ -587,15 +587,12 @@ public struct VerticalLayoutEngine: Sendable {
         let floorBelow = Double(maxLedgerBelow) * s + (lines.below > 0 ? floor : 0)
         let baseAbove = floorAbove + AnnotationBand.height(
             lines: lines.above, metrics: AnnotationBand.aboveMetrics(styles), staffSize: s)
-        // Tempo annotations (from inline Q: events) are placed 1.5 staffSizes above the top
-        // staff line; font size is 1.5 staffSizes, so the bounding box extends ~3× above.
         let hasTempoChanges = system.measures.contains { jm in
             jm.source.measure.events.contains { if case .tempoChange = $0 { return true }; return false }
         }
         // A tempo change stands 1.5 staff spaces above the staff and rises a full em of its
-        // own size above that — three staff spaces at the default size.
-        let tempoReach = styles.tempoChange.size == s * 1.5 ? s * 3
-            : s * 1.5 + styles.tempoChange.size
+        // own size above that.
+        let tempoReach = s * 1.5 + styles.tempoChange.size
         var extraAbove = hasTempoChanges ? max(baseAbove, tempoReach) : baseAbove
         if hasEndingBracket { extraAbove += EndingBracketBand.height(staffSize: s) }
         // The verses hang below the ledger lines and the annotations, so the three are added

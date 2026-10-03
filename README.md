@@ -45,9 +45,9 @@ pages: 2
 
 | Option | Effect |
 | --- | --- |
-| `--scale <factor>` | Override `%%ceolkit:scale` before rendering. |
+| `--scale <factor>` | Override `%%scale` (abcm2ps's `-s`; default 0.75) before rendering. |
 | `--grace-spacing <f>` | Override `%%ceolkit:gracenotespacing` (≥ 1) before rendering. |
-| `--sweep <f,f,…>` | Render at each factor; print a systems/pages table. |
+| `--sweep <f,f,…>` | Render at each `%%scale`; print a systems/pages table. |
 | `--natural` | Force `%%ceolkit:justifylast false`, so widths are unstretched. |
 | `--out <dir>` | Write `page0.svg`, `page1.svg`, … into `<dir>`. |
 | `--json` | Emit JSON instead of the text report. |

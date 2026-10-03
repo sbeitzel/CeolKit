@@ -95,7 +95,7 @@ struct StaffBracketTests {
     @Test("The indent scales with the music")
     func indentScalesWithTheTune() {
         let full = render(threeVoices("%%score [1 2 3]")).staves
-        let half = render(threeVoices("%%score [1 2 3]\n%%ceolkit:scale 0.5")).staves
+        let half = render(threeVoices("%%score [1 2 3]\n%%pagescale 0.5")).staves
         let fullIndent = full[0].left - config.margins.left
         let halfIndent = half[0].left - config.margins.left
         #expect(abs(halfIndent - fullIndent / 2) < 1e-6)
@@ -110,7 +110,7 @@ struct StaffBracketTests {
         let spine = try #require(spines.first)
         #expect(spines.count == 1)
 
-        let expected = metadata.engravingDefaults.bracketThickness * config.staffSize
+        let expected = metadata.engravingDefaults.bracketThickness * config.scaledStaffSize
         #expect(abs((spine.width ?? 0) - expected) < 1e-3)
         // Top staff line of the first staff to bottom staff line of the last.
         #expect(abs(spine.y1 - staves[0].topY) < 1e-3)
@@ -121,7 +121,7 @@ struct StaffBracketTests {
     func nothingCrossesTheLeftMargin() {
         let (svg, staves) = render(threeVoices("%%score [1 2 3]"))
         let spine = bracketSpines(svg, staves: staves)[0]
-        let tipWidth = (metadata.glyphBBoxes["bracketTop"]?.width ?? 0) * config.staffSize
+        let tipWidth = (metadata.glyphBBoxes["bracketTop"]?.width ?? 0) * config.scaledStaffSize
         let bracketLeft = spine.x - (spine.width ?? 0) / 2
 
         #expect(bracketLeft >= config.margins.left - 1e-9)
@@ -155,8 +155,8 @@ struct StaffBracketTests {
         let (outer, inner) = (spines[0], spines[1])
 
         let defaults = metadata.engravingDefaults
-        #expect(abs((outer.width ?? 0) - defaults.bracketThickness * config.staffSize) < 1e-3)
-        #expect(abs((inner.width ?? 0) - defaults.subBracketThickness * config.staffSize) < 1e-3)
+        #expect(abs((outer.width ?? 0) - defaults.bracketThickness * config.scaledStaffSize) < 1e-3)
+        #expect(abs((inner.width ?? 0) - defaults.subBracketThickness * config.scaledStaffSize) < 1e-3)
         // The outer span covers all three staves; the one inside it stops at the second.
         #expect(abs(outer.y2 - (staves[2].topY + 4 * staves[2].staffLineGap)) < 1e-3)
         #expect(abs(inner.y2 - (staves[1].topY + 4 * staves[1].staffLineGap)) < 1e-3)

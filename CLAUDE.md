@@ -58,8 +58,8 @@ It is the fastest way to answer a layout question without a GUI:
 
 ```bash
 swift run ckprobe tune.abc                          # full report
-swift run ckprobe tune.abc --scale 0.85             # override %%ceolkit:scale
-swift run ckprobe tune.abc --sweep 1.5,1.0,0.85     # systems/pages per scale factor
+swift run ckprobe tune.abc --scale 0.6              # override %%scale (default 0.75)
+swift run ckprobe tune.abc --sweep 1.0,0.75,0.6     # systems/pages per %%scale
 swift run ckprobe tune.abc --natural                # unstretched system widths
 swift run ckprobe tune.abc --out /tmp/out --json
 swift run ckprobe --fonts [--system-fonts]          # faces text could be set in
@@ -113,7 +113,8 @@ Eight `%%ceolkit:*` directives are first-class model members:
 - `%%ceolkit:pagenumber N`
 - `%%ceolkit:stemalignment N`
 - `%%ceolkit:justifylast true|false`
-- `%%ceolkit:scale F` (F > 0; tune-wide, never per-voice)
+- `%%ceolkit:scale F` (**deprecated**: parsed as `%%pagescale F` with a `deprecatedDirective` warning;
+  the page scale is `%%scale`/`%%pagescale`, as in abcm2ps — see `EXTENSIONS.md`)
 - `%%ceolkit:gracenotespacing F` (F >= 1, in grace notehead widths; tune-wide, never per-voice)
 - `%%ceolkit:label "text"` (the value of a `${label}` footer mark; scoped like `%%footer`)
 - `%%ceolkit:fontlist [resolved|available]` (reports fonts as `.info` diagnostics at the directive; the renderer does the reporting)

@@ -18,7 +18,7 @@ struct StemAnchorTests {
     private struct Glyph { let x, y: Double; let glyph: Character }
 
     private let metadata: BravuraMetadata
-    private let s = SVGRenderConfig().staffSize
+    private let s = SVGRenderConfig().scaledStaffSize
     /// SVG coordinates are written to three decimals.
     private let tolerance = 0.002
 

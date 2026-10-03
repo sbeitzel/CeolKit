@@ -249,6 +249,7 @@ struct SemanticPass {
             || name == "dateformat" || name == "footer"
             || name == "straightflags" || name == "graceslurs"
             || name == "score" || name == "staves" || name == "newpage"
+            || name == "scale" || name == "pagescale"
             || TextFontRole(rawValue: name) != nil
     }
 
@@ -1071,7 +1072,7 @@ struct SemanticPass {
                 restartingAt: parseNewPage(payload, source: source, diagnostics: &diagnostics),
                 source: source))
         case "landscape", "flatbeams", "ceolkit:justifylast", "ceolkit:scale",
-             "ceolkit:gracenotespacing", "ceolkit:fontlist", "writefields",
+             "scale", "pagescale", "ceolkit:gracenotespacing", "ceolkit:fontlist", "writefields",
              "dateformat", "footer", "straightflags", "graceslurs",
              _ where TextFontRole(rawValue: name) != nil:
             var tempDiags: [Diagnostic] = []
@@ -1080,6 +1081,13 @@ struct SemanticPass {
                 // §11.4.7 / issue #158: a page turns only where a page breaks, so a
                 // `%%landscape` in the body is recorded against the stave enclosing it — the
                 // same stave a `%%newpage` written beside it breaks before.
+                if case .scale = d, name != "ceolkit:scale" {
+                    tempDiags.append(Diagnostic(
+                        severity: .info, code: .scaleAppliesToWholeTune,
+                        message: "%%\(name) in the tune body scales the whole tune, "
+                               + "not just the music after it",
+                        source: source))
+                }
                 if case .landscape(let on) = d {
                     ctx.bodyOrientations.append(
                         OrientationRequest(landscape: on, stave: ctx.currentStaveIndex,
@@ -1495,18 +1503,26 @@ struct SemanticPass {
             diagnostics.append(Diagnostic(severity: .warning, code: .misplacedStemAlignment,
                 message: "%%ceolkit:stemalignment expects an integer", source: source))
             return nil
-        case "ceolkit:scale":
-            if let f = Double(trimmed) {
-                if f <= 0 || !f.isFinite {
-                    diagnostics.append(Diagnostic(severity: .warning, code: .invalidScale,
-                        message: "%%ceolkit:scale must be a positive number (got \(trimmed))", source: source))
-                    return nil
-                }
-                return .scale(f)
+        case "scale", "pagescale", "ceolkit:scale":
+            // One factor, stored as abcm2ps's `%%scale` value: `%%pagescale` is the real
+            // scale, and `%%scale 0.75` ≡ `%%pagescale 1` (issue #203).  `%%ceolkit:scale`
+            // was CeolKit's own spelling of the same idea, so it is `%%pagescale` now.
+            guard let f = Double(trimmed) else {
+                diagnostics.append(Diagnostic(severity: .warning, code: .invalidScale,
+                    message: "%%\(name) expects a number (got '\(trimmed)')", source: source))
+                return nil
             }
-            diagnostics.append(Diagnostic(severity: .warning, code: .invalidScale,
-                message: "%%ceolkit:scale expects a number (got '\(trimmed)')", source: source))
-            return nil
+            guard f > 0, f.isFinite else {
+                diagnostics.append(Diagnostic(severity: .warning, code: .invalidScale,
+                    message: "%%\(name) must be a positive number (got \(trimmed))", source: source))
+                return nil
+            }
+            if name == "ceolkit:scale" {
+                diagnostics.append(Diagnostic(severity: .warning, code: .deprecatedDirective,
+                    message: "%%ceolkit:scale is deprecated; use %%pagescale \(trimmed), "
+                           + "which it now means", source: source))
+            }
+            return .scale(name == "scale" ? f : f * 0.75)
         case "ceolkit:gracenotespacing":
             // A factor below 1 steps less than one notehead width, so adjacent grace
             // noteheads within a group would overlap. Rejected rather than clamped, so the

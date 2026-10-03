@@ -47,7 +47,7 @@ struct SharedStaffVoiceDrawingTests {
     func sharedStaffOpposesStems() throws {
         let metadata = try BravuraMetadata.load()
         let stems = probedStemsByPitchGroup(in: try svg(sharedStaff()),
-                                            staffSize: config.staffSize, metadata: metadata,
+                                            staffSize: config.scaledStaffSize, metadata: metadata,
                                             bucketCount: 2)
         try #require(stems.count == 2)
         try #require(stems[0].count == 4)
@@ -63,7 +63,7 @@ struct SharedStaffVoiceDrawingTests {
         let metadata = try BravuraMetadata.load()
         for (upper, lower) in [("c' b a g", "c d e f"), ("C D E F", "C, D, E, F,")] {
             let stems = probedStemsByPitchGroup(in: try svg(sharedStaff(upper: upper, lower: lower)),
-                                                staffSize: config.staffSize, metadata: metadata,
+                                                staffSize: config.scaledStaffSize, metadata: metadata,
                                                 bucketCount: 2)
             try #require(stems.count == 2)
             try #require(stems[0].count == 4)
@@ -77,7 +77,7 @@ struct SharedStaffVoiceDrawingTests {
     func voiceStemOverridesOpposition() throws {
         let metadata = try BravuraMetadata.load()
         let stems = probedStemsByPitchGroup(in: try svg(sharedStaff(lowerVoice: "stem=up")),
-                                            staffSize: config.staffSize, metadata: metadata,
+                                            staffSize: config.scaledStaffSize, metadata: metadata,
                                             bucketCount: 2)
         try #require(stems.count == 2)
         try #require(stems[1].count == 4)
@@ -94,7 +94,7 @@ struct SharedStaffVoiceDrawingTests {
         // the shared-staff test above proves does *not* happen when they share one.
         let stems = probedStemsByPitchGroup(in: try svg(sharedStaff(lower: "c d e f",
                                                                     plan: "%%score T1 T2")),
-                                            staffSize: config.staffSize, metadata: metadata,
+                                            staffSize: config.scaledStaffSize, metadata: metadata,
                                             bucketCount: 2)
         try #require(stems.count == 2)
         try #require(stems.allSatisfy { $0.count == 4 })
@@ -145,10 +145,10 @@ struct SharedStaffVoiceDrawingTests {
         let middle = try middleLineY(in: document)
         // Two above centre and two below, each by one staff space: the upper voice's rests
         // rise and the lower voice's fall, so they never coincide.
-        #expect(ys[0] == middle - config.staffSize)
-        #expect(ys[1] == middle - config.staffSize)
-        #expect(ys[2] == middle + config.staffSize)
-        #expect(ys[3] == middle + config.staffSize)
+        #expect(ys[0] == middle - config.scaledStaffSize)
+        #expect(ys[1] == middle - config.scaledStaffSize)
+        #expect(ys[2] == middle + config.scaledStaffSize)
+        #expect(ys[3] == middle + config.scaledStaffSize)
     }
 
     @Test("A bar whose partner voice is invisible keeps its rest centred")

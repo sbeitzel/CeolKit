@@ -17,8 +17,9 @@ struct LayoutDirectives {
     /// Whether the last system of a tune is stretched to the full measure, from
     /// `%%ceolkit:justifylast`.
     var justifyLastSystem: Bool
-    /// Multiplier on the staff size, from `%%ceolkit:scale`.  `1.0` = renderer default.
-    var scale: Double = 1.0
+    /// The page scale, as abcm2ps's `%%scale` value: ``SVGRenderConfig/scale`` unless
+    /// `%%scale`, `%%pagescale` or `%%ceolkit:scale` says otherwise (issue #203).
+    var scale: Double
     /// Step between adjacent grace noteheads, in grace notehead widths, from
     /// `%%ceolkit:gracenotespacing`.
     var graceNoteSpacing: Double
@@ -49,6 +50,7 @@ struct LayoutDirectives {
     init(config: SVGRenderConfig) {
         fonts = config.textFonts
         justifyLastSystem = config.justifyLastSystem
+        scale = config.scale
         graceNoteSpacing = config.graceNoteSpacing
         straightFlags = config.straightFlags
         graceSlurs = config.graceSlurs

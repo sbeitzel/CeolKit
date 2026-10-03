@@ -119,10 +119,10 @@ governed instead by the overhang of the 32nd-note flag on the grace stem. If
 the complaint is about the room around a *single* grace note, this directive is
 not the lever.
 
-### Interaction with `%%ceolkit:scale`
+### Interaction with `%%scale`
 
-The two are independent and do not compound. `%%ceolkit:scale` sets the staff
-size, and the grace notehead is measured from it; `%%ceolkit:gracenotespacing`
+The two are independent and do not compound. `%%scale` (or `%%pagescale`) sets
+the staff size, and the grace notehead is measured from it; `%%ceolkit:gracenotespacing`
 is a ratio applied within the group. Halving the scale halves the drawn width of
 a grace group, because the noteheads themselves are half the size — the number
 of notehead widths between them is unchanged.
@@ -553,91 +553,76 @@ page number as above.
 
 ---
 
-## `%%ceolkit:scale`
+## `%%ceolkit:scale` (deprecated)
 
 **Syntax:** `%%ceolkit:scale <positive number>`
 
-**Type:** floating-point number, greater than zero
+**Status:** deprecated since issue #203; use `%%pagescale` (or `%%scale`). It will
+be removed in a later release.
 
-**Default:** `1.0` (the renderer's own staff size, unmodified)
+`%%ceolkit:scale F` now means exactly `%%pagescale F`, and produces a
+`deprecatedDirective` warning naming the replacement. Like `%%pagescale` it scales
+the title block and the `W:` words along with the music, which it did not do
+before.
 
-**Scope:** global (file preamble or tune header); tune-wide, never per-voice
+## The page scale: `%%scale` and `%%pagescale`
 
-### Description
+These are abcm2ps's directives (ABC v2.2 §11.4.3 lists `%%scale`), implemented
+the way abcm2ps implements them.
 
-Scales the rendered music relative to the renderer's default size, so
-`%%ceolkit:scale 0.8` engraves everything at 80%. This is the in-source
-counterpart to the SVG renderer's `staffSize` configuration value, and it is
-the way to fit a long tune onto one page or to match the size of an adjacent
-engraving without changing the caller's render configuration.
+- **`%%scale S`** sets the page scale factor. The default is **0.75**.
+- **`%%pagescale F`** sets the real scale, so `%%pagescale F` ≡ `%%scale 0.75 × F`
+  and `%%pagescale 1` ≡ `%%scale 0.75`. The default is 1.
 
-The factor multiplies the staff size, and with it every dimension derived from
-it: note heads, stems, beams, accidentals, clefs, and the vertical gaps between
-systems and between tunes.
+At the default, the staff space is 4.5 points and text is set at 75% of its
+nominal size, so a document comes out the size abcm2ps prints it.
 
-Page size and margins are **not** scaled — they stay in absolute points, so
-scaling the music never resizes the page. Because the usable width is
-unchanged, a smaller factor fits more measures onto each staff line. Title,
-subtitle, and composer rows are also unscaled; they are typeset in absolute
-point sizes.
+Everything the tune draws is scaled: the staff and the music, chord symbols,
+annotations and lyrics, the title block, and `W:` words. Font sizes, whether
+CeolKit's defaults (abcm2ps's: title 20, subtitle 16, composer 14, info 14,
+tempo 15, gchord 12, annotation 12, vocal 13, words 16) or a font directive's,
+are given in these nominal units. The page size, the margins and the `%%footer`
+are **not** scaled.
 
-The value must be greater than zero. A missing, zero, negative, or non-numeric
-argument produces a warning and the directive is ignored, leaving the tune at
-the renderer's default size.
-
-Per-voice scaling is not supported: a scale set in a tune body applies to the
-whole tune regardless of which voice is current.
+A value that is missing, zero, negative or not a finite number produces an
+`invalidScale` warning, and the directive is ignored.
 
 ### Scoping
 
-Like the other CeolKit directives, the value is set where it is encountered and
-persists until changed. A factor in the file preamble therefore governs every
-tune in the file, and a tune header can override it for that tune and the ones
-that follow.
+Scoping follows abcm2ps's *generation* scope. In the file header, the value
+governs every tune that follows. In a tune header or tune body, it governs that
+tune only, and the last value written wins. A directive in the body therefore
+scales the whole tune, not just the music after it, and an `info` diagnostic
+(`scaleAppliesToWholeTune`) says so. abc2svg's line scope, where the scale
+changes from the next music line, is not implemented.
+
+### Setting the default from the host
+
+`SVGRenderConfig.scale` is the scale used where the document says nothing, the
+counterpart of abcm2ps's `-s` flag. It defaults to 0.75. Set it to `1` to get
+the size CeolKit drew before issue #203. A directive in the document still
+overrides it. `SVGRenderConfig.scaledStaffSize` is the staff space as drawn at
+that default.
 
 ### Examples
 
-#### Fit a long tune onto one page
-
 ```abc
+%%pagescale 0.8
 X:1
-T:A Long Reel
-M:4/4
-L:1/8
-%%ceolkit:scale 0.75
-K:D
-|:DEFD ADFD|DEFD AFEC|DEFD ADFD|1 EFED CDEC:|2 EFED CEAc||
-```
-
-#### File-wide default with a per-tune override
-
-```abc
-%%ceolkit:scale 0.8
-X:1
-T:Rendered at 80%
+T:Rendered at 80% of abcm2ps's default size
 M:4/4
 L:1/8
 K:G
 GABG|DEFD|
 
 X:2
-T:Rendered at 60%
+T:Rendered at abcm2ps's %%scale 0.6
 M:4/4
 L:1/8
-%%ceolkit:scale 0.6
+%%scale 0.6
 K:G
 GABG|DEFD|
 ```
-
-The first tune (and any tune that follows without its own directive) renders at
-80%; the second, and every tune after it, renders at 60%.
-
-### Relationship to `%%scale`
-
-`abcm2ps` spells this `%%scale`. CeolKit uses the `%%ceolkit:` namespace instead,
-both for consistency with the rest of these extensions and to avoid implying
-full `%%scale` compatibility. A bare `%%scale` is still reported as an
-unsupported stylesheet directive.
 
 ---
 

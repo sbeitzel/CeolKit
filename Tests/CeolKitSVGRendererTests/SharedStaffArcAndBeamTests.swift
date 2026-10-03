@@ -62,7 +62,7 @@ struct SharedStaffArcAndBeamTests {
     /// Every beam stroke: the horizontals at Bravura's beam thickness, which is thicker than
     /// any staff or ledger line in the document.
     private func beams(in svg: String, metadata: BravuraMetadata) -> [(x1: Double, x2: Double, y: Double)] {
-        let thickness = metadata.engravingDefaults.beamThickness * config.staffSize
+        let thickness = metadata.engravingDefaults.beamThickness * config.scaledStaffSize
         return horizontals(in: svg)
             .filter { abs($0.width - thickness) < 0.01 }
             .map { (x1: $0.x1, x2: $0.x2, y: $0.y) }

@@ -244,8 +244,8 @@ public struct TuneBlock: Sendable {
     public let titleRows: [ResolvedTitleRow]
     public let titleBlockHeight: Double
     /// Multiplier applied to `SVGRenderConfig.staffSize` (and the inter-system/inter-tune gaps
-    /// derived from it) for this tune's music, from `%%ceolkit:scale`.  `1.0` = renderer default.
-    /// The title block is laid out in absolute points and is unaffected.
+    /// derived from it) for this tune, from the page scale (`%%scale`; issue #203).  `1.0`
+    /// draws `staffSize` as it stands.  The title block arrives already laid out at it.
     public let scale: Double
     /// Step between adjacent grace noteheads in this tune's grace groups, in grace notehead
     /// widths, from `%%ceolkit:gracenotespacing`.  A ratio, not a size: unlike `scale` it is
@@ -711,7 +711,7 @@ public struct ResolvedSystem: Sendable {
     public let measures: [ResolvedMeasure]
     /// Y offset of the top staff line relative to `origin.y`.
     public let staffOrigin: Double
-    /// Distance between adjacent staff lines, after `%%ceolkit:scale` has been applied.
+    /// Distance between adjacent staff lines, after the page scale (`%%scale`) has been applied.
     /// The emitter derives every glyph and stem dimension in this system from it.
     public let staffSize: Double
     /// Height of the staff body: 4 × staffSize (five lines, four spaces).

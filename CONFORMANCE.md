@@ -341,24 +341,25 @@ governs that tune and overrides the file header's (§4.23). The size is optional
 place of the name keeps the face in force (abcm2ps), so `%%vocalfont * 14` changes only the
 size. A name with spaces may be quoted: `%%titlefont "Times New Roman" 24`.
 
-| Directive | Sets | Default | Scales with `%%ceolkit:scale` |
-|---|---|---|---|
-| `titlefont` | the first `T:` | Libertinus Serif 18 | no |
-| `subtitlefont` | later `T:` | Libertinus Serif Italic 12 | no |
-| `composerfont` | `C:`, with `O:` appended | Libertinus Serif Italic 12 | no |
-| `infofont` | `R:` and other `%%writefields` fields | Libertinus Serif Italic 12 | no |
-| `tempofont` | `Q:` in the header / in the music | Libertinus Serif 12 / 1.5 staff spaces | header no / music yes |
-| `wordsfont` | `W:` words | Libertinus Serif 12 | no |
-| `gchordfont` | chord symbols and chord-line text | Libertinus Serif, 2 staff spaces | yes |
-| `annotationfont` | `^ _ < > @` annotations | Libertinus Serif, 2 staff spaces | yes |
-| `vocalfont` | `w:` lyrics | Libertinus Serif, 2 staff spaces | yes |
-| `partsfont`, `textfont`, `setfont-1`…`4` | parsed and scoped; see below | | |
+| Directive | Sets | Default size |
+|---|---|---|
+| `titlefont` | the first `T:` | Libertinus Serif 20 |
+| `subtitlefont` | later `T:` | Libertinus Serif Italic 16 |
+| `composerfont` | `C:`, with `O:` appended | Libertinus Serif Italic 14 |
+| `infofont` | `R:` and other `%%writefields` fields | Libertinus Serif Italic 14 |
+| `tempofont` | `Q:`, in the header and in the music | Libertinus Serif 15 |
+| `wordsfont` | `W:` words | Libertinus Serif 16 |
+| `gchordfont` | chord symbols and chord-line text | Libertinus Serif 12 |
+| `annotationfont` | `^ _ < > @` annotations | Libertinus Serif 12 |
+| `vocalfont` | `w:` lyrics | Libertinus Serif 13 |
+| `partsfont`, `textfont`, `setfont-1`…`4` | parsed and scoped; see below | |
 
-The defaults are CeolKit's own and unchanged by this support: a document with no font
-directive renders exactly as before. Text drawn with the staff scales with the music; text in
-the page's furniture is sized in absolute points. A row of the title block set larger than its
-default grows to hold it, as do the chord, annotation and lyric bands, and chord symbols are
-measured in their own font when the notes are spaced.
+The default sizes are abcm2ps's; the faces are CeolKit's. Every size, a default's or a
+directive's, is in abcm2ps's nominal units and is drawn scaled by the page scale (`%%scale`,
+default 0.75; see [`EXTENSIONS.md`](EXTENSIONS.md)), so a 20-point title is drawn at 15 points
+unless the document says otherwise. Only the `%%footer` is set in absolute points. A row of
+the title block set larger than its default grows to hold it, as do the chord, annotation and
+lyric bands, and chord symbols are measured in their own font when the notes are spaced.
 
 A host app can set a house style beneath the document's directives with
 `SVGRenderConfig.textFonts` — say, every composer line in Zapf Chancery — and a directive in
@@ -388,9 +389,17 @@ system was searched and nothing answered.
   blocks are not printed.
 - **`%%font`** declarations, and abcm2ps's `box`/`class=` arguments, are not read; a
   directive with anything after its size is reported and dropped.
-- **abcm2ps's `%%scale`**, which shrinks the whole page — fonts included — is not
-  implemented, so a document that sets large fonts and relies on `%%scale` to fit them (the
-  §14.4 Canzonetta does) prints larger than abcm2ps would.
+
+---
+
+## §11.4.3 Page scale — `%%scale`
+
+`%%scale` and abcm2ps's `%%pagescale` are implemented as abcm2ps implements them. The default
+is `%%scale 0.75` (≡ `%%pagescale 1`), so a document without either prints the size abcm2ps
+prints it. Everything except the page, its margins and the footer is scaled, and the
+directive applies to the whole tune it is written in. Details are in
+[`EXTENSIONS.md`](EXTENSIONS.md#the-page-scale-scale-and-pagescale). The other §11.4.3 space
+directives are not implemented.
 
 ---
 

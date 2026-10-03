@@ -4,7 +4,17 @@ import Foundation
 public struct SVGRenderConfig: Sendable {
     public var pageSize: PageSize
     public var margins: EdgeInsets
+    /// The staff space at a page scale of 1 — abcm2ps's `%%scale 1`.  What is drawn is this
+    /// times ``scale``; see ``scaled(by:)``.
     public var staffSize: Double
+    /// The page scale, as abcm2ps's `%%scale` value (issue #203), before the document says
+    /// anything: what abcm2ps's `-s` flag sets.  A `%%scale`, `%%pagescale` or
+    /// `%%ceolkit:scale` in the document overrides it.
+    ///
+    /// Defaults to abcm2ps's own `0.75` (`%%pagescale 1`), so a document comes out the size
+    /// abcm2ps prints it.  It scales the music, the title block, the words and every other
+    /// piece of text the tune sets; not the page, its margins or the footer.
+    public var scale: Double
     /// Vertical gap added between systems within a single tune.
     public var systemGap: Double
     /// Vertical gap added between two staves of one system that no brace or bracket joins
@@ -71,6 +81,7 @@ public struct SVGRenderConfig: Sendable {
         pageSize: PageSize = .letter,
         margins: EdgeInsets = EdgeInsets(top: 36, bottom: 36, left: 36, right: 36),
         staffSize: Double = 6.0,
+        scale: Double = 0.75,
         systemGap: Double? = nil,
         staffGap: Double? = nil,
         spanStaffGap: Double? = nil,
@@ -89,6 +100,7 @@ public struct SVGRenderConfig: Sendable {
         self.pageSize = pageSize
         self.margins = margins
         self.staffSize = staffSize
+        self.scale = scale
         self.systemGap = systemGap ?? staffSize * 4
         self.staffGap = staffGap ?? staffSize * 3
         self.spanStaffGap = spanStaffGap ?? staffSize * 2
@@ -105,9 +117,13 @@ public struct SVGRenderConfig: Sendable {
         self.textFonts = textFonts
     }
 
+    /// The staff space as drawn where the document sets no page scale of its own:
+    /// ``staffSize`` at ``scale``.  4.5 points at the defaults, as abcm2ps draws it.
+    public var scaledStaffSize: Double { staffSize * scale }
+
     /// Returns a copy with `staffSize` and the vertical gaps derived from it multiplied
-    /// by `factor` (`%%ceolkit:scale`).  Page size and margins are absolute and unchanged:
-    /// scaling the music must not resize the page.
+    /// by `factor` — the page scale, ``scale`` or the document's `%%scale`.  Page size and
+    /// margins are absolute and unchanged: scaling the music must not resize the page.
     public func scaled(by factor: Double) -> SVGRenderConfig {
         guard factor != 1.0 else { return self }
         var copy = self

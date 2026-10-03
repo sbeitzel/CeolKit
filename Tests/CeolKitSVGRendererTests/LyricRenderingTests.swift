@@ -119,7 +119,7 @@ struct LyricRenderingTests {
         let two = try systemGap((["X:1", "T:Lyrics", "M:4/4", "L:1/4", "K:C",
                                   "CDEF|", "w: do re mi fa", "w: un deux trois quatre",
                                   "GABc|"]).joined(separator: "\n") + "\n")
-        #expect(abs(two - one - LyricBand.lineHeight(staffSize: SVGRenderConfig().staffSize)) < 1e-6)
+        #expect(abs(two - one - LyricBand.lineHeight(staffSize: SVGRenderConfig().scaledStaffSize)) < 1e-6)
     }
 
     @Test("A tune with no lyrics draws no words below its staff")

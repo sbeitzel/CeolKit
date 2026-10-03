@@ -96,11 +96,11 @@ extension SVGBuilder {
 ///
 /// Built from the font directives in force for the tune — the host's
 /// ``SVGRenderConfig/textFonts`` first, then the file header's, then the tune's own (ABC v2.2
-/// §4.23) — over CeolKit's own defaults, which are the sizes and faces it has always used.
+/// §4.23) — over CeolKit's defaults, which are abcm2ps's sizes (issue #203).
 ///
-/// Text in the page's furniture (title, composer, info, the header tempo, words) is sized in
-/// absolute points; text that belongs to the staff (chord symbols, annotations, lyrics, a
-/// tempo change in the music) scales with `%%ceolkit:scale`, because the staff does.
+/// Every size, a directive's or a default, is in abcm2ps's units, in which a staff space is
+/// ``nominalStaffSize``; it is drawn scaled with the staff, as abcm2ps scales every piece of
+/// text with `%%scale` (issue #203).  Only the footer, which is not set here, stays absolute.
 struct TextStyles: Sendable {
     var title: TextStyle
     var subtitle: TextStyle
@@ -115,19 +115,44 @@ struct TextStyles: Sendable {
     /// A `Q:` written in the music, printed above the staff where it falls.
     var tempoChange: TextStyle
 
-    /// CeolKit's defaults for a tune whose (scaled) staff size is `staffSize`.
+    /// The staff space abcm2ps's font sizes are stated against: its staff is 24 units tall
+    /// at `%%scale 1`.  A size of `n` is drawn at `n × staffSize / nominalStaffSize`.
+    static let nominalStaffSize = 6.0
+
+    /// abcm2ps's default size for each role it has a font for (`xxxfont.html`), in its units.
+    static func defaultSize(_ role: TextFontRole) -> Double {
+        switch role {
+        case .title:       return 20
+        case .subtitle:    return 16
+        case .composer:    return 14
+        case .parts:       return 15
+        case .tempo:       return 15
+        case .chordSymbol: return 12
+        case .annotation:  return 12
+        case .info:        return 14
+        case .text:        return 16
+        case .vocal:       return 13
+        case .words:       return 16
+        case .set1, .set2, .set3, .set4: return 12
+        }
+    }
+
+    /// CeolKit's defaults for a tune whose (scaled) staff size is `staffSize`: abcm2ps's sizes,
+    /// scaled with the staff, in Libertinus Serif.
     static func standard(staffSize: Double) -> TextStyles {
-        TextStyles(
-            title: TextStyle(size: 18),
-            subtitle: TextStyle(size: 12, italic: true),
-            composer: TextStyle(size: 12, italic: true),
-            info: TextStyle(size: 12, italic: true),
-            tempo: TextStyle(size: 12),
-            words: TextStyle(size: WordsBlock.fontSize),
-            chordSymbol: TextStyle(size: AnnotationBand.fontSize(staffSize: staffSize)),
-            annotation: TextStyle(size: AnnotationBand.fontSize(staffSize: staffSize)),
-            vocal: TextStyle(size: LyricBand.fontSize(staffSize: staffSize)),
-            tempoChange: TextStyle(size: staffSize * 1.5))
+        let k = staffSize / nominalStaffSize
+        func size(_ role: TextFontRole) -> Double { defaultSize(role) * k }
+        return TextStyles(
+            title: TextStyle(size: size(.title)),
+            subtitle: TextStyle(size: size(.subtitle), italic: true),
+            composer: TextStyle(size: size(.composer), italic: true),
+            info: TextStyle(size: size(.info), italic: true),
+            tempo: TextStyle(size: size(.tempo)),
+            words: TextStyle(size: size(.words)),
+            chordSymbol: TextStyle(size: size(.chordSymbol)),
+            annotation: TextStyle(size: size(.annotation)),
+            vocal: TextStyle(size: size(.vocal)),
+            tempoChange: TextStyle(size: size(.tempo)))
     }
 
     /// One role's font, as a directive resolved it, for reporting.
@@ -141,18 +166,18 @@ struct TextStyles: Sendable {
     /// through `provider`.
     ///
     /// - Parameters:
-    ///   - staffSize: the tune's staff size, already scaled.
-    ///   - scale: the tune's `%%ceolkit:scale`, which a directive's size for staff text is
-    ///     multiplied by.
+    ///   - staffSize: the tune's staff size, already scaled.  A directive's size is in
+    ///     abcm2ps's units and is scaled with the staff, like the defaults.
     static func resolve(_ specs: [TextFontRole: FontSpec], sources: [TextFontRole: SourceRange],
-                        provider: FontProvider?, staffSize: Double, scale: Double)
+                        provider: FontProvider?, staffSize: Double)
         -> (styles: TextStyles, resolutions: [Resolution]) {
         var styles = standard(staffSize: staffSize)
         var resolutions: [Resolution] = []
+        let k = staffSize / nominalStaffSize
 
-        func style(_ role: TextFontRole, _ base: TextStyle, scales: Bool) -> TextStyle {
+        func style(_ role: TextFontRole, _ base: TextStyle) -> TextStyle {
             guard let spec = specs[role] else { return base }
-            let size = spec.size.map { scales ? $0 * scale : $0 } ?? base.size
+            let size = spec.size.map { $0 * k } ?? base.size
             guard let name = spec.name, let provider else {
                 return TextStyle(face: base.face, size: size, italic: base.italic)
             }
@@ -162,16 +187,16 @@ struct TextStyles: Sendable {
             return TextStyle(face: TextFace(resolved), size: size)
         }
 
-        styles.title = style(.title, styles.title, scales: false)
-        styles.subtitle = style(.subtitle, styles.subtitle, scales: false)
-        styles.composer = style(.composer, styles.composer, scales: false)
-        styles.info = style(.info, styles.info, scales: false)
-        styles.tempo = style(.tempo, styles.tempo, scales: false)
-        styles.words = style(.words, styles.words, scales: false)
-        styles.chordSymbol = style(.chordSymbol, styles.chordSymbol, scales: true)
-        styles.annotation = style(.annotation, styles.annotation, scales: true)
-        styles.vocal = style(.vocal, styles.vocal, scales: true)
-        styles.tempoChange = style(.tempo, styles.tempoChange, scales: true)
+        styles.title = style(.title, styles.title)
+        styles.subtitle = style(.subtitle, styles.subtitle)
+        styles.composer = style(.composer, styles.composer)
+        styles.info = style(.info, styles.info)
+        styles.tempo = style(.tempo, styles.tempo)
+        styles.words = style(.words, styles.words)
+        styles.chordSymbol = style(.chordSymbol, styles.chordSymbol)
+        styles.annotation = style(.annotation, styles.annotation)
+        styles.vocal = style(.vocal, styles.vocal)
+        styles.tempoChange = style(.tempo, styles.tempoChange)
         return (styles, resolutions)
     }
 

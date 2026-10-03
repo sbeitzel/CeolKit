@@ -4,8 +4,8 @@
 /// music out of it: footers are stamped onto pages only after they have been laid out, so
 /// the two have to agree on where the strip is without either asking the other.
 enum FooterBand {
-    /// The footer's text size, in points.  Absolute: `%%ceolkit:scale` sizes the music, not
-    /// the page furniture.
+    /// The footer's text size, in points.  Absolute: abcm2ps's `%%scale` sizes everything
+    /// but the page header and footer, and so does CeolKit's (issue #203).
     static let fontSize = 12.0
 
     /// Space kept clear between the lowest thing laid out on a page and the top of the

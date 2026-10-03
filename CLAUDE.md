@@ -60,7 +60,7 @@ It is the fastest way to answer a layout question without a GUI:
 swift run ckprobe tune.abc                          # full report
 swift run ckprobe tune.abc --scale 0.6              # override %%scale (default 0.75)
 swift run ckprobe tune.abc --sweep 1.0,0.75,0.6     # systems/pages per %%scale
-swift run ckprobe tune.abc --natural                # unstretched system widths
+swift run ckprobe tune.abc --natural                # unstretched system widths (%%stretchstaff 0)
 swift run ckprobe tune.abc --out /tmp/out --json
 swift run ckprobe --fonts [--system-fonts]          # faces text could be set in
 swift run ckprobe tune.abc --out /tmp/out --font-face       # <text> + @font-face
@@ -112,7 +112,8 @@ Eight `%%ceolkit:*` directives are first-class model members:
 - `%%ceolkit:pipeformat true|false`
 - `%%ceolkit:pagenumber N`
 - `%%ceolkit:stemalignment N`
-- `%%ceolkit:justifylast true|false`
+- `%%ceolkit:justifylast true|false` (**deprecated**: parsed as `%%stretchlast 1|0` with a
+  `deprecatedDirective` warning; the last line is abcm2ps's `%%stretchlast`/`%%stretchstaff`)
 - `%%ceolkit:scale F` (**deprecated**: parsed as `%%pagescale F` with a `deprecatedDirective` warning;
   the page scale is `%%scale`/`%%pagescale`, as in abcm2ps — see `EXTENSIONS.md`)
 - `%%ceolkit:gracenotespacing F` (F >= 1, in grace notehead widths; tune-wide, never per-voice)

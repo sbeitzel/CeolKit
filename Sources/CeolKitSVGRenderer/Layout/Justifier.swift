@@ -1,5 +1,6 @@
 /// Pass 3: distributes horizontal slack across measures so each non-last system
-/// fills the full usable line width.
+/// fills the full usable line width — and the last one too, once it is full enough
+/// (`%%stretchlast`, issue #198).
 ///
 /// Two things stop that from being unconditional.  A system whose music overruns the line —
 /// which the `LineBreaker` now allows within its overflow tolerance — is compressed to fit
@@ -32,19 +33,24 @@ public struct Justifier: Sendable {
     /// - Parameters:
     ///   - systems: Pass 2 output.
     ///   - usableWidth: Full available horizontal space (page width minus margins).
-    ///   - justifyLastSystem: When `true`, the last system is also stretched to fill the line.
+    ///   - stretchLast: abcm2ps's `%%stretchlast`: the last system is stretched too when its
+    ///     natural width reaches `1 − stretchLast` of the line; see
+    ///     ``stretchesLast(naturalWidth:lineWidth:headerWidth:stretchLast:)``.
+    ///   - stretchStaff: abcm2ps's `%%stretchstaff`.  `false` stretches no system at all.
     ///   - systemHeaderWidths: Per-system width consumed by clef/key/time-sig headers.
     ///     The target width for system `i` is `usableWidth - systemHeaderWidths[i]`.
     ///     Defaults to zero for any system not covered by the array.
     public func justify(
         _ systems: [System],
         usableWidth: Double,
-        justifyLastSystem: Bool,
+        stretchLast: Double,
+        stretchStaff: Bool = true,
         systemHeaderWidths: [Double] = []
     ) -> [JustifiedSystem] {
         justifyGroups(systems.map { SystemGroup(staves: [$0]) },
                       usableWidth: usableWidth,
-                      justifyLastSystem: justifyLastSystem,
+                      stretchLast: stretchLast,
+                      stretchStaff: stretchStaff,
                       systemHeaderWidths: systemHeaderWidths)
             .map { $0.staves[0] }
     }
@@ -59,7 +65,10 @@ public struct Justifier: Sendable {
     /// - Parameters:
     ///   - groups: Pass 2 output.
     ///   - usableWidth: Full available horizontal space (page width minus margins).
-    ///   - justifyLastSystem: When `true`, the last system is also stretched to fill the line.
+    ///   - stretchLast: abcm2ps's `%%stretchlast`: the last system is stretched too when its
+    ///     natural width reaches `1 − stretchLast` of the line; see
+    ///     ``stretchesLast(naturalWidth:lineWidth:headerWidth:stretchLast:)``.
+    ///   - stretchStaff: abcm2ps's `%%stretchstaff`.  `false` stretches no system at all.
     ///   - systemHeaderWidths: Per-system width consumed by clef/key/time-sig headers —
     ///     already the `max` across the group's voices, since its staves start at a common x.
     ///   - systemUsableWidths: Per-system line width, where the systems of one tune do not all
@@ -73,31 +82,85 @@ public struct Justifier: Sendable {
     public func justifyGroups(
         _ groups: [SystemGroup],
         usableWidth: Double,
-        justifyLastSystem: Bool,
+        stretchLast: Double,
+        stretchStaff: Bool = true,
         systemHeaderWidths: [Double] = [],
         systemUsableWidths: [Double] = []
     ) -> [JustifiedSystemGroup] {
-        groups.enumerated().map { i, group in
+        // How far the line before was stretched, as a multiple of its natural width — what a
+        // last system left short is spaced at.  `1` before the first: natural spacing.
+        var previousSpread = 1.0
+        return groups.enumerated().map { i, group in
             let headerWidth = i < systemHeaderWidths.count ? systemHeaderWidths[i] : 0
             let lineWidth = i < systemUsableWidths.count ? systemUsableWidths[i] : usableWidth
             let targetWidth = lineWidth - headerWidth
-            let shouldStretch = !group.isLastSystem || justifyLastSystem
-            return justify(group, targetWidth: targetWidth, stretch: shouldStretch,
-                           capStretch: group.staveWasSplit)
+            let naturalTotal = Self.naturalWidth(of: group)
+            let finalTotal: Double
+            if !stretchStaff {
+                // `%%stretchstaff 0`: every system natural, and only an overrun squeezed.
+                finalTotal = min(naturalTotal, targetWidth)
+            } else if !group.isLastSystem
+                || Self.stretchesLast(naturalWidth: naturalTotal, lineWidth: lineWidth,
+                                      headerWidth: headerWidth, stretchLast: stretchLast) {
+                finalTotal = resolvedWidth(naturalTotal: naturalTotal, targetWidth: targetWidth,
+                                           capStretch: group.staveWasSplit)
+            } else {
+                finalTotal = shortLastWidth(naturalTotal: naturalTotal, targetWidth: targetWidth,
+                                            previousSpread: previousSpread,
+                                            capStretch: group.staveWasSplit)
+            }
+            if naturalTotal > 0 { previousSpread = finalTotal / naturalTotal }
+            return justify(group, finalTotal: finalTotal)
+        }
+    }
+
+    /// Whether the last system of a tune is stretched to the line, as abcm2ps decides it:
+    /// when the staff it would draw unstretched — header and music — reaches `1 − F` of the
+    /// line, for `%%stretchlast F`.
+    ///
+    /// abcm2ps 8.14.0, on a 680 pt line at the default `0.25`, leaves a last line filling
+    /// 0.69 of it short and stretches one filling 0.75; at `0.6` it stretches one filling
+    /// 0.52.  `0` stretches no last line to the full width, `1` stretches every one.  A last
+    /// line that is not stretched is still not drawn at its natural width; see
+    /// ``shortLastWidth(naturalTotal:targetWidth:previousSpread:capStretch:)``.
+    static func stretchesLast(naturalWidth: Double, lineWidth: Double, headerWidth: Double,
+                              stretchLast: Double) -> Bool {
+        guard stretchLast > 0 else { return false }
+        return headerWidth + naturalWidth >= (1 - stretchLast) * lineWidth
+    }
+
+    /// A system's natural width: each column as wide as its widest staff needs.
+    static func naturalWidth(of group: SystemGroup) -> Double {
+        (0..<group.columnCount).reduce(0.0) { sum, column in
+            sum + group.staves.reduce(0.0) { max($0, $1.measures[column].naturalWidth) }
         }
     }
 
     // MARK: - Private
 
-    private func justify(_ group: SystemGroup, targetWidth: Double, stretch: Bool,
-                         capStretch: Bool) -> JustifiedSystemGroup {
+    /// The width of a last system too short for `%%stretchlast` to stretch to the line.
+    ///
+    /// abcm2ps spaces it as the line above it was spaced, so its notes do not suddenly close
+    /// up at the end of the tune (issue #198).  It never squeezes it below its natural
+    /// width — after a line that had to be compressed, the last one is drawn natural — and
+    /// never runs it past the line.  abcm2ps 8.14.0, `cccc|cccc|cccc|` then `cccc|]` at
+    /// `%%stretchlast 0`: the first line steps 53.6 between quarters, the last 55.3, where
+    /// natural is 40.
+    private func shortLastWidth(naturalTotal: Double, targetWidth: Double,
+                                previousSpread: Double, capStretch: Bool) -> Double {
+        var width = naturalTotal * max(1, previousSpread)
+        if capStretch { width = min(width, naturalTotal * maxStretch) }
+        return min(width, targetWidth)
+    }
+
+    // MARK: - Private
+
+    private func justify(_ group: SystemGroup, finalTotal: Double) -> JustifiedSystemGroup {
         // A column is as wide as its widest staff needs; every staff is then drawn to that.
         let columnWidths = (0..<group.columnCount).map { column in
             group.staves.reduce(0.0) { max($0, $1.measures[column].naturalWidth) }
         }
         let naturalTotal = columnWidths.reduce(0, +)
-        let finalTotal = resolvedWidth(naturalTotal: naturalTotal, targetWidth: targetWidth,
-                                       stretch: stretch, capStretch: capStretch)
 
         // What the music alone would have made each column, before text widened it.
         let musicWidths = (0..<group.columnCount).map { column in
@@ -148,15 +211,15 @@ public struct Justifier: Sendable {
         return JustifiedSystemGroup(staves: staves, grouping: group.grouping)
     }
 
-    /// The width the system's music is laid out to.
+    /// The width a system stretched to the line is laid out to.
     ///
-    /// A system that overruns is squeezed back onto the line whether or not it would
-    /// otherwise be stretched — music must not cross the right margin, and the line breaker
-    /// now hands over systems that deliberately overrun by a percent or two.
+    /// A system that overruns is squeezed back onto the line — music must not cross the right
+    /// margin, and the line breaker now hands over systems that deliberately overrun by a
+    /// percent or two.  A short last system is squeezed the same way, by
+    /// ``shortLastWidth(naturalTotal:targetWidth:previousSpread:capStretch:)``.
     private func resolvedWidth(naturalTotal: Double, targetWidth: Double,
-                               stretch: Bool, capStretch: Bool) -> Double {
+                               capStretch: Bool) -> Double {
         if naturalTotal > targetWidth { return targetWidth }
-        guard stretch else { return naturalTotal }
         guard capStretch else { return targetWidth }
         return min(targetWidth, naturalTotal * maxStretch)
     }

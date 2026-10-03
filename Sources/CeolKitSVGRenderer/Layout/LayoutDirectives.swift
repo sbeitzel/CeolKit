@@ -14,9 +14,11 @@ struct LayoutDirectives {
     /// choice to the note's staff position, which is the ordinary engraving rule.  A voice's
     /// own `V:` `stem=` outranks it; the emitter resolves the two per staff (issue #74).
     var stemDirection: StemDirection = .auto
-    /// Whether the last system of a tune is stretched to the full measure, from
-    /// `%%ceolkit:justifylast`.
-    var justifyLastSystem: Bool
+    /// How full the last system of a tune must be to be stretched to the line, from
+    /// `%%stretchlast` (or the deprecated `%%ceolkit:justifylast`).
+    var stretchLast: Double
+    /// Whether systems are stretched to the line at all, from `%%stretchstaff`.
+    var stretchStaff: Bool
     /// The page scale, as abcm2ps's `%%scale` value: ``SVGRenderConfig/scale`` unless
     /// `%%scale`, `%%pagescale` or `%%ceolkit:scale` says otherwise (issue #203).
     var scale: Double
@@ -49,7 +51,8 @@ struct LayoutDirectives {
     /// The document baseline before any directive has been read: what the config asks for.
     init(config: SVGRenderConfig) {
         fonts = config.textFonts
-        justifyLastSystem = config.justifyLastSystem
+        stretchLast = config.stretchLast
+        stretchStaff = config.stretchStaff
         scale = config.scale
         graceNoteSpacing = config.graceNoteSpacing
         straightFlags = config.straightFlags
@@ -65,7 +68,8 @@ struct LayoutDirectives {
         // saying `pipeformat false` under a preamble saying `true` is asking for the
         // ordinary pitch rule, and nothing else in the tune can ask for it.
         case .pipeFormat(let on):         stemDirection = on ? .down : .auto
-        case .justifyLast(let on):        justifyLastSystem = on
+        case .stretchLast(let fraction):  stretchLast = fraction
+        case .stretchStaff(let on):       stretchStaff = on
         case .scale(let factor):          scale = factor
         case .graceNoteSpacing(let step): graceNoteSpacing = step
         case .straightFlags(let on):      straightFlags = on

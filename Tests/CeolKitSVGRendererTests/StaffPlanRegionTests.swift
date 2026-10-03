@@ -226,7 +226,7 @@ struct StaffPlanRegionTests {
 
     @Test("Only the tune's very last system is the last one, however many regions there are")
     func onlyTheFinalRegionEndsTheTune() {
-        // `justifyLastSystem` is off by default, so only a system marked last is left short;
+        // A short system marked last is left short (`%%stretchlast` 0.25 by default);
         // a region boundary in the middle must not leave the system before it unstretched.
         let abc = threeVoices(header: "%%score [1 2 3]", body: "%%score [1 2]")
         let systems = render(abc).pages.flatMap(\.systems)

@@ -30,7 +30,7 @@ struct TunebookTests {
         let abc = """
             %abc-2.2
             %%ceolkit:pipeformat true
-            %%ceolkit:justifylast true
+            %%stretchlast 1
             %%landscape 1
             X:1
             T:Kalabakan (Borneo)

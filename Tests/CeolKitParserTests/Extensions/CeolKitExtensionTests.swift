@@ -1,6 +1,6 @@
 // CeolKit extension directive conformance tests.
 // Tests %%ceolkit:pipeformat, %%ceolkit:pagenumber, %%ceolkit:stemalignment,
-// %%ceolkit:justifylast, %%scale / %%pagescale / %%ceolkit:scale.
+// %%stretchlast / %%ceolkit:justifylast, %%scale / %%pagescale / %%ceolkit:scale.
 // See EXTENSIONS.md and CeolKit spec §7.
 import Testing
 import CeolKitModel
@@ -296,62 +296,69 @@ struct CeolKitExtensionTests {
         #expect(!warnings.isEmpty)
     }
 
-    // MARK: %%ceolkit:justifylast
+    // MARK: %%stretchlast and %%ceolkit:justifylast (issue #198)
 
-    @Test("%%ceolkit:justifylast true attaches justifyLast(true) directive")
-    func justifylastTrue() {
-        let abc = """
-        X:1
-        T:Test
-        M:4/4
-        L:1/4
-        %%ceolkit:justifylast true
-        K:G
-        GABC|
-        """
-        let result = parse(abc)
-        let tune = result.score.firstTune
-        let directive = tune?.directives.first(where: {
-            if case .justifyLast = $0.directive { return true }
-            return false
-        })
-        #expect(directive != nil)
-        if case .justifyLast(let value) = directive?.directive {
-            #expect(value == true)
+    /// The `%%stretchlast` values attached to the first tune, in order.
+    private func stretchLastValues(_ abc: String) -> [Double] {
+        (parse(abc).score.firstTune?.directives ?? []).compactMap {
+            if case .stretchLast(let value) = $0.directive { return value }
+            return nil
         }
     }
 
-    @Test("%%ceolkit:justifylast false attaches justifyLast(false) directive")
-    func justifylastFalse() {
-        let abc = """
-        X:1
-        T:Test
-        M:4/4
-        L:1/4
-        %%ceolkit:justifylast false
-        K:G
-        GABC|
-        """
-        let result = parse(abc)
-        let tune = result.score.firstTune
-        let directive = tune?.directives.first(where: {
-            if case .justifyLast = $0.directive { return true }
-            return false
-        })
-        #expect(directive != nil)
-        if case .justifyLast(let value) = directive?.directive {
-            #expect(value == false)
-        }
+    private func tune(header line: String) -> String {
+        "X:1\nT:Test\nM:4/4\nL:1/4\n\(line)\nK:G\nGABC|"
+    }
+
+    @Test("%%stretchlast takes abcm2ps's fraction of the line",
+          arguments: [("0", 0.0), ("0.25", 0.25), ("0.6", 0.6), ("1", 1.0)])
+    func stretchLastFraction(payload: String, expected: Double) {
+        #expect(stretchLastValues(tune(header: "%%stretchlast \(payload)")) == [expected])
+    }
+
+    @Test("%%stretchlast takes the spec's logical as the two ends of the range",
+          arguments: [("true", 1.0), ("false", 0.0)])
+    func stretchLastLogical(payload: String, expected: Double) {
+        #expect(stretchLastValues(tune(header: "%%stretchlast \(payload)")) == [expected])
+    }
+
+    @Test("%%stretchlast outside 0…1, or not a number, is dropped with a warning",
+          arguments: ["1.5", "-0.2", "yes", "0.3x"])
+    func stretchLastInvalid(payload: String) {
+        let abc = tune(header: "%%stretchlast \(payload)")
+        #expect(stretchLastValues(abc).isEmpty)
+        let warnings = parse(abc).score.diagnostics.filter { $0.code == .invalidStretchLast }
+        #expect(warnings.count == 1)
+    }
+
+    @Test("%%ceolkit:justifylast is a deprecated %%stretchlast 1 or 0",
+          arguments: [("true", 1.0), ("false", 0.0)])
+    func justifyLastIsDeprecatedStretchLast(payload: String, expected: Double) {
+        let abc = tune(header: "%%ceolkit:justifylast \(payload)")
+        #expect(stretchLastValues(abc) == [expected])
+        let deprecations = parse(abc).score.diagnostics.filter { $0.code == .deprecatedDirective }
+        #expect(deprecations.count == 1)
+        #expect(deprecations.first?.message.contains("%%stretchlast \(Int(expected))") == true)
+    }
+
+    @Test("%%stretchstaff takes a logical", arguments: [("1", true), ("false", false)])
+    func stretchStaffLogical(payload: String, expected: Bool) {
+        let values = (parse(tune(header: "%%stretchstaff \(payload)")).score.firstTune?
+            .directives ?? []).compactMap { scope -> Bool? in
+                if case .stretchStaff(let on) = scope.directive { return on }
+                return nil
+            }
+        #expect(values == [expected])
     }
 
     @Test("%%ceolkit:justifylast with invalid payload emits warning and drops directive")
     func justifylastInvalidPayloadEmitsWarning() {
         let abc = "%%ceolkit:justifylast yes\nX:1\nT:T\nM:4/4\nL:1/4\nK:C\nC|"
         let result = parse(abc)
-        let warnings = result.score.diagnostics.filter { $0.code == .unknownDirective }
+        let warnings = result.score.diagnostics.filter { $0.code == .invalidStretchLast }
         #expect(!warnings.isEmpty)
         let hasDirective = result.score.tunes.flatMap(\.directives).contains {
-            if case .justifyLast = $0.directive { return true }
+            if case .stretchLast = $0.directive { return true }
             return false
         }
         #expect(!hasDirective)

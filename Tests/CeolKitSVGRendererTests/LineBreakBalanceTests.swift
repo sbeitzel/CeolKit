@@ -17,7 +17,7 @@ import Testing
 private let splitLineTune = """
 %abc-2.2
 %%ceolkit:pipeformat true
-%%ceolkit:justifylast true
+%%stretchlast 1
 %%landscape 0
 X:1
 T:Kalabakan (Borneo)
@@ -73,7 +73,7 @@ struct LineBreakBalanceTests {
                                                meter: tune.meter)
         let headerWidths = systems.enumerated().map { i, _ in i == 0 ? firstHeaderW : laterHeaderW }
         let justified = justifier.justify(systems, usableWidth: usableWidth,
-                                          justifyLastSystem: true,
+                                          stretchLast: 1,
                                           systemHeaderWidths: headerWidths)
         let targets = headerWidths.map { usableWidth - $0 }
         return (systems, justified, targets)

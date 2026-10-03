@@ -76,6 +76,9 @@ public enum DiagnosticCode: String, Codable, Sendable {
     /// would change scale from the next music line; that is not implemented.)
     case scaleAppliesToWholeTune
     case invalidGraceNoteSpacing
+    /// `%%stretchlast` whose value is neither a number from 0 to 1 nor a logical, or a
+    /// `%%ceolkit:justifylast` that is not `true` or `false`.
+    case invalidStretchLast
     /// A font directive (§11.4.2) whose payload is not `<font name> [<size>]`: no name, a
     /// size that is not a positive number, or words after the size.
     case invalidFontDirective
@@ -83,7 +86,8 @@ public enum DiagnosticCode: String, Codable, Sendable {
     case unknownDirective
     case redundantDirective
     /// A directive CeolKit still honours but is going to remove, with its replacement named
-    /// in the message — `%%ceolkit:scale`, which is `%%pagescale` (issue #203).
+    /// in the message — `%%ceolkit:scale`, which is `%%pagescale` (issue #203), and
+    /// `%%ceolkit:justifylast`, which is `%%stretchlast` (issue #198).
     case deprecatedDirective
     /// A `%%footer` template contains a `$`-token CeolKit does not substitute — an
     /// abcm2ps placeholder that is not implemented here, or a typo such as `$p`.  The

@@ -56,7 +56,7 @@ enum SourceRewriter {
             result = overriding("gracenotespacing", with: String(graceSpacing), in: result)
         }
         if options.natural {
-            result = overriding("justifylast", with: "false", in: result)
+            result = overriding(["stretchstaff"], with: "%%stretchstaff 0", in: result)
         }
         return result
     }

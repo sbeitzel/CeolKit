@@ -132,7 +132,7 @@ struct StaffBraceTests {
     @Test("The music still ends on the right margin: the brace's indent came out of the line")
     func indentIsTakenOutOfTheLine() {
         var config = config
-        config.justifyLastSystem = true
+        config.stretchLast = 1
         let staves = render(voices(2, "%%score {1 2}"), config: config).staves
         let rightMargin = config.pageSize.width - config.margins.right
         #expect(staves.allSatisfy { $0.left > config.margins.left })

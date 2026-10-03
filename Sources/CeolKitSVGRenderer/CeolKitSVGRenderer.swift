@@ -384,7 +384,7 @@ public struct SVGRenderer: CeolKitRenderer {
             }
             let tuneGroups = groups.isEmpty ? [] : justifier.justifyGroups(
                 groups, usableWidth: usableWidth(on: pageSizes.opening),
-                justifyLastSystem: layout.justifyLastSystem,
+                stretchLast: layout.stretchLast, stretchStaff: layout.stretchStaff,
                 systemHeaderWidths: headerWidths, systemUsableWidths: usableWidthOfGroup)
 
             // Build the title block for this tune per §6.1.3.

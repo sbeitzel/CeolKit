@@ -161,21 +161,18 @@ K:A
 
 ---
 
-## `%%ceolkit:justifylast`
+## `%%ceolkit:justifylast` (deprecated)
 
 **Syntax:** `%%ceolkit:justifylast <true|false>`
 
-**Type:** boolean (`true` or `false`; case-insensitive)
+**Status:** deprecated since issue #198; use `%%stretchlast` (see
+[The last line](#the-last-line-stretchlast-and-stretchstaff) below). It will be removed
+in a later release.
 
-**Default:** `false`
-
-**Scope:** global (file preamble or tune header)
-
-### Description
-
-The default way to render a tune is not to justify the last line, leaving it ragged.
-This setting, when `true`, forces the last line to be justified so that it spans the
-whole width.
+`%%ceolkit:justifylast true` now means `%%stretchlast 1`, and `false` means
+`%%stretchlast 0`. Either produces a `deprecatedDirective` warning naming the
+replacement. Note that `false` no longer draws the last line at its natural width:
+like abcm2ps, a short last line takes the spacing of the line above it.
 
 ---
 
@@ -564,6 +561,45 @@ be removed in a later release.
 `deprecatedDirective` warning naming the replacement. Like `%%pagescale` it scales
 the title block and the `W:` words along with the music, which it did not do
 before.
+
+## The last line: `%%stretchlast` and `%%stretchstaff`
+
+These are abcm2ps's directives (ABC v2.2 §11.4.3 lists both), implemented the way
+abcm2ps 8.14.0 behaves (issue #198). Every system but the last is stretched to the
+full line. The last system of a tune is handled like this:
+
+- **`%%stretchlast F`**, with `F` from 0 to 1. The default is **0.25**. The last
+  system is stretched to the full line when its unstretched staff (header and music)
+  reaches `1 − F` of the line. At the default, that means three quarters of the line.
+  `1` stretches every last line, and `0` stretches none. The spec's logical form is
+  accepted too, with `true` meaning 1 and `false` meaning 0. abcm2ps accepts only the
+  number.
+- A last system that is **not** stretched is spaced like the line before it, so its
+  notes do not suddenly close up at the end of the tune. It is never squeezed below
+  its natural width and never runs past the line. A tune of one line has no line
+  before it, so its last line is drawn at natural width.
+- **`%%stretchstaff <true|false>`** (default `true`). `false` stretches no system at
+  all, the last one included. A system that overruns the line is still compressed to
+  fit.
+
+A value that is not a number from 0 to 1, or a logical, produces an
+`invalidStretchLast` warning, and the directive is ignored.
+
+Both are scoped like `%%scale`: written in the file header, the value governs every
+tune; written in a tune, it governs that tune only. `SVGRenderConfig.stretchLast` and
+`SVGRenderConfig.stretchStaff` set the values the host uses where the document says
+nothing.
+
+```abc
+X:1
+T:Last line always stretched
+%%stretchlast 1
+M:6/8
+L:1/8
+K:G
+GAB cde | dcB A3 | B2c d2d | cdc B3 |
+B2c d2d |]
+```
 
 ## The page scale: `%%scale` and `%%pagescale`
 

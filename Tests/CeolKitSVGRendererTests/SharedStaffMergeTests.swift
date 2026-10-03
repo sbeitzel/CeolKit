@@ -251,7 +251,7 @@ struct SharedStaffMergeTests {
 
         let system = System(measures: [merged], isLastSystem: false, sourceForced: false)
         let justified = Justifier().justify([system], usableWidth: merged.naturalWidth * 2,
-                                            justifyLastSystem: true)
+                                            stretchLast: 1)
         let stretched = justified[0].measures[0]
 
         #expect(stretched.eventOffsets != merged.eventOffsets)   // it really did stretch

@@ -169,7 +169,7 @@ struct VoiceLabelTests {
     @Test("The music still ends on the right margin: the gutter came out of the line")
     func gutterIsTakenOutOfTheLine() {
         var config = config
-        config.justifyLastSystem = true
+        config.stretchLast = 1
         let rightMargin = config.pageSize.width - config.margins.right
         for abc in [twoVoices("", ""), twoVoices(named, alto)] {
             let staves = render(abc, config: config).staves

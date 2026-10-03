@@ -249,7 +249,8 @@ struct SemanticPass {
             || name == "dateformat" || name == "footer"
             || name == "straightflags" || name == "graceslurs"
             || name == "score" || name == "staves" || name == "newpage"
-            || name == "scale" || name == "pagescale"
+            || name == "scale" || name == "pagescale" || name == "stretchlast"
+            || name == "stretchstaff"
             || TextFontRole(rawValue: name) != nil
     }
 
@@ -1071,7 +1072,8 @@ struct SemanticPass {
                 beforeStave: ctx.currentStaveIndex,
                 restartingAt: parseNewPage(payload, source: source, diagnostics: &diagnostics),
                 source: source))
-        case "landscape", "flatbeams", "ceolkit:justifylast", "ceolkit:scale",
+        case "landscape", "flatbeams", "ceolkit:justifylast", "stretchlast", "stretchstaff",
+             "ceolkit:scale",
              "scale", "pagescale", "ceolkit:gracenotespacing", "ceolkit:fontlist", "writefields",
              "dateformat", "footer", "straightflags", "graceslurs",
              _ where TextFontRole(rawValue: name) != nil:
@@ -1549,11 +1551,39 @@ struct SemanticPass {
             diagnostics.append(Diagnostic(severity: .warning, code: .unknownDirective,
                 message: "%%flatbeams expects '0'/'false' or '1'/'true'", source: source))
             return nil
-        case "ceolkit:justifylast":
-            if let value = parseLogical(trimmed) { return .justifyLast(value) }
-            diagnostics.append(Diagnostic(severity: .warning, code: .unknownDirective,
-                message: "%%ceolkit:justifylast expects 'true' or 'false'", source: source))
+        case "stretchlast":
+            // abcm2ps takes a fraction of the line and rejects anything outside 0…1; the
+            // ABC v2.2 spec's list of directives gives it a logical, which is the two ends of
+            // that range.  A number is tried first, so `0` and `1` mean the same either way.
+            if let f = Double(trimmed), f.isFinite {
+                guard (0...1).contains(f) else {
+                    diagnostics.append(Diagnostic(severity: .warning, code: .invalidStretchLast,
+                        message: "%%stretchlast must be between 0 and 1 (got \(trimmed))",
+                        source: source))
+                    return nil
+                }
+                return .stretchLast(f)
+            }
+            if let value = parseLogical(trimmed) { return .stretchLast(value ? 1 : 0) }
+            diagnostics.append(Diagnostic(severity: .warning, code: .invalidStretchLast,
+                message: "%%stretchlast expects a number from 0 to 1, or 'true'/'false' "
+                       + "(got '\(trimmed)')", source: source))
             return nil
+        case "stretchstaff":
+            if let value = parseLogical(trimmed) { return .stretchStaff(value) }
+            diagnostics.append(Diagnostic(severity: .warning, code: .unknownDirective,
+                message: "%%stretchstaff expects '0'/'false' or '1'/'true'", source: source))
+            return nil
+        case "ceolkit:justifylast":
+            guard let value = parseLogical(trimmed) else {
+                diagnostics.append(Diagnostic(severity: .warning, code: .invalidStretchLast,
+                    message: "%%ceolkit:justifylast expects 'true' or 'false'", source: source))
+                return nil
+            }
+            diagnostics.append(Diagnostic(severity: .warning, code: .deprecatedDirective,
+                message: "%%ceolkit:justifylast is deprecated; use %%stretchlast \(value ? 1 : 0), "
+                       + "which it now means", source: source))
+            return .stretchLast(value ? 1 : 0)
         case "ceolkit:fontlist":
             if trimmed.isEmpty { return .fontList(.resolved) }
             if let mode = FontListMode(rawValue: trimmed.lowercased()) { return .fontList(mode) }

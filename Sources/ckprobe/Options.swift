@@ -20,7 +20,7 @@ struct Options {
     var graceSpacing: Double?
     /// Render once per factor and print a systems/pages table instead of a full report.
     var sweep: [Double]?
-    /// Force `%%ceolkit:justifylast false` so reported widths are natural, not stretched.
+    /// Force `%%stretchstaff 0` so reported widths are natural, not stretched.
     var natural: Bool = false
     /// Directory to write `page0.svg`, `page1.svg`, … into.
     var outputDirectory: URL?
@@ -48,7 +48,7 @@ struct Options {
           --grace-spacing <f>   Override %%ceolkit:gracenotespacing (>= 1) before
                                 rendering.
           --sweep <f,f,…>       Render at each %%scale; print a systems/pages table.
-          --natural             Force %%ceolkit:justifylast false, so system widths
+          --natural             Force %%stretchstaff 0, so system widths
                                 are reported unstretched.
           --out <dir>           Write page0.svg, page1.svg, … into <dir>.
           --json                Emit JSON instead of the text report.

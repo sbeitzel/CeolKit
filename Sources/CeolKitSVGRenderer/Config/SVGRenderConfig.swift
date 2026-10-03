@@ -38,7 +38,15 @@ public struct SVGRenderConfig: Sendable {
     public var spanStaffGap: Double
     /// Vertical gap added after the last system of a tune, before the next tune's title block.
     public var tuneGap: Double
-    public var justifyLastSystem: Bool
+    /// abcm2ps's `%%stretchlast`, from 0 to 1: the last system of a tune is stretched to the
+    /// full line when its natural width reaches `1 − stretchLast` of it (issue #198).  The
+    /// default, `0.25`, is abcm2ps's.  `0` leaves every last system at its natural width; `1`
+    /// stretches every one.  A `%%stretchlast` in the document overrides it.
+    public var stretchLast: Double
+    /// abcm2ps's `%%stretchstaff`: whether systems are stretched to the line at all.  `false`
+    /// draws every system at its natural width, the last one included; a system that
+    /// overruns is still compressed to fit.  A `%%stretchstaff` in the document overrides it.
+    public var stretchStaff: Bool
     public var straightFlags: Bool
     public var graceSlurs: Bool
     /// Step between adjacent grace noteheads within one grace group, as a multiple of the
@@ -86,7 +94,8 @@ public struct SVGRenderConfig: Sendable {
         staffGap: Double? = nil,
         spanStaffGap: Double? = nil,
         tuneGap: Double? = nil,
-        justifyLastSystem: Bool = false,
+        stretchLast: Double = 0.25,
+        stretchStaff: Bool = true,
         straightFlags: Bool = false,
         graceSlurs: Bool = true,
         graceNoteSpacing: Double = 1.05,
@@ -105,7 +114,8 @@ public struct SVGRenderConfig: Sendable {
         self.staffGap = staffGap ?? staffSize * 3
         self.spanStaffGap = spanStaffGap ?? staffSize * 2
         self.tuneGap = tuneGap ?? staffSize * 16
-        self.justifyLastSystem = justifyLastSystem
+        self.stretchLast = min(max(stretchLast, 0), 1)
+        self.stretchStaff = stretchStaff
         self.straightFlags = straightFlags
         self.graceSlurs = graceSlurs
         self.graceNoteSpacing = graceNoteSpacing

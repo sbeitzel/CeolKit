@@ -75,9 +75,9 @@ struct StaffBracketTests {
 
     @Test("The music still ends on the right margin: the indent came out of the line, not off the page")
     func indentIsTakenOutOfTheLine() {
-        // `justifyLastSystem` so the one system in each tune is stretched to the full line.
+        // `stretchLast` 1 so the one system in each tune is stretched to the full line.
         var config = config
-        config.justifyLastSystem = true
+        config.stretchLast = 1
         let plain = render(threeVoices(), config: config).staves
         let bracketed = render(threeVoices("%%score [1 2 3]"), config: config).staves
 

@@ -136,7 +136,7 @@ struct StaffSpanThreadingTests {
         #expect(groups.allSatisfy { $0.grouping?.spans == grouping.spans })
         #expect(groups.allSatisfy { $0.grouping?.barlineJoins == grouping.barlineJoins })
 
-        let justified = Justifier().justifyGroups(groups, usableWidth: 300, justifyLastSystem: false)
+        let justified = Justifier().justifyGroups(groups, usableWidth: 300, stretchLast: 0)
         #expect(justified.allSatisfy { $0.grouping?.spans == grouping.spans })
     }
 

@@ -7,7 +7,7 @@
 %%graceslurs false
 %%dateformat "%e %B %Y %H:%M"
 %%ceolkit:pipeformat true
-%%ceolkit:justifylast true
+%%stretchlast 1
 %%footer "Page $P\tSVPB G4 Medley 2026\tGenerated: $D"
 %%landscape 1
 X:1

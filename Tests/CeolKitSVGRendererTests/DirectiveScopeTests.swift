@@ -200,7 +200,7 @@ struct DirectiveScopeTests {
         #expect(abs(beams[2] - beams[0]) < 1e-9)
     }
 
-    // MARK: - %%ceolkit:justifylast
+    // MARK: - %%stretchlast
 
     /// A one-system tune is all last system, so justifying it stretches the staff to the
     /// full usable width and leaving it alone stops it at the music's natural width.
@@ -208,31 +208,31 @@ struct DirectiveScopeTests {
         config.pageSize.width - config.margins.right
     }
 
-    @Test("A tune header %%ceolkit:justifylast does not stretch the tune after it")
-    func justifyLastDoesNotLeakForward() throws {
+    @Test("A tune header %%stretchlast does not stretch the tune after it")
+    func stretchLastDoesNotLeakForward() throws {
         let config = SVGRenderConfig()
-        let runs = staffRuns(in: try render(tunes(["%%ceolkit:justifylast true", nil]),
+        let runs = staffRuns(in: try render(tunes(["%%stretchlast 1", nil]),
                                             config: config))
         try #require(runs.count == 2)
         #expect(abs(runs[0].rightX - justifiedRightX(config)) < 1e-6)
         #expect(runs[1].rightX < justifiedRightX(config) - 1)
     }
 
-    @Test("A preamble %%ceolkit:justifylast governs every tune")
-    func preambleJustifyLastGovernsDocument() throws {
+    @Test("A preamble %%stretchlast governs every tune")
+    func preambleStretchLastGovernsDocument() throws {
         let config = SVGRenderConfig()
         let runs = staffRuns(in: try render(
-            tunes(preamble: "%%ceolkit:justifylast true", [nil, nil]), config: config))
+            tunes(preamble: "%%stretchlast 1", [nil, nil]), config: config))
         try #require(runs.count == 2)
         #expect(runs.allSatisfy { abs($0.rightX - justifiedRightX(config)) < 1e-6 })
     }
 
-    @Test("A tune turning a preamble %%ceolkit:justifylast off does not keep it off after")
-    func justifyLastOverrideIsNotSticky() throws {
+    @Test("A tune turning a preamble %%stretchlast off does not keep it off after")
+    func stretchLastOverrideIsNotSticky() throws {
         let config = SVGRenderConfig()
         let runs = staffRuns(in: try render(
-            tunes(preamble: "%%ceolkit:justifylast true",
-                  [nil, "%%ceolkit:justifylast false", nil]), config: config))
+            tunes(preamble: "%%stretchlast 1",
+                  [nil, "%%stretchlast 0", nil]), config: config))
         try #require(runs.count == 3)
         #expect(abs(runs[0].rightX - justifiedRightX(config)) < 1e-6)
         #expect(runs[1].rightX < justifiedRightX(config) - 1)

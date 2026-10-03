@@ -64,8 +64,13 @@ public struct SVGRenderer: CeolKitRenderer {
 
         let breaker   = LineBreaker(overflowTolerance: effectiveConfig.lineOverflowTolerance)
         let justifier = Justifier(maxStretch: effectiveConfig.maxSystemStretch)
-        let engine    = VerticalLayoutEngine(config: effectiveConfig, metadata: metadata,
-                                             labelFont: labelFont)
+        // Footers are stamped on after layout, and which one a page gets depends on the tune
+        // that opens it — something only layout decides.  So the band is kept clear on every
+        // page of a document that prints any footer at all (issue #192); one that prints none
+        // reserves nothing and lays out exactly as before.
+        let engine    = VerticalLayoutEngine(
+            config: effectiveConfig, metadata: metadata, labelFont: labelFont,
+            bottomReserve: Self.hasFooter(score) ? FooterBand.reservedHeight : 0)
 
         // The line width one page size gives.  A function rather than the single number it
         // used to be: `%%landscape` at a `%%newpage` turns the page part-way through the
@@ -513,9 +518,7 @@ public struct SVGRenderer: CeolKitRenderer {
                                firstPageNumber: Int, fileLayout: LayoutDirectives) -> ResolvedLayout {
         // Nothing anywhere in the document asks for a footer: the whole pass is skipped, and
         // no page gains an empty footer row it did not have before.
-        guard score.footer?.isEmpty == false
-                || score.tunes.contains(where: { $0.footer?.isEmpty == false })
-        else { return layout }
+        guard Self.hasFooter(score) else { return layout }
 
         let pageCount = layout.pages.count
         let updatedPages = layout.pages.enumerated().map { pageIndex, page -> ResolvedPage in
@@ -545,6 +548,12 @@ public struct SVGRenderer: CeolKitRenderer {
         return ResolvedLayout(pageSize: layout.pageSize, margins: layout.margins, pages: updatedPages)
     }
 
+    /// Whether any page of the document can carry a footer: the file's own, or any tune's.
+    static func hasFooter(_ score: Score) -> Bool {
+        score.footer?.isEmpty == false
+            || score.tunes.contains(where: { $0.footer?.isEmpty == false })
+    }
+
     private func buildFooterRows(template: String, pageNumber: Int, pageCount: Int,
                                   title: String, config: SVGRenderConfig,
                                   pageSize: Size,
@@ -558,11 +567,9 @@ public struct SVGRenderer: CeolKitRenderer {
                                                                      context: context))
             .map(FooterTemplate.trimmed)
 
-        let fontSize  = 12.0
-        // Shift baseline up by the descender depth so the bottom of descenders (p, g, y, …)
-        // lands precisely at the bottom margin line, not below it.
-        let baselineY = pageSize.height - config.margins.bottom
-            - fontSize * LibertinusSerifMetrics.descenderRatio
+        let fontSize  = FooterBand.fontSize
+        let baselineY = FooterBand.baselineY(pageHeight: pageSize.height,
+                                             bottomMargin: config.margins.bottom)
         let leftX     = config.margins.left
         let centerX   = pageSize.width / 2.0
         let rightX    = pageSize.width - config.margins.right

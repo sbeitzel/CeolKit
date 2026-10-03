@@ -13,15 +13,27 @@ public struct VerticalLayoutEngine: Sendable {
     /// could not be read.  ``VoiceLabelGutter`` falls back to an estimate, and the caller
     /// that reserved the gutter took the same fallback, so the two still agree.
     private let labelFont: OpenTypeFont?
+    /// Space kept clear above the bottom margin on every page, for a `%%footer` that will be
+    /// stamped there once layout is done (issue #192).  Zero in a document with no footer,
+    /// which therefore lays out exactly as it did before there was a reservation at all.
+    private let bottomReserve: Double
 
     public init(config: SVGRenderConfig, metadata: BravuraMetadata) {
         self.init(config: config, metadata: metadata, labelFont: nil)
     }
 
-    init(config: SVGRenderConfig, metadata: BravuraMetadata, labelFont: OpenTypeFont?) {
+    init(config: SVGRenderConfig, metadata: BravuraMetadata, labelFont: OpenTypeFont?,
+         bottomReserve: Double = 0) {
         self.config = config
         self.metadata = metadata
         self.labelFont = labelFont
+        self.bottomReserve = bottomReserve
+    }
+
+    /// The lowest y anything laid out on a page of height `pageHeight` may reach: the bottom
+    /// margin, raised by the footer band where the document prints one.
+    private func floorY(pageHeight: Double) -> Double {
+        pageHeight - config.margins.bottom - bottomReserve
     }
 
     /// Converts justified systems into a fully positioned layout.
@@ -55,7 +67,7 @@ public struct VerticalLayoutEngine: Sendable {
             let (extraAbove, extraBelow) = (extent.extraAbove, extent.extraBelow)
             let totalHeight = extraAbove + staffHeight + extraBelow
 
-            if !pageSystems.isEmpty && y + totalHeight > config.pageSize.height - config.margins.bottom {
+            if !pageSystems.isEmpty && y + totalHeight > floorY(pageHeight: config.pageSize.height) {
                 let rows = isFirstPage ? titleRows : []
                 pages.append(ResolvedPage(systems: pageSystems, titleRows: rows))
                 pageSystems = []
@@ -212,7 +224,7 @@ public struct VerticalLayoutEngine: Sendable {
             // inner system loop below handles the mid-tune page breaks they require.
             if !pageSystems.isEmpty {
                 let tuneH = totalHeight(of: block, endingRuns: endingRuns)
-                if y + tuneH > pageSize.height - config.margins.bottom {
+                if y + tuneH > floorY(pageHeight: pageSize.height) {
                     flushPage()
                 }
             }
@@ -245,7 +257,7 @@ public struct VerticalLayoutEngine: Sendable {
 
                 // A group breaks to the next page whole: splitting it would separate staves
                 // that only mean anything read together.
-                if !pageSystems.isEmpty && y + metrics.totalHeight > pageSize.height - config.margins.bottom {
+                if !pageSystems.isEmpty && y + metrics.totalHeight > floorY(pageHeight: pageSize.height) {
                     flushPage()
                 }
 

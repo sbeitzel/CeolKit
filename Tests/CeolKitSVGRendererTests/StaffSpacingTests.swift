@@ -15,6 +15,8 @@ import CeolKitSVGGeometry
 struct StaffSpacingTests {
 
     private let config = SVGRenderConfig()
+    /// The config as the renderer draws it, at the default page scale.
+    private var drawn: SVGRenderConfig { config.scaled(by: config.scale) }
     private let metadata = try! BravuraMetadata.load()
 
     // MARK: - Rendering
@@ -57,32 +59,32 @@ struct StaffSpacingTests {
         let staves = render(voices(3, "%%score [{1 2} 3]")).staves
         let measured = gaps(staves)
         #expect(measured.count == 2)
-        #expect(abs(measured[0] - config.spanStaffGap) < 1e-6)
-        #expect(abs(measured[1] - config.staffGap) < 1e-6)
+        #expect(abs(measured[0] - drawn.spanStaffGap) < 1e-6)
+        #expect(abs(measured[1] - drawn.staffGap) < 1e-6)
     }
 
     @Test("A bracket tightens what it covers exactly as a brace does")
     func bracketTightensToo() {
         let staves = render(voices(3, "%%score [1 2] 3")).staves
         let measured = gaps(staves)
-        #expect(abs(measured[0] - config.spanStaffGap) < 1e-6)
-        #expect(abs(measured[1] - config.staffGap) < 1e-6)
+        #expect(abs(measured[0] - drawn.spanStaffGap) < 1e-6)
+        #expect(abs(measured[1] - drawn.staffGap) < 1e-6)
     }
 
     @Test("A plan grouping every staff tightens every boundary")
     func oneSpanOverAllStavesTightensAllOfThem() {
         let measured = gaps(render(voices(3, "%%score {1 2 3}")).staves)
-        #expect(measured.allSatisfy { abs($0 - config.spanStaffGap) < 1e-6 })
+        #expect(measured.allSatisfy { abs($0 - drawn.spanStaffGap) < 1e-6 })
     }
 
     @Test("Two braced pairs under one bracket are tight inside and apart from each other")
     func siblingSpansAreSeparatedFromEachOther() {
         let measured = gaps(render(voices(4, "%%score [{1 2} {3 4}]")).staves)
         #expect(measured.count == 3)
-        #expect(abs(measured[0] - config.spanStaffGap) < 1e-6)
+        #expect(abs(measured[0] - drawn.spanStaffGap) < 1e-6)
         // The boundary between the two pairs meets only at the bracket outside them both.
-        #expect(abs(measured[1] - config.staffGap) < 1e-6)
-        #expect(abs(measured[2] - config.spanStaffGap) < 1e-6)
+        #expect(abs(measured[1] - drawn.staffGap) < 1e-6)
+        #expect(abs(measured[2] - drawn.spanStaffGap) < 1e-6)
     }
 
     // MARK: - The ungrouped page is unchanged
@@ -91,29 +93,29 @@ struct StaffSpacingTests {
     func ungroupedMultiVoiceIsUnchanged() {
         let measured = gaps(render(voices(3)).staves)
         #expect(measured.count == 2)
-        #expect(measured.allSatisfy { abs($0 - config.staffGap) < 1e-6 })
+        #expect(measured.allSatisfy { abs($0 - drawn.staffGap) < 1e-6 })
     }
 
     @Test("A plan that only orders the voices groups nothing, and tightens nothing")
     func aPlanWithNoSpansTightensNothing() {
         let measured = gaps(render(voices(3, "%%score 1 2 3")).staves)
-        #expect(measured.allSatisfy { abs($0 - config.staffGap) < 1e-6 })
+        #expect(measured.allSatisfy { abs($0 - drawn.staffGap) < 1e-6 })
     }
 
     // MARK: - Scale
 
     @Test("Halving the tune halves the gaps, and the furniture with them")
     func scalingTakesTheGapsAndTheFurnitureTogether() throws {
-        let (svg, staves) = render(voices(2, "%%score {1 2}\n%%ceolkit:scale 0.5"),
+        let (svg, staves) = render(voices(2, "%%score {1 2}\n%%pagescale 0.5"),
                                    config: {
                                        var pinned = config
                                        pinned.textRendering = .fontFace
                                        return pinned
                                    }())
         // The music is half size…
-        #expect(abs(staves[0].staffLineGap - config.staffSize / 2) < 1e-6)
+        #expect(abs(staves[0].staffLineGap - config.scaledStaffSize / 2) < 1e-6)
         // …and so is the space between the braced staves.
-        #expect(abs(gaps(staves)[0] - config.spanStaffGap / 2) < 1e-6)
+        #expect(abs(gaps(staves)[0] - drawn.spanStaffGap / 2) < 1e-6)
 
         // The brace still reaches from the first staff's top line to the last's bottom one,
         // which is the whole of what the tightened gap changed.
@@ -153,13 +155,13 @@ struct StaffSpacingTests {
         let natural = try #require(metadata.glyphBBoxes["brace"])
 
         #expect(abs(brace.y - staves[1].bottomY) < 1e-3)
-        #expect(abs(brace.y - natural.height * config.staffSize * brace.yScale
+        #expect(abs(brace.y - natural.height * config.scaledStaffSize * brace.yScale
                     - staves[0].topY) < 1e-3)
         // …and the ledger lines really are down there, below the foot it stopped at, so the
         // test is measuring the case it says it is.
-        #expect(lowestInk(in: svgs.joined()) > staves[1].bottomY + config.staffSize)
+        #expect(lowestInk(in: svgs.joined()) > staves[1].bottomY + config.scaledStaffSize)
         // The group's own spacing is untouched by an extent that grows below it.
-        #expect(abs(gaps(staves)[0] - config.spanStaffGap) < 1e-6)
+        #expect(abs(gaps(staves)[0] - drawn.spanStaffGap) < 1e-6)
     }
 
     // MARK: - Which boundaries count as joined

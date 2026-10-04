@@ -32,6 +32,22 @@ public struct SizedMeasure: Sendable {
     /// outgoing signature depend on the key being left behind, which is not the measure's to
     /// know.
     public let keyChange: KeyChange?
+    /// Where the events stood, and how wide the bar was, as the music alone spaced it —
+    /// before ``AnnotationSpacing`` opened columns up for the text on the notes (issue #185).
+    /// The ``Justifier`` stretches *these*, holding each gap to at least its widened width,
+    /// so that the room a chord symbol needed is not then scaled up again along with the
+    /// music.  Equal to ``eventOffsets`` and ``naturalWidth`` in a bar no text widened.
+    public let musicOffsets: [Double]
+    public let musicWidth: Double
+    /// Whether the opening bar was written in its own right — after a bar of its own, as in
+    /// `:| ::` or `| |`, or at the head of the tune — rather than being the previous
+    /// measure's closing bar restated.  abcm2ps draws such a bar whole wherever it falls,
+    /// the head of a system included, and so does this renderer (issue #212).
+    public let ownsOpeningBar: Bool
+    /// How far right of the measure's origin its opening bar is anchored, so that it stands
+    /// clear of whatever is drawn before it: the bar it follows, or the head of the staff.
+    /// Zero for a bar the measure does not own.  See ``ColumnMetrics/openingBarLead(for:ownsOpeningBar:atSystemStart:)``.
+    public let openingBarLead: Double
 
     public init(
         measure: Measure,
@@ -40,11 +56,19 @@ public struct SizedMeasure: Sendable {
         unitNoteLength: Fraction = Fraction(numerator: 1, denominator: 8),
         graceEventIndices: Set<Int> = [],
         eventVoiceIndices: [Int]? = nil,
-        keyChange: KeyChange? = nil
+        keyChange: KeyChange? = nil,
+        musicOffsets: [Double]? = nil,
+        musicWidth: Double? = nil,
+        ownsOpeningBar: Bool = false,
+        openingBarLead: Double = 0
     ) {
         self.measure = measure
+        self.ownsOpeningBar = ownsOpeningBar
+        self.openingBarLead = openingBarLead
         self.naturalWidth = naturalWidth
         self.eventOffsets = eventOffsets
+        self.musicOffsets = musicOffsets ?? eventOffsets
+        self.musicWidth = musicWidth ?? naturalWidth
         self.unitNoteLength = unitNoteLength
         self.graceEventIndices = graceEventIndices
         self.keyChange = keyChange
@@ -233,8 +257,8 @@ public struct TuneBlock: Sendable {
     public let titleRows: [ResolvedTitleRow]
     public let titleBlockHeight: Double
     /// Multiplier applied to `SVGRenderConfig.staffSize` (and the inter-system/inter-tune gaps
-    /// derived from it) for this tune's music, from `%%ceolkit:scale`.  `1.0` = renderer default.
-    /// The title block is laid out in absolute points and is unaffected.
+    /// derived from it) for this tune, from the page scale (`%%scale`; issue #203).  `1.0`
+    /// draws `staffSize` as it stands.  The title block arrives already laid out at it.
     public let scale: Double
     /// Step between adjacent grace noteheads in this tune's grace groups, in grace notehead
     /// widths, from `%%ceolkit:gracenotespacing`.  A ratio, not a size: unlike `scale` it is
@@ -263,6 +287,13 @@ public struct TuneBlock: Sendable {
     /// The `%%newpage` breaks this tune asks for, in system order (issue #140).  Empty for
     /// almost every tune, and an empty list is the pagination this engine has always done.
     public let pageBreaks: [ForcedPageBreak]
+    /// The `W:` lines printed below the tune, in source order; empty where the tune has none
+    /// or `%%writefields W false` suppresses them (issue #187).  An empty string is a blank
+    /// line, which takes its height and draws nothing.
+    public let words: [String]
+    /// How the tune's text is set, from its font directives (issue #186); `nil` for a block
+    /// assembled by hand, which gets CeolKit's defaults.
+    let textStyles: TextStyles?
 
     public init(systemGroups: [JustifiedSystemGroup], titleRows: [ResolvedTitleRow] = [],
                 titleBlockHeight: Double = 0, scale: Double = 1.0,
@@ -270,7 +301,24 @@ public struct TuneBlock: Sendable {
                 stemDirection: StemDirection? = nil,
                 straightFlags: Bool? = nil,
                 graceSlurs: Bool? = nil,
-                pageBreaks: [ForcedPageBreak] = []) {
+                pageBreaks: [ForcedPageBreak] = [],
+                words: [String] = []) {
+        self.init(systemGroups: systemGroups, titleRows: titleRows,
+                  titleBlockHeight: titleBlockHeight, scale: scale,
+                  graceNoteSpacing: graceNoteSpacing, stemDirection: stemDirection,
+                  straightFlags: straightFlags, graceSlurs: graceSlurs,
+                  pageBreaks: pageBreaks, words: words, textStyles: nil)
+    }
+
+    init(systemGroups: [JustifiedSystemGroup], titleRows: [ResolvedTitleRow] = [],
+                titleBlockHeight: Double = 0, scale: Double = 1.0,
+                graceNoteSpacing: Double = SVGRenderConfig().graceNoteSpacing,
+                stemDirection: StemDirection? = nil,
+                straightFlags: Bool? = nil,
+                graceSlurs: Bool? = nil,
+                pageBreaks: [ForcedPageBreak] = [],
+                words: [String] = [],
+                textStyles: TextStyles?) {
         self.systemGroups = systemGroups
         self.titleRows = titleRows
         self.titleBlockHeight = titleBlockHeight
@@ -280,6 +328,8 @@ public struct TuneBlock: Sendable {
         self.straightFlags = straightFlags
         self.graceSlurs = graceSlurs
         self.pageBreaks = pageBreaks
+        self.words = words
+        self.textStyles = textStyles
     }
 
     /// Convenience for single-voice music: each system becomes a group of one staff.
@@ -463,7 +513,13 @@ public struct ResolvedPage: Sendable {
 /// A single rendered row in the title block, with absolute page coordinates.
 public struct ResolvedTitleRow: Sendable {
     public struct Item: Sendable {
+        /// The text as it reads.  Font switches (`$1` … `$4`, §11.4.2) are taken out of a
+        /// title, composer, or other text a tune sets; ``written`` keeps them.
         public let text: String
+        /// The text as the tune wrote it, switches and all, which is what is drawn.  The
+        /// same as ``text`` on an item made by the public initialiser: a footer's `$` marks
+        /// are its own (issue #137), not font switches.
+        let written: String
         public let x: Double
         public let baselineY: Double
         public let anchor: TextAnchor
@@ -475,17 +531,61 @@ public struct ResolvedTitleRow: Sendable {
         /// what gets drawn where nobody replaces it — and the emitter wraps the item in a
         /// group a downstream consumer can find and redraw (issue #137).
         public let tag: String?
+        /// The face a font directive chose for this item (issue #186); `nil` sets it in
+        /// Libertinus Serif, italic or not by ``isItalic``.
+        let face: TextFace?
+        /// What the switches in ``written`` select (issue #204).
+        let switches: FontSwitchStyles?
 
         public init(text: String, x: Double, baselineY: Double,
                     anchor: TextAnchor, fontSize: Double, isItalic: Bool = false,
                     tag: String? = nil) {
+            self.init(text: text, x: x, baselineY: baselineY, anchor: anchor,
+                      fontSize: fontSize, isItalic: isItalic, tag: tag, face: nil)
+        }
+
+        init(text: String, x: Double, baselineY: Double, anchor: TextAnchor,
+             fontSize: Double, isItalic: Bool = false, tag: String? = nil, face: TextFace?) {
+            self.init(text: text, written: text, x: x, baselineY: baselineY, anchor: anchor,
+                      fontSize: fontSize, isItalic: isItalic, tag: tag, face: face,
+                      switches: nil)
+        }
+
+        private init(text: String, written: String, x: Double, baselineY: Double,
+                     anchor: TextAnchor, fontSize: Double, isItalic: Bool, tag: String?,
+                     face: TextFace?, switches: FontSwitchStyles?) {
             self.text = text
+            self.written = written
             self.x = x
             self.baselineY = baselineY
             self.anchor = anchor
             self.fontSize = fontSize
             self.isItalic = isItalic
             self.tag = tag
+            self.face = face
+            self.switches = switches
+        }
+
+        /// An item set in `style`, `text` as the tune wrote it: any font switches in it
+        /// are followed (issue #204).
+        init(text: String, x: Double, baselineY: Double, anchor: TextAnchor,
+             style: TextStyle) {
+            self.init(text: FontSwitch.plainText(text), written: text, x: x,
+                      baselineY: baselineY, anchor: anchor, fontSize: style.size,
+                      isItalic: style.face?.isItalic ?? style.italic, tag: nil,
+                      face: style.face, switches: style.switches)
+        }
+
+        /// The same item `dy` further down the page.
+        func offset(by dy: Double) -> Item {
+            Item(text: text, written: written, x: x, baselineY: baselineY + dy,
+                 anchor: anchor, fontSize: fontSize, isItalic: isItalic, tag: tag,
+                 face: face, switches: switches)
+        }
+
+        /// The style the item is drawn in.
+        var style: TextStyle {
+            TextStyle(face: face, size: fontSize, italic: isItalic, switches: switches)
         }
     }
 
@@ -653,7 +753,7 @@ public struct ResolvedSystem: Sendable {
     public let measures: [ResolvedMeasure]
     /// Y offset of the top staff line relative to `origin.y`.
     public let staffOrigin: Double
-    /// Distance between adjacent staff lines, after `%%ceolkit:scale` has been applied.
+    /// Distance between adjacent staff lines, after the page scale (`%%scale`) has been applied.
     /// The emitter derives every glyph and stem dimension in this system from it.
     public let staffSize: Double
     /// Height of the staff body: 4 × staffSize (five lines, four spaces).
@@ -723,6 +823,10 @@ public struct ResolvedSystem: Sendable {
     /// one.  It is drawn there and not again at the head of the bar — the opening measure is
     /// sized without it for exactly that reason (#134).
     public let headerKeyChange: KeyChange?
+
+    /// How the tune's text is set (issue #186), for the emitter to draw it as the layout
+    /// spaced it.  `nil` on a layout assembled by hand, which gets CeolKit's defaults.
+    var textStyles: TextStyles? = nil
 
     /// What the staff's first voice asked for; see ``System/stemDirection``.
     public var stemDirection: StemDirection { voiceStemDirections.first ?? .auto }

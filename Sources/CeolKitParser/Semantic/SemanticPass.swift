@@ -165,6 +165,7 @@ struct SemanticPass {
                     staffPlans: filePlans + tune.staffPlans,
                     pageBreaks: breaks,
                     footer: tuneFooter,
+                    words: tune.words,
                     source: tune.source
                 ))
             } else {
@@ -248,6 +249,9 @@ struct SemanticPass {
             || name == "dateformat" || name == "footer"
             || name == "straightflags" || name == "graceslurs"
             || name == "score" || name == "staves" || name == "newpage"
+            || name == "scale" || name == "pagescale" || name == "stretchlast"
+            || name == "stretchstaff"
+            || TextFontRole(rawValue: name) != nil
     }
 
     /// The argument of a `%%newpage` (ABC v2.2 §11.4.7, issue #140): the number the new page
@@ -414,6 +418,7 @@ struct SemanticPass {
             directives: tuneDirectives + bodyCtx.bodyTuneDirectives,
             staffPlans: initialStaffPlans(from: tuneDirectives) + bodyCtx.bodyStaffPlans,
             pageBreaks: headerBreaks + bodyCtx.bodyPageBreaks,
+            words: ctx.words + bodyCtx.bodyWords,
             source: abcTune.source
         )
         return (tune, diagnostics, headerOrientations + bodyCtx.bodyOrientations)
@@ -441,22 +446,24 @@ struct SemanticPass {
         case .userSymbol(let ch, let d, _): ctx.userSymbols[ch] = d
         case .macro(let pat, let exp, let src):
             ctx.macros.append(MacroDefinition(pattern: pat, expansion: exp, source: src))
-        case .composer(let t):          ctx.composer = t
+        case .composer(let t):          ctx.composer.append(t)
+        case .words(let t):             ctx.words.append(t)
         case .origin(let t):
             let parts = t.value.components(separatedBy: ";")
                 .map { $0.trimmingCharacters(in: .whitespaces) }
                 .filter { !$0.isEmpty }
             ctx.origins.append(contentsOf: parts)
-        case .area(let t):              ctx.area = t
-        case .book(let t):              ctx.book = t
-        case .discography(let t):       ctx.discography = t
-        case .fileUrl(let t):           ctx.fileURL = URL(string: t.value)
-        case .group(let t):             ctx.group = t
+        case .area(let t):              ctx.area.append(t)
+        case .book(let t):              ctx.book.append(t)
+        case .discography(let t):       ctx.discography.append(t)
+        case .fileUrl(let t):
+            if let url = URL(string: t.value) { ctx.fileURL.append(url) }
+        case .group(let t):             ctx.group.append(t)
         case .history(let t):           ctx.history.append(t)
-        case .notes(let t):             ctx.notes = t
-        case .sourceText(let t):        ctx.sourceText = t
-        case .rhythm(let t):            ctx.rhythm = t
-        case .transcription(let t):     ctx.transcription = t
+        case .notes(let t):             ctx.notes.append(t)
+        case .sourceText(let t):        ctx.sourceText.append(t)
+        case .rhythm(let t):            ctx.rhythm.append(t)
+        case .transcription(let t):     ctx.transcription.append(t)
         case .instruction(let t):
             let parts = t.value.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
             if parts.first?.lowercased() == "linebreak" {
@@ -962,6 +969,10 @@ struct SemanticPass {
             ctx.applyLyrics(tokens, in: voice.primary)
         case .userSymbol(let ch, let dec, _):
             ctx.userSymbols[ch] = dec
+        case .words(let t):
+            // Usually after the last line of music (§3: W: may appear in the body).  The
+            // words print as one block below the tune wherever they were written.
+            ctx.bodyWords.append(t)
         case .instruction(let t)
             where t.value.trimmingCharacters(in: .whitespaces).lowercased().hasPrefix("abc-include"):
             diagnostics.append(Diagnostic(
@@ -1061,15 +1072,24 @@ struct SemanticPass {
                 beforeStave: ctx.currentStaveIndex,
                 restartingAt: parseNewPage(payload, source: source, diagnostics: &diagnostics),
                 source: source))
-        case "landscape", "flatbeams", "ceolkit:justifylast", "ceolkit:scale",
-             "ceolkit:gracenotespacing", "writefields",
-             "dateformat", "footer", "straightflags", "graceslurs":
+        case "landscape", "flatbeams", "ceolkit:justifylast", "stretchlast", "stretchstaff",
+             "ceolkit:scale",
+             "scale", "pagescale", "ceolkit:gracenotespacing", "ceolkit:fontlist", "writefields",
+             "dateformat", "footer", "straightflags", "graceslurs",
+             _ where TextFontRole(rawValue: name) != nil:
             var tempDiags: [Diagnostic] = []
             if let d = parseCeolKitDirective(name: name, payload: payload, source: source, diagnostics: &tempDiags) {
                 ctx.bodyTuneDirectives.append(CeolKitDirectiveScope(directive: d, scope: .tuneGlobal, source: source))
                 // §11.4.7 / issue #158: a page turns only where a page breaks, so a
                 // `%%landscape` in the body is recorded against the stave enclosing it — the
                 // same stave a `%%newpage` written beside it breaks before.
+                if case .scale = d, name != "ceolkit:scale" {
+                    tempDiags.append(Diagnostic(
+                        severity: .info, code: .scaleAppliesToWholeTune,
+                        message: "%%\(name) in the tune body scales the whole tune, "
+                               + "not just the music after it",
+                        source: source))
+                }
                 if case .landscape(let on) = d {
                     ctx.bodyOrientations.append(
                         OrientationRequest(landscape: on, stave: ctx.currentStaveIndex,
@@ -1244,42 +1264,171 @@ struct SemanticPass {
     /// — but it must be *made* of them: `"Fine"` is text, not an F chord of quality `ine`
     /// (issue #177).
     private func parseChordSymbol(_ raw: String, source: SourceRange) -> ChordSymbol? {
-        var body = Substring(raw.trimmingCharacters(in: .whitespaces))
-        // An alternate chord, "G(Em)": only for printing, but it has to be a chord too.
-        if body.hasSuffix(")"), let open = body.firstIndex(of: "("), open != body.startIndex {
+        // Font switches (`$1` … `$4`, §11.4.2) say how the chord is set, not what it is: it
+        // is read without them, and they go back into its text runs for the renderer to
+        // follow, as abcm2ps sets `"G$1m"` (issue #204).
+        let (text, switches) = Self.removingFontSwitches(
+            raw.trimmingCharacters(in: .whitespaces))
+        var body = Substring(text)
+        var accidentals: [ChordAccidental] = []
+        // An alternate chord, "G(Em)": only for printing, but it has to be a chord too.  Where
+        // the parentheses also read as part of the type — "C7(b9)", "G7(#11)" — they are taken
+        // that way: an alteration is written so far more often than an alternate chord
+        // spelled in lower case, and reading it as one would print the `b` as a letter.
+        if parseChordSpelling(body) == nil,
+           body.hasSuffix(")"), let open = body.firstIndex(of: "("), open != body.startIndex {
             let alternate = body[body.index(after: open)..<body.index(before: body.endIndex)]
-            if parseChordSpelling(alternate) != nil { body = body[..<open] }
+            if let spelling = parseChordSpelling(alternate) {
+                body = body[..<open]
+                accidentals = spelling.accidentals
+            }
         }
-        guard let (root, quality, bassNote) = parseChordSpelling(body) else { return nil }
-        return ChordSymbol(root: root, quality: quality, bassNote: bassNote, raw: raw, source: source)
+        guard let (root, quality, bassNote, own) = parseChordSpelling(body) else { return nil }
+        return ChordSymbol(root: root, quality: quality, bassNote: bassNote, raw: raw,
+                           segments: Self.restoring(switches, into: chordSegments(
+                               text, accidentals: own + accidentals)),
+                           source: source)
     }
 
-    /// `<note><accidental><type></bass>`, the whole of `text` and nothing else.
+    /// A font switch taken out of a chord symbol: the switch as written, and how many
+    /// characters of the remaining text stand before it.
+    private typealias RemovedSwitch = (offset: Int, written: String)
+
+    /// `text` without its `$0` … `$4` switches, and the switches.  `$$` stays: a chord is
+    /// not spelled with a dollar sign, so one is text whichever way it is read.
+    private static func removingFontSwitches(_ text: String)
+        -> (text: String, switches: [RemovedSwitch]) {
+        guard text.contains("$") else { return (text, []) }
+        var plain = ""
+        var switches: [RemovedSwitch] = []
+        var characters = Substring(text)
+        while let first = characters.first {
+            let rest = characters.dropFirst()
+            if first == "$", let next = rest.first {
+                if next == "$" {
+                    plain += "$$"
+                    characters = rest.dropFirst()
+                    continue
+                }
+                if next.isASCII, let digit = next.wholeNumberValue,
+                   (0...FontSwitch.maxFont).contains(digit) {
+                    switches.append((plain.count, "$\(digit)"))
+                    characters = rest.dropFirst()
+                    continue
+                }
+            }
+            plain.append(first)
+            characters = rest
+        }
+        return (plain, switches)
+    }
+
+    /// `segments` with `switches` written back into their text where they were taken from.
+    /// A switch never falls inside an accidental, which is one character: one before it
+    /// ends the text run ahead of it.
+    private static func restoring(_ switches: [RemovedSwitch],
+                                  into segments: [ChordSymbol.Segment]) -> [ChordSymbol.Segment] {
+        guard !switches.isEmpty else { return segments }
+        var result: [ChordSymbol.Segment] = []
+        var pending = switches[...]
+        var offset = 0
+        func appendText(_ text: String) {
+            guard !text.isEmpty else { return }
+            if case .text(let previous)? = result.last {
+                result[result.count - 1] = .text(previous + text)
+            } else {
+                result.append(.text(text))
+            }
+        }
+        func switchesHere() -> String {
+            var written = ""
+            while let next = pending.first, next.offset == offset {
+                written += next.written
+                pending.removeFirst()
+            }
+            return written
+        }
+        for segment in segments {
+            switch segment {
+            case .text(let text):
+                var written = ""
+                for character in text {
+                    written += switchesHere()
+                    written.append(character)
+                    offset += 1
+                }
+                appendText(written)
+            case .accidental:
+                appendText(switchesHere())
+                result.append(segment)
+                offset += 1
+            }
+        }
+        appendText(pending.map(\.written).joined())
+        return result
+    }
+
+    /// One character of a chord symbol read as an accidental: where it is, and what it is.
+    private typealias ChordAccidental = (index: String.Index, alteration: Alteration)
+
+    /// `text` split into runs of text and the accidentals at `accidentals`.
+    private func chordSegments(_ text: String,
+                               accidentals: [ChordAccidental]) -> [ChordSymbol.Segment] {
+        var segments: [ChordSymbol.Segment] = []
+        var runStart = text.startIndex
+        for accidental in accidentals.sorted(by: { $0.index < $1.index }) {
+            if runStart < accidental.index {
+                segments.append(.text(String(text[runStart..<accidental.index])))
+            }
+            segments.append(.accidental(accidental.alteration))
+            runStart = text.index(after: accidental.index)
+        }
+        if runStart < text.endIndex { segments.append(.text(String(text[runStart...]))) }
+        return segments
+    }
+
+    /// `<note><accidental><type></bass>`, the whole of `text` and nothing else, with every
+    /// character of it that was read as an accidental.
     private func parseChordSpelling(_ text: Substring)
-        -> (root: PitchClass, quality: String, bassNote: PitchClass?)? {
+        -> (root: PitchClass, quality: String, bassNote: PitchClass?,
+            accidentals: [ChordAccidental])? {
         var rest = text
         var bassNote: PitchClass? = nil
+        var accidentals: [ChordAccidental] = []
         if let slash = rest.lastIndex(of: "/") {
             var bass = rest[rest.index(after: slash)...]
-            guard let bassRoot = parsePitchClass(&bass), bass.isEmpty else { return nil }
+            guard let bassRoot = parsePitchClass(&bass, accidentals: &accidentals),
+                  bass.isEmpty else { return nil }
             bassNote = bassRoot
             rest = rest[..<slash]
         }
-        guard let root = parsePitchClass(&rest), isChordQuality(rest) else { return nil }
-        return (root, String(rest), bassNote)
+        guard let root = parsePitchClass(&rest, accidentals: &accidentals),
+              isChordQuality(rest, accidentals: &accidentals) else { return nil }
+        return (root, String(rest), bassNote, accidentals)
     }
 
     /// A note letter and its optional accidental, consumed from the front of `text`.
-    private func parsePitchClass(_ text: inout Substring) -> PitchClass? {
+    private func parsePitchClass(_ text: inout Substring,
+                                 accidentals: inout [ChordAccidental]) -> PitchClass? {
         guard let first = text.first, let step = letterToDiatonicStep(first) else { return nil }
         text = text.dropFirst()
         var alteration = Alteration.natural
-        switch text.first {
-        case "#", "♯": alteration = .sharp; text = text.dropFirst()
-        case "b", "♭": alteration = .flat;  text = text.dropFirst()
-        default: break
+        if let sign = text.first, let read = Self.chordAccidental(sign), read != .natural {
+            alteration = read
+            accidentals.append((text.startIndex, read))
+            text = text.dropFirst()
         }
         return PitchClass(step: step, alteration: alteration)
+    }
+
+    /// The accidental a character of a chord symbol spells, where it spells one.
+    private static func chordAccidental(_ character: Character) -> Alteration? {
+        switch character {
+        case "#", "♯": return .sharp
+        case "b", "♭": return .flat
+        case "♮":      return .natural
+        default:       return nil
+        }
     }
 
     /// The words and signs a chord's type is spelled with, longest first so that `maj`
@@ -1290,17 +1439,26 @@ struct SemanticPass {
     ]
 
     /// Whether `text` is empty or wholly made of ``chordQualityTokens`` and numbers.
-    private func isChordQuality(_ text: Substring) -> Bool {
+    ///
+    /// Every `b` and `#` a type can hold is an accidental — none of the words it is spelled
+    /// with contains either — so each one found is added to `accidentals`.
+    private func isChordQuality(_ text: Substring,
+                                accidentals: inout [ChordAccidental]) -> Bool {
         var rest = text
+        var found: [ChordAccidental] = []
         while let first = rest.first {
             if first.isASCII, first.isNumber {
                 rest = rest.drop(while: { $0.isASCII && $0.isNumber })
             } else if let token = Self.chordQualityTokens.first(where: { rest.hasPrefix($0) }) {
+                if token.count == 1, let read = Self.chordAccidental(first) {
+                    found.append((rest.startIndex, read))
+                }
                 rest = rest.dropFirst(token.count)
             } else {
                 return false
             }
         }
+        accidentals += found
         return true
     }
 
@@ -1430,18 +1588,26 @@ struct SemanticPass {
             diagnostics.append(Diagnostic(severity: .warning, code: .misplacedStemAlignment,
                 message: "%%ceolkit:stemalignment expects an integer", source: source))
             return nil
-        case "ceolkit:scale":
-            if let f = Double(trimmed) {
-                if f <= 0 || !f.isFinite {
-                    diagnostics.append(Diagnostic(severity: .warning, code: .invalidScale,
-                        message: "%%ceolkit:scale must be a positive number (got \(trimmed))", source: source))
-                    return nil
-                }
-                return .scale(f)
+        case "scale", "pagescale", "ceolkit:scale":
+            // One factor, stored as abcm2ps's `%%scale` value: `%%pagescale` is the real
+            // scale, and `%%scale 0.75` ≡ `%%pagescale 1` (issue #203).  `%%ceolkit:scale`
+            // was CeolKit's own spelling of the same idea, so it is `%%pagescale` now.
+            guard let f = Double(trimmed) else {
+                diagnostics.append(Diagnostic(severity: .warning, code: .invalidScale,
+                    message: "%%\(name) expects a number (got '\(trimmed)')", source: source))
+                return nil
             }
-            diagnostics.append(Diagnostic(severity: .warning, code: .invalidScale,
-                message: "%%ceolkit:scale expects a number (got '\(trimmed)')", source: source))
-            return nil
+            guard f > 0, f.isFinite else {
+                diagnostics.append(Diagnostic(severity: .warning, code: .invalidScale,
+                    message: "%%\(name) must be a positive number (got \(trimmed))", source: source))
+                return nil
+            }
+            if name == "ceolkit:scale" {
+                diagnostics.append(Diagnostic(severity: .warning, code: .deprecatedDirective,
+                    message: "%%ceolkit:scale is deprecated; use %%pagescale \(trimmed), "
+                           + "which it now means", source: source))
+            }
+            return .scale(name == "scale" ? f : f * 0.75)
         case "ceolkit:gracenotespacing":
             // A factor below 1 steps less than one notehead width, so adjacent grace
             // noteheads within a group would overlap. Rejected rather than clamped, so the
@@ -1468,11 +1634,49 @@ struct SemanticPass {
             diagnostics.append(Diagnostic(severity: .warning, code: .unknownDirective,
                 message: "%%flatbeams expects '0'/'false' or '1'/'true'", source: source))
             return nil
-        case "ceolkit:justifylast":
-            if let value = parseLogical(trimmed) { return .justifyLast(value) }
-            diagnostics.append(Diagnostic(severity: .warning, code: .unknownDirective,
-                message: "%%ceolkit:justifylast expects 'true' or 'false'", source: source))
+        case "stretchlast":
+            // abcm2ps takes a fraction of the line and rejects anything outside 0…1; the
+            // ABC v2.2 spec's list of directives gives it a logical, which is the two ends of
+            // that range.  A number is tried first, so `0` and `1` mean the same either way.
+            if let f = Double(trimmed), f.isFinite {
+                guard (0...1).contains(f) else {
+                    diagnostics.append(Diagnostic(severity: .warning, code: .invalidStretchLast,
+                        message: "%%stretchlast must be between 0 and 1 (got \(trimmed))",
+                        source: source))
+                    return nil
+                }
+                return .stretchLast(f)
+            }
+            if let value = parseLogical(trimmed) { return .stretchLast(value ? 1 : 0) }
+            diagnostics.append(Diagnostic(severity: .warning, code: .invalidStretchLast,
+                message: "%%stretchlast expects a number from 0 to 1, or 'true'/'false' "
+                       + "(got '\(trimmed)')", source: source))
             return nil
+        case "stretchstaff":
+            if let value = parseLogical(trimmed) { return .stretchStaff(value) }
+            diagnostics.append(Diagnostic(severity: .warning, code: .unknownDirective,
+                message: "%%stretchstaff expects '0'/'false' or '1'/'true'", source: source))
+            return nil
+        case "ceolkit:justifylast":
+            guard let value = parseLogical(trimmed) else {
+                diagnostics.append(Diagnostic(severity: .warning, code: .invalidStretchLast,
+                    message: "%%ceolkit:justifylast expects 'true' or 'false'", source: source))
+                return nil
+            }
+            diagnostics.append(Diagnostic(severity: .warning, code: .deprecatedDirective,
+                message: "%%ceolkit:justifylast is deprecated; use %%stretchlast \(value ? 1 : 0), "
+                       + "which it now means", source: source))
+            return .stretchLast(value ? 1 : 0)
+        case "ceolkit:fontlist":
+            if trimmed.isEmpty { return .fontList(.resolved) }
+            if let mode = FontListMode(rawValue: trimmed.lowercased()) { return .fontList(mode) }
+            diagnostics.append(Diagnostic(severity: .warning, code: .invalidFontDirective,
+                message: "%%ceolkit:fontlist expects 'resolved' or 'available' (got '\(trimmed)')",
+                source: source))
+            return nil
+        case _ where TextFontRole(rawValue: name) != nil:
+            return parseFontDirective(name: name, payload: trimmed, source: source,
+                                      diagnostics: &diagnostics)
         case "writefields":
             // Syntax: <fieldList> [true|false]
             // The field list is a run of letters; an optional logical value follows.
@@ -1551,6 +1755,52 @@ struct SemanticPass {
     }
 
     // Strips a single pair of surrounding double-quotes (e.g. `"text"` → `text`).
+    /// A §11.4.2 font directive: `%%<role>font <font name> [<size>]`.
+    ///
+    /// The name may be quoted, for a family with spaces in it (`"Times New Roman" 12`, as
+    /// abc2svg allows), and `*` keeps the face in force, as abcm2ps has it.  The spec asks
+    /// for an integer size but makes it optional; a fractional one is taken as written.  A
+    /// payload that is not that shape is reported and the directive dropped, rather than
+    /// half-applied.
+    private func parseFontDirective(name: String, payload: String, source: SourceRange,
+                                    diagnostics: inout [Diagnostic]) -> CeolKitDirective? {
+        guard let role = TextFontRole(rawValue: name) else { return nil }
+        func malformed(_ why: String) -> CeolKitDirective? {
+            diagnostics.append(Diagnostic(
+                severity: .warning, code: .invalidFontDirective,
+                message: "%%\(name) \(why); expected %%\(name) <font name> [<size>]",
+                source: source))
+            return nil
+        }
+
+        var rest = Substring(payload)
+        let fontName: Substring
+        if rest.first == "\"" {
+            guard let close = rest.dropFirst().firstIndex(of: "\"") else {
+                return malformed("has an unterminated quoted font name")
+            }
+            fontName = rest[rest.index(after: rest.startIndex)..<close]
+            rest = rest[rest.index(after: close)...]
+        } else {
+            fontName = rest.prefix { !$0.isWhitespace }
+            rest = rest.dropFirst(fontName.count)
+        }
+        guard !fontName.isEmpty else { return malformed("names no font") }
+
+        let words = rest.split(whereSeparator: \.isWhitespace)
+        guard words.count <= 1 else {
+            return malformed("has \"\(words.dropFirst().joined(separator: " "))\" after the size")
+        }
+        var size: Double?
+        if let word = words.first {
+            guard let value = Double(word), value > 0, value.isFinite else {
+                return malformed("has \"\(word)\" where a size belongs")
+            }
+            size = value
+        }
+        return .font(role, FontSpec(name: fontName == "*" ? nil : String(fontName), size: size))
+    }
+
     private func stripQuotes(_ s: String) -> String {
         guard s.count >= 2, s.first == "\"", s.last == "\"" else { return s }
         return String(s.dropFirst().dropLast())
@@ -1930,18 +2180,19 @@ private struct TuneContext {
     var userSymbols: [Character: Decoration] = [:]
     var macros: [MacroDefinition] = []
     // metadata fields
-    var composer: TextString? = nil
+    var composer: [TextString] = []
     var origins: [String] = []
-    var area: TextString? = nil
-    var book: TextString? = nil
-    var discography: TextString? = nil
-    var fileURL: URL? = nil
-    var group: TextString? = nil
+    var area: [TextString] = []
+    var book: [TextString] = []
+    var discography: [TextString] = []
+    var fileURL: [URL] = []
+    var group: [TextString] = []
     var history: [TextString] = []
-    var notes: TextString? = nil
-    var sourceText: TextString? = nil
-    var rhythm: TextString? = nil
-    var transcription: TextString? = nil
+    var notes: [TextString] = []
+    var sourceText: [TextString] = []
+    var rhythm: [TextString] = []
+    var transcription: [TextString] = []
+    var words: [TextString] = []
     // I:linebreak parsed per ABC 2.2 §9.2 — default is I:linebreak <EOL> $
     var linebreakChars: Set<Character> = ["$"] // $ and/or !
     var linebreakOnEOL: Bool = true            // <EOL> token

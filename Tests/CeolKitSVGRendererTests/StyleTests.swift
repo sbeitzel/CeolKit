@@ -18,7 +18,7 @@ private func parse(_ source: String) -> ParseResult {
 private let multitune = """
 %abc-2.2
 %%ceolkit:pipeformat true
-%%ceolkit:justifylast true
+%%stretchlast 1
 %%writefields TRCQ true
 %%footer "        Generated: $D"
 %%dateformat "%e %B %Y %H:%M"
@@ -42,11 +42,11 @@ K:Cmaj
 a g d A |
 """
 
-// Same tune as abcTune but with %%ceolkit:justifylast true added.
+// Same tune as abcTune but with %%stretchlast 1 added.
 private let abcTuneJustifyLast = """
 %abc-2.2
 %%ceolkit:pipeformat true
-%%ceolkit:justifylast true
+%%stretchlast 1
 %%writefields TRC true
 %%footer "        Generated: $D"
 %%straightflags false
@@ -206,7 +206,7 @@ struct StyleTests {
         let widths    = systems.enumerated().map { i, _ in i == 0 ? firstHeaderW : laterHeaderW }
         let justified = justifier.justify(systems,
                                           usableWidth: usableWidth,
-                                          justifyLastSystem: config.justifyLastSystem,
+                                          stretchLast: config.stretchLast,
                                           systemHeaderWidths: widths)
 
         let allSystems = engine.layout(justified).pages.flatMap { $0.systems }
@@ -230,15 +230,15 @@ struct StyleTests {
         }
     }
 
-    // MARK: - %%ceolkit:justifylast
+    // MARK: - %%stretchlast
 
     // Shared layout helper: sizes and breaks measures into justified systems.
-    // `justifyLast` is passed explicitly so callers can verify directive-driven behaviour.
+    // `stretchLast` is passed explicitly so callers can verify directive-driven behaviour.
     private func justifiedSystems(
         score: Score,
         config: SVGRenderConfig,
         metadata: BravuraMetadata,
-        justifyLast: Bool
+        stretchLast: Double
     ) throws -> (systems: [JustifiedSystem], usableWidth: Double, laterHeaderWidth: Double) {
         let tune  = try #require(score.tunes.first)
         let voice = try #require(tune.voices.first)
@@ -280,12 +280,12 @@ struct StyleTests {
         let widths   = systems.enumerated().map { i, _ in i == 0 ? firstHeaderW : laterHeaderW }
         let justified = justifier.justify(systems,
                                           usableWidth: usableWidth,
-                                          justifyLastSystem: justifyLast,
+                                          stretchLast: stretchLast,
                                           systemHeaderWidths: widths)
         return (justified, usableWidth, laterHeaderW)
     }
 
-    // When %%ceolkit:justifylast true is present the last system must be stretched
+    // When %%stretchlast 1 is present the last system must be stretched
     // to fill the full usable line width, just like every other system.
     @Test func lastSystemIsJustifiedWhenDirectiveIsTrue() throws {
         let metadata = try BravuraMetadata.load()
@@ -294,22 +294,22 @@ struct StyleTests {
 
         // Verify the directive parsed correctly.
         let tune = try #require(score.tunes.first)
-        let directiveValue = tune.directives.compactMap { scope -> Bool? in
-            if case .justifyLast(let v) = scope.directive { return v }
+        let directiveValue = tune.directives.compactMap { scope -> Double? in
+            if case .stretchLast(let v) = scope.directive { return v }
             return nil
         }.last
-        let justifyLast = try #require(directiveValue as Bool?,
-            "%%ceolkit:justifylast true should produce a .justifyLast(true) directive on the tune")
+        let stretchLast = try #require(directiveValue,
+            "%%stretchlast 1 should produce a .stretchLast(1) directive on the tune")
 
         let (systems, usableWidth, laterHeaderW) = try justifiedSystems(
-            score: score, config: config, metadata: metadata, justifyLast: justifyLast)
+            score: score, config: config, metadata: metadata, stretchLast: stretchLast)
 
         let lastSystem  = try #require(systems.last)
         let lastTotalW  = lastSystem.measures.reduce(0.0) { $0 + $1.finalWidth }
         let targetWidth = usableWidth - laterHeaderW
 
         #expect(abs(lastTotalW - targetWidth) < 1.0,
-            "last system total width \(lastTotalW) should equal target \(targetWidth) when justifyLast is true")
+            "last system total width \(lastTotalW) should equal target \(targetWidth) when %%stretchlast is 1")
     }
 
     // MARK: Title placement
@@ -666,22 +666,39 @@ struct StyleTests {
                 "$d placeholder should be expanded using %%dateformat")
     }
 
-    // Without %%ceolkit:justifylast (or with false) the last system stays at its
-    // natural width, noticeably shorter than the full usable line width.
-    @Test func lastSystemIsRaggedRightByDefault() throws {
+    // With %%stretchlast 0 the last system stays at its natural width, noticeably shorter
+    // than the full usable line width.
+    @Test func lastSystemIsRaggedRightWithStretchLastZero() throws {
         let metadata = try BravuraMetadata.load()
         let config   = SVGRenderConfig(pageSize: .letter.landscape)
-        // abcTune has no %%ceolkit:justifylast directive; default is false.
         let score    = parse(abcTune).score
 
         let (systems, usableWidth, laterHeaderW) = try justifiedSystems(
-            score: score, config: config, metadata: metadata, justifyLast: false)
+            score: score, config: config, metadata: metadata, stretchLast: 0)
 
         let lastSystem  = try #require(systems.last)
         let lastTotalW  = lastSystem.measures.reduce(0.0) { $0 + $1.finalWidth }
         let targetWidth = usableWidth - laterHeaderW
 
         #expect(lastTotalW < targetWidth - 1.0,
-            "last system total width \(lastTotalW) should be less than target \(targetWidth) by default")
+            "last system total width \(lastTotalW) should be less than target \(targetWidth)")
+    }
+
+    // abcTune's last line is four full bars, like every line above it, so the default
+    // %%stretchlast (0.25, abcm2ps's) stretches it to the line as well (issue #198).
+    @Test func fullLastSystemIsStretchedByDefault() throws {
+        let metadata = try BravuraMetadata.load()
+        let config   = SVGRenderConfig(pageSize: .letter.landscape)
+        let score    = parse(abcTune).score
+
+        let (systems, usableWidth, laterHeaderW) = try justifiedSystems(
+            score: score, config: config, metadata: metadata, stretchLast: config.stretchLast)
+
+        let lastSystem  = try #require(systems.last)
+        let lastTotalW  = lastSystem.measures.reduce(0.0) { $0 + $1.finalWidth }
+        let targetWidth = usableWidth - laterHeaderW
+
+        #expect(abs(lastTotalW - targetWidth) < 1.0,
+            "last system total width \(lastTotalW) should equal target \(targetWidth)")
     }
 }

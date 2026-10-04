@@ -58,10 +58,11 @@ It is the fastest way to answer a layout question without a GUI:
 
 ```bash
 swift run ckprobe tune.abc                          # full report
-swift run ckprobe tune.abc --scale 0.85             # override %%ceolkit:scale
-swift run ckprobe tune.abc --sweep 1.5,1.0,0.85     # systems/pages per scale factor
-swift run ckprobe tune.abc --natural                # unstretched system widths
+swift run ckprobe tune.abc --scale 0.6              # override %%scale (default 0.75)
+swift run ckprobe tune.abc --sweep 1.0,0.75,0.6     # systems/pages per %%scale
+swift run ckprobe tune.abc --natural                # unstretched system widths (%%stretchstaff 0)
 swift run ckprobe tune.abc --out /tmp/out --json
+swift run ckprobe --fonts [--system-fonts]          # faces text could be set in
 swift run ckprobe tune.abc --out /tmp/out --font-face       # <text> + @font-face
 rsvg-convert -w 1500 /tmp/out/page0.svg -o /tmp/page0.png   # to look at a page
 ```
@@ -107,14 +108,17 @@ The parser **always returns a `Score`**, even on error. Every stage has a recove
 `Note` carries both `writtenAccidental` (what was in the ABC source) and `displayedAccidental` (what a renderer should draw after key signature and intra-bar accidental memory). These differ, e.g., for the second `c` after `^c` in C major.
 
 ### CeolKit extensions
-Seven `%%ceolkit:*` directives are first-class model members:
+Eight `%%ceolkit:*` directives are first-class model members:
 - `%%ceolkit:pipeformat true|false`
 - `%%ceolkit:pagenumber N`
 - `%%ceolkit:stemalignment N`
-- `%%ceolkit:justifylast true|false`
-- `%%ceolkit:scale F` (F > 0; tune-wide, never per-voice)
+- `%%ceolkit:justifylast true|false` (**deprecated**: parsed as `%%stretchlast 1|0` with a
+  `deprecatedDirective` warning; the last line is abcm2ps's `%%stretchlast`/`%%stretchstaff`)
+- `%%ceolkit:scale F` (**deprecated**: parsed as `%%pagescale F` with a `deprecatedDirective` warning;
+  the page scale is `%%scale`/`%%pagescale`, as in abcm2ps — see `EXTENSIONS.md`)
 - `%%ceolkit:gracenotespacing F` (F >= 1, in grace notehead widths; tune-wide, never per-voice)
 - `%%ceolkit:label "text"` (the value of a `${label}` footer mark; scoped like `%%footer`)
+- `%%ceolkit:fontlist [resolved|available]` (reports fonts as `.info` diagnostics at the directive; the renderer does the reporting)
 
 All are represented in `CeolKitDirective` (an enum, not a string map). An unrecognised directive is not represented at all: it produces an `unknownDirective` diagnostic and is dropped. They attach to a `Scope` (`.fileGlobal`, `.tuneGlobal`, `.voiceLocal(VoiceId)`).
 

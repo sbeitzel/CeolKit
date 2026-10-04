@@ -7,6 +7,10 @@ struct EmbeddedFaces: Sendable {
     let bravura: String
     let libertinusSerif: String
     let libertinusSerifItalic: String
+    /// The bold faces, each only where a font directive draws with it (issue #186): every
+    /// other document is written without them, as it was before they were bundled.
+    var libertinusSerifBold: String? = nil
+    var libertinusSerifBoldItalic: String? = nil
 }
 
 /// Lightweight SVG element builder used exclusively by `SVGEmitter`.
@@ -22,8 +26,10 @@ struct SVGBuilder: Sendable {
     private(set) var elements: [String] = []
 
     let textRendering: TextRendering
-    /// The parsed faces outlines are read from. `nil` leaves every run on `<text>`.
-    let fonts: OutlineFontSet?
+    /// Where the faces outlines are read from — the bundle, and the host's and system's
+    /// fonts where the configuration allows them (issue #190).  `nil` leaves every run on
+    /// `<text>`.
+    let fonts: FontProvider?
 
     /// Glyph outline path data by `<defs>` id; an empty string records a glyph that is
     /// known to have no outline (a space, say) so it is not decoded again.
@@ -35,7 +41,7 @@ struct SVGBuilder: Sendable {
     /// name still get unique `id`s — see ``tagGroup(name:x:y:fontFamily:fontSize:textAnchor:_:)``.
     private var tagCounts: [String: Int] = [:]
 
-    init(textRendering: TextRendering = .fontFace, fonts: OutlineFontSet? = nil) {
+    init(textRendering: TextRendering = .fontFace, fonts: FontProvider? = nil) {
         self.textRendering = textRendering
         self.fonts = fonts
     }
@@ -79,6 +85,31 @@ struct SVGBuilder: Sendable {
         appendTextElement(content, x: x, y: y, fontFamily: fontFamily, fontSize: fontSize,
                           fill: fill, textAnchor: textAnchor, fontStyle: fontStyle,
                           className: className)
+    }
+
+    /// Draws `content` in `face`, a face a font directive chose (issue #186).
+    ///
+    /// The run is outlined from that face itself, not looked up again by family name — the
+    /// face answered a request that may have named a PostScript name or a weight a family
+    /// lookup would not reproduce.  In ``TextRendering/fontFace`` mode the `<text>` names
+    /// the face's family, weight and style, for the viewer to resolve.
+    mutating func text(_ content: String, x: Double, y: Double, face: TextFace,
+                       fontSize: Double, textAnchor: String = "start") {
+        let fontStyle = face.isItalic ? "italic" : nil
+        let fontWeight = face.isBold ? "bold" : nil
+        if textRendering.emitsOutlines {
+            appendOutlineRun(content, x: x, y: y, face: face.key, font: face.font,
+                             fontSize: fontSize, fill: "black", textAnchor: textAnchor,
+                             className: nil)
+            guard textRendering == .both else { return }
+            appendTextElement(content, x: x, y: y, fontFamily: face.family, fontSize: fontSize,
+                              fill: "none", textAnchor: textAnchor, fontStyle: fontStyle,
+                              className: nil, fontWeight: fontWeight)
+            return
+        }
+        appendTextElement(content, x: x, y: y, fontFamily: face.family, fontSize: fontSize,
+                          fill: "black", textAnchor: textAnchor, fontStyle: fontStyle,
+                          className: nil, fontWeight: fontWeight)
     }
 
     /// Draws `content` stretched independently in x and y — the shape a *stretchy* glyph
@@ -222,6 +253,14 @@ struct SVGBuilder: Sendable {
                                  base64: faces.libertinusSerif)
             defs += fontFaceRule(family: "Libertinus Serif", italic: true,
                                  base64: faces.libertinusSerifItalic)
+            if let bold = faces.libertinusSerifBold {
+                defs += fontFaceRule(family: "Libertinus Serif", italic: false, bold: true,
+                                     base64: bold)
+            }
+            if let boldItalic = faces.libertinusSerifBoldItalic {
+                defs += fontFaceRule(family: "Libertinus Serif", italic: true, bold: true,
+                                     base64: boldItalic)
+            }
             defs.append("    </style>")
         }
         for id in glyphOrder {
@@ -251,9 +290,11 @@ struct SVGBuilder: Sendable {
         return lines.joined(separator: "\n")
     }
 
-    private func fontFaceRule(family: String, italic: Bool, base64: String) -> [String] {
+    private func fontFaceRule(family: String, italic: Bool, bold: Bool = false,
+                              base64: String) -> [String] {
         var rule = ["      @font-face {", "        font-family: \"\(family)\";"]
         if italic { rule.append("        font-style: italic;") }
+        if bold { rule.append("        font-weight: bold;") }
         rule.append("        src: url('data:font/otf;base64,\(base64)') format('opentype');")
         rule.append("      }")
         return rule
@@ -264,13 +305,21 @@ struct SVGBuilder: Sendable {
     private mutating func appendTextElement(
         _ content: String, x: Double, y: Double,
         fontFamily: String, fontSize: Double, fill: String,
-        textAnchor: String, fontStyle: String?, className: String?
+        textAnchor: String, fontStyle: String?, className: String?,
+        fontWeight: String? = nil
     ) {
         var attrs = "x=\"\(fmt(x))\" y=\"\(fmt(y))\""
+        // A viewer collapses runs of spaces, and drops leading and trailing ones, unless told
+        // not to — and `W:` words are lined up with exactly those (issue #187).  Only runs
+        // that need it are marked, so ordinary text is written as it always was.
+        if content.hasPrefix(" ") || content.hasSuffix(" ") || content.contains("  ") {
+            attrs += " xml:space=\"preserve\""
+        }
         attrs += " font-family=\"\(esc(fontFamily))\" font-size=\"\(fmt(fontSize))\""
         attrs += " fill=\"\(esc(fill))\""
         if textAnchor != "start"  { attrs += " text-anchor=\"\(esc(textAnchor))\"" }
         if let style = fontStyle  { attrs += " font-style=\"\(esc(style))\"" }
+        if let weight = fontWeight { attrs += " font-weight=\"\(esc(weight))\"" }
         if let cls   = className  { attrs += " class=\"\(esc(cls))\"" }
         elements.append("<text \(attrs)>\(esc(content))</text>")
     }

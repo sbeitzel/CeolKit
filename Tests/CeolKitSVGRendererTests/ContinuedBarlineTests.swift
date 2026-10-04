@@ -49,7 +49,7 @@ struct ContinuedBarlineTests {
     /// at the left edge is drawn at the staff lines' own weight.
     ///
     /// `staffLineGap` is the staff size the system was actually drawn at, so this tracks
-    /// `%%ceolkit:scale` exactly as the strokes being separated do.
+    /// `%%pagescale` exactly as the strokes being separated do.
     private func barlineOverrun(at x: Double, on staff: SystemGeometry,
                                 strokes: [Stroke]) -> Double? {
         let tolerance = staff.staffLineGap * 0.1

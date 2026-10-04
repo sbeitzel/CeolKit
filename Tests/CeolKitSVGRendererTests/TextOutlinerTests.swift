@@ -84,7 +84,7 @@ struct TextOutlinerTests {
     @Test(arguments: [CeolKitFonts.Face.libertinusSerifRegular, .libertinusSerifItalic])
     func glyphsSitWhereTheEngraverPutsThem(face: CeolKitFonts.Face) throws {
         let text = "Tripping Up the Stairs"
-        var builder = SVGBuilder(textRendering: .outlines, fonts: try OutlineFontSet.shared())
+        var builder = SVGBuilder(textRendering: .outlines, fonts: try FontProvider(config: SVGRenderConfig()))
         builder.text(text, x: 0, y: 0, fontFamily: face.familyName, fontSize: 21,
                      fontStyle: face.isItalic ? "italic" : nil)
         let engraved = transforms(in: builder.elements.joined())

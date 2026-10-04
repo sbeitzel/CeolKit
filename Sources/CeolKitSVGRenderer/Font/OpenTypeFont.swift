@@ -1,6 +1,6 @@
 import Foundation
 
-/// Errors raised while reading a bundled OpenType face.
+/// Errors raised while reading an OpenType face.
 ///
 /// Every case names something the parser can prove about the input rather than a generic
 /// failure, because the only way these fire in practice is a bad resource swap — and then
@@ -8,8 +8,10 @@ import Foundation
 enum OpenTypeError: Error, Equatable {
     /// A read ran past the end of the data.
     case truncated(table: String, offset: Int)
-    /// The file is not an sfnt, or is a collection rather than a single face.
+    /// The file is neither an sfnt nor a collection of them.
     case notAnOpenTypeFont
+    /// A collection was asked for a face it does not have — by index, or by PostScript name.
+    case faceNotFound(String)
     /// A table CeolKit requires is absent from the table directory.
     case missingTable(String)
     /// The face has no `cmap` subtable in a format the parser reads (4 or 12).
@@ -20,8 +22,13 @@ enum OpenTypeError: Error, Equatable {
     case unsupportedCharstringOperator(String)
     /// A charstring nested subroutine calls deeper than the format permits.
     case charstringTooDeep
-    /// The glyph index is outside the font's CharStrings INDEX.
+    /// The glyph index is outside the font's CharStrings INDEX, or its `loca`.
     case glyphIndexOutOfRange(Int)
+    /// A `glyf` glyph is structurally invalid.
+    case malformedGlyph(String)
+    /// Composite glyphs nest deeper than ``TrueTypeGlyphs/maxCompositeDepth`` — in practice,
+    /// a composite that includes itself.
+    case compositeTooDeep
     /// A bundled face could not be read out of the module bundle at all.
     case faceUnavailable(String)
 }
@@ -81,7 +88,7 @@ struct FontBytes: Sendable {
 
 // MARK: - Font
 
-/// A parsed OpenType/CFF face, sufficient to lay out and outline a run of text.
+/// A parsed OpenType face, sufficient to lay out and outline a run of text.
 ///
 /// This exists because no SVG rasteriser outside a browser honours `@font-face`: every
 /// one of them resolves `font-family` through a host font database that CeolKit cannot
@@ -89,10 +96,12 @@ struct FontBytes: Sendable {
 /// rendering off the host's font environment and into the document, which is the only way
 /// the same score rasterises identically on macOS and in a Linux container.
 ///
-/// Scope is deliberately the minimum that serves that goal — `cmap`, `hmtx` and CFF
-/// charstrings. There is no shaping, no kerning, no ligature substitution: the emitter
-/// draws one glyph per Unicode scalar at its nominal advance, which is what the `<text>`
-/// path it replaces effectively got from these faces anyway.
+/// Scope is deliberately the minimum that serves that goal — `cmap`, `hmtx`, and outlines
+/// from either CFF charstrings or TrueType `glyf` (issue #189), from a single face or one
+/// face of a collection. There is no shaping, no kerning, no ligature substitution: the
+/// emitter draws one glyph per Unicode scalar at its nominal advance, which is what the
+/// `<text>` path it replaces effectively got from these faces anyway.  Variable fonts are
+/// read at their default instance.
 struct OpenTypeFont: Sendable {
 
     /// Design units per em, from `head`. Both bundled faces use 1000.
@@ -102,17 +111,80 @@ struct OpenTypeFont: Sendable {
     /// The face's typographic descender in font units, negative below the baseline.
     let descender: Double
 
+    /// The face's PostScript name (`name` ID 6), where it records one.
+    let postScriptName: String?
+    /// The face's family: its typographic family (`name` ID 16) where it records one, its
+    /// legacy family (ID 1) otherwise — "Courier New", not "Courier New Bold".
+    let familyName: String?
+    /// `OS/2.usWeightClass`: 400 regular, 700 bold.  Where the face has no `OS/2`, 700 or
+    /// 400 by `head.macStyle`'s bold bit.
+    let weightClass: Int
+    /// Whether the face is italic or oblique: `OS/2.fsSelection` bit 0, or `head.macStyle`
+    /// bit 1 where there is no `OS/2`.
+    let isItalic: Bool
+    /// What the face's licence lets a document do with it, from `OS/2.fsType`.
+    let embedding: EmbeddingPermissions
+
     private let cmap: [UInt32: Int]
     private let advances: [Double]
-    private let charstrings: Type2Interpreter
+    private let outlines: Outlines
 
-    var glyphCount: Int { charstrings.glyphCount }
+    /// Where a face's glyph outlines come from.
+    private enum Outlines: Sendable {
+        case cff(Type2Interpreter)
+        case trueType(TrueTypeGlyphs)
+    }
+
+    /// Whether the outlines are CFF (`.otf`) rather than TrueType `glyf` (`.ttf`).
+    var isCFF: Bool {
+        if case .cff = outlines { return true }
+        return false
+    }
+
+    var glyphCount: Int {
+        switch outlines {
+        case .cff(let charstrings): return charstrings.glyphCount
+        case .trueType(let glyphs): return glyphs.glyphCount
+        }
+    }
 
     // MARK: Parsing
 
-    static func parse(_ data: Data) throws -> OpenTypeFont {
+    /// Parses one face: the file itself, or face `faceIndex` of a collection (`.ttc`/`.otc`).
+    /// A plain font file has only face 0.
+    static func parse(_ data: Data, faceIndex: Int = 0) throws -> OpenTypeFont {
         let bytes = FontBytes(data)
-        let tables = try readTableDirectory(bytes)
+        let directories = try faceDirectories(bytes)
+        guard directories.indices.contains(faceIndex) else {
+            throw OpenTypeError.faceNotFound("#\(faceIndex)")
+        }
+        return try parse(bytes, directory: directories[faceIndex])
+    }
+
+    /// Parses the face of a font file or collection whose PostScript name is `postScriptName`
+    /// — how a caller asking for `Helvetica-Bold` finds it in `Helvetica.ttc`.
+    static func parse(_ data: Data, postScriptName: String) throws -> OpenTypeFont {
+        let bytes = FontBytes(data)
+        for directory in try faceDirectories(bytes) {
+            let tables = try readTableDirectory(bytes, at: directory)
+            if try readName(6, bytes, tables: tables) == postScriptName {
+                return try parse(bytes, directory: directory)
+            }
+        }
+        throw OpenTypeError.faceNotFound(postScriptName)
+    }
+
+    /// The PostScript name of every face in a font file or collection, in face-index order;
+    /// `nil` for a face that records none.
+    static func postScriptNames(in data: Data) throws -> [String?] {
+        let bytes = FontBytes(data)
+        return try faceDirectories(bytes).map {
+            try readName(6, bytes, tables: try readTableDirectory(bytes, at: $0))
+        }
+    }
+
+    private static func parse(_ bytes: FontBytes, directory: Int) throws -> OpenTypeFont {
+        let tables = try readTableDirectory(bytes, at: directory)
 
         guard let head = tables["head"] else { throw OpenTypeError.missingTable("head") }
         let unitsPerEm = try bytes.u16(head + 18, "head")
@@ -140,37 +212,149 @@ struct OpenTypeFont: Sendable {
             descender = try bytes.i16(hhea + 6, "hhea")
         }
 
-        guard let cffOffset = tables["CFF "] else { throw OpenTypeError.missingTable("CFF ") }
-        let cff = try CFFTable(bytes: bytes, offset: cffOffset)
+        let outlines: Outlines
+        if let cffOffset = tables["CFF "] {
+            outlines = .cff(Type2Interpreter(cff: try CFFTable(bytes: bytes, offset: cffOffset)))
+        } else if let glyf = tables["glyf"] {
+            guard let loca = tables["loca"] else { throw OpenTypeError.missingTable("loca") }
+            outlines = .trueType(try TrueTypeGlyphs(
+                bytes: bytes, glyf: glyf, loca: loca, numGlyphs: numGlyphs,
+                longOffsets: try bytes.i16(head + 50, "head") == 1))
+        } else {
+            throw OpenTypeError.missingTable("CFF ")
+        }
 
+        let style = try readStyle(bytes, tables: tables)
         return OpenTypeFont(
             unitsPerEm: Double(unitsPerEm),
             ascender: Double(ascender),
             descender: Double(descender),
+            postScriptName: try readName(6, bytes, tables: tables),
+            familyName: try readName(16, bytes, tables: tables)
+                ?? readName(1, bytes, tables: tables),
+            weightClass: style.weightClass,
+            isItalic: style.isItalic,
+            embedding: style.embedding,
             cmap: cmap,
             advances: advances,
-            charstrings: Type2Interpreter(cff: cff)
+            outlines: outlines
         )
     }
 
-    private static func readTableDirectory(_ bytes: FontBytes) throws -> [String: Int] {
-        let version = try bytes.u32(0, "sfnt")
-        // 'OTTO' is a CFF-flavoured face; 0x00010000 and 'true' are glyf-flavoured. Only
-        // CFF is read here, but the directory layout is shared, so accept both and let the
-        // missing `CFF ` table be the error a TrueType face produces.
-        let isCollection = (try? bytes.tag(0)) == "ttcf"
-        guard !isCollection else { throw OpenTypeError.notAnOpenTypeFont }
+    /// What a listing says about a face, read without parsing its glyphs (issue #206).
+    struct Summary: Sendable {
+        let postScriptName: String?
+        let familyName: String?
+        let weightClass: Int
+        let isItalic: Bool
+        let isCFF: Bool
+        let embedding: EmbeddingPermissions
+    }
+
+    /// Summarises face `faceIndex` of a font file or collection: the names and style a
+    /// parse would read, from the same tables, but none of the outlines or metrics.
+    /// Throws for a file that is not an OpenType face with CFF or TrueType outlines.
+    static func summary(_ data: Data, faceIndex: Int = 0) throws -> Summary {
+        let bytes = FontBytes(data)
+        let directories = try faceDirectories(bytes)
+        guard directories.indices.contains(faceIndex) else {
+            throw OpenTypeError.faceNotFound("#\(faceIndex)")
+        }
+        let tables = try readTableDirectory(bytes, at: directories[faceIndex])
+        guard tables["CFF "] != nil || tables["glyf"] != nil else {
+            throw OpenTypeError.missingTable("CFF ")
+        }
+        let style = try readStyle(bytes, tables: tables)
+        return Summary(
+            postScriptName: try readName(6, bytes, tables: tables),
+            familyName: try readName(16, bytes, tables: tables) ?? readName(1, bytes, tables: tables),
+            weightClass: style.weightClass, isItalic: style.isItalic,
+            isCFF: tables["CFF "] != nil, embedding: style.embedding)
+    }
+
+    /// Weight, slant and embedding permission, from `OS/2` — or, for a face with no `OS/2`
+    /// (macOS's own Courier.ttc), `head.macStyle`'s bold and italic bits.
+    private static func readStyle(_ bytes: FontBytes, tables: [String: Int]) throws
+        -> (weightClass: Int, isItalic: Bool, embedding: EmbeddingPermissions) {
+        guard let head = tables["head"] else { throw OpenTypeError.missingTable("head") }
+        let macStyle = try bytes.u16(head + 44, "head")
+        guard let os2 = tables["OS/2"] else {
+            return (macStyle & 0x0001 != 0 ? 700 : 400, macStyle & 0x0002 != 0,
+                    EmbeddingPermissions(fsType: 0))
+        }
+        return (try bytes.u16(os2 + 4, "OS/2"), try bytes.u16(os2 + 62, "OS/2") & 0x0001 != 0,
+                EmbeddingPermissions(fsType: try bytes.u16(os2 + 8, "OS/2")))
+    }
+
+    /// Where each face's table directory starts: the start of the file for a single face,
+    /// or each offset a collection's `ttcf` header lists.
+    private static func faceDirectories(_ bytes: FontBytes) throws -> [Int] {
+        guard (try? bytes.tag(0)) == "ttcf" else { return [0] }
+        let count = try bytes.u32(8, "ttcf")
+        // Each offset is four bytes of header; a count the file cannot hold is corrupt.
+        guard count > 0, 12 + 4 * count <= bytes.count else {
+            throw OpenTypeError.truncated(table: "ttcf", offset: 8)
+        }
+        return try (0..<count).map { try bytes.u32(12 + 4 * $0, "ttcf") }
+    }
+
+    private static func readTableDirectory(_ bytes: FontBytes, at base: Int) throws -> [String: Int] {
+        let version = try bytes.u32(base, "sfnt")
+        // 'OTTO' is a CFF-flavoured face; 0x00010000 and 'true' are glyf-flavoured.
         guard version == 0x4F54_544F || version == 0x0001_0000 || version == 0x7472_7565 else {
             throw OpenTypeError.notAnOpenTypeFont
         }
-        let numTables = try bytes.u16(4, "sfnt")
+        let numTables = try bytes.u16(base + 4, "sfnt")
         var tables: [String: Int] = [:]
         tables.reserveCapacity(numTables)
         for i in 0..<numTables {
-            let record = 12 + 16 * i
+            // Table offsets are from the start of the file, in a collection as in a face.
+            let record = base + 12 + 16 * i
             tables[try bytes.tag(record)] = try bytes.u32(record + 8, "sfnt")
         }
         return tables
+    }
+
+    // MARK: Names
+
+    /// A `name` record: Unicode (platform 0) or Windows (3) records in UTF-16BE, preferring
+    /// US English among Windows ones; Macintosh (1) Roman records read as ASCII, which is all
+    /// a PostScript name may hold and what nearly every family name is.  `nil` where the face
+    /// has no `name` table or no record for `nameID`.
+    private static func readName(_ nameID: Int, _ bytes: FontBytes,
+                                 tables: [String: Int]) throws -> String? {
+        guard let name = tables["name"] else { return nil }
+        let count = try bytes.u16(name + 2, "name")
+        let storage = name + (try bytes.u16(name + 4, "name"))
+        var fallback: String?
+        var unicode: String?
+        for i in 0..<count {
+            let record = name + 6 + 12 * i
+            guard try bytes.u16(record + 6, "name") == nameID else { continue }
+            let platform = try bytes.u16(record, "name")
+            let language = try bytes.u16(record + 4, "name")
+            let length = try bytes.u16(record + 8, "name")
+            let start = storage + (try bytes.u16(record + 10, "name"))
+            guard start >= 0, start + length <= bytes.count else {
+                throw OpenTypeError.truncated(table: "name", offset: start)
+            }
+            let raw = bytes.bytes[start..<(start + length)]
+            switch platform {
+            case 0, 3:
+                let units = stride(from: raw.startIndex, to: raw.endIndex - 1, by: 2).map {
+                    UInt16(raw[$0]) << 8 | UInt16(raw[$0 + 1])
+                }
+                let decoded = String(decoding: units, as: UTF16.self)
+                // Windows US English (0x0409) is the record every tool reads first.
+                if platform == 3 && language == 0x0409 { return decoded }
+                unicode = unicode ?? decoded
+            case 1:
+                fallback = fallback ?? String(decoding: raw, as: UTF8.self)
+            default:
+                continue
+            }
+        }
+        return unicode ?? fallback
     }
 
     /// Horizontal advances per glyph, in font units.
@@ -287,7 +471,10 @@ struct OpenTypeFont: Sendable {
 
     /// The outline of `glyph` in font units, y-up.
     func outline(forGlyph glyph: Int) throws -> GlyphPath {
-        try charstrings.outline(forGlyph: glyph)
+        switch outlines {
+        case .cff(let charstrings): return try charstrings.outline(forGlyph: glyph)
+        case .trueType(let glyphs): return try glyphs.outline(forGlyph: glyph)
+        }
     }
 
     /// How wide `text` is drawn at `fontSize`, in points.
@@ -298,6 +485,34 @@ struct OpenTypeFont: Sendable {
     func width(of text: String, fontSize: Double) -> Double {
         OutlineRun(text, font: self).advanceUnits * fontSize / unitsPerEm
     }
+}
+
+// MARK: - Embedding
+
+/// What a face's licence lets a document do with it, read from `OS/2.fsType` (issue #189).
+///
+/// Drawing a run of text as glyph outlines copies those outlines into the document, which
+/// is embedding in the licence's sense.  A caller choosing faces to outline asks
+/// ``allowsOutlineEmbedding`` and falls back to another face where it is `false` (#190).
+struct EmbeddingPermissions: Sendable, Equatable {
+    /// The raw `OS/2.fsType` field; `0` where the face has no `OS/2` table.
+    let fsType: Int
+
+    /// Bits 0–3 say how the face may be embedded.  Only one should be set; where several
+    /// are, the least restrictive applies (OpenType `OS/2` specification).
+    private var usage: Int { fsType & 0x000F }
+
+    /// Restricted License embedding: the face may not be embedded at all.
+    var isRestricted: Bool { usage & 0x0002 != 0 && usage & 0x000C == 0 }
+    /// Bit 8: the face must be embedded whole, never a subset of its glyphs.
+    var forbidsSubsetting: Bool { fsType & 0x0100 != 0 }
+    /// Bit 9: only bitmaps may be embedded, never outlines.
+    var bitmapOnly: Bool { fsType & 0x0200 != 0 }
+
+    /// Whether outlines of the glyphs a document uses may be copied into it.  An outline
+    /// document embeds exactly the glyphs it draws — a subset — so a face that forbids
+    /// subsetting is refused along with restricted and bitmap-only ones.
+    var allowsOutlineEmbedding: Bool { !isRestricted && !bitmapOnly && !forbidsSubsetting }
 }
 
 // MARK: - Run layout

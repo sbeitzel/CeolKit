@@ -71,7 +71,129 @@ enum AnnotationBand {
         LyricBand.width(of: text, font: font, fontSize: fontSize)
     }
 
+    // MARK: - Styled metrics (issue #186)
+
+    /// What one band's lines are laid out with, from the text styles that print in it.
+    struct Metrics: Sendable {
+        let lineHeight: Double
+        let ascent: Double
+        let descent: Double
+    }
+
+    /// The band above the staff holds chord symbols and annotations together, so it is
+    /// spaced for the larger of the two.
+    static func aboveMetrics(_ styles: TextStyles) -> Metrics {
+        metrics(styles.chordSymbol.size >= styles.annotation.size
+                ? styles.chordSymbol : styles.annotation)
+    }
+
+    /// The band below the staff holds `_` annotations only.
+    static func belowMetrics(_ styles: TextStyles) -> Metrics { metrics(styles.annotation) }
+
+    private static func metrics(_ style: TextStyle) -> Metrics {
+        Metrics(lineHeight: lineHeightRatio * style.size, ascent: style.ascent,
+                descent: style.descent)
+    }
+
+    static func height(lines: Int, metrics: Metrics, staffSize: Double) -> Double {
+        guard lines > 0 else { return 0 }
+        return padRatio * staffSize + Double(lines) * metrics.lineHeight
+    }
+
+    static func aboveBaselineOffset(line: Int, metrics: Metrics, staffSize: Double) -> Double {
+        padRatio * staffSize + metrics.descent + Double(line) * metrics.lineHeight
+    }
+
+    static func belowBaselineOffset(line: Int, metrics: Metrics, staffSize: Double) -> Double {
+        padRatio * staffSize + metrics.ascent + Double(line) * metrics.lineHeight
+    }
+
+    // MARK: - Chord symbol accidentals
+
+    /// Bravura's chord-symbol accidentals are drawn at the text's own size: SMuFL designs
+    /// them for exactly that, standing on the text baseline and rising three staff spaces —
+    /// three quarters of an em, a little above a capital — so a flat reads as part of the
+    /// chord name rather than as an engraved accidental beside it (issue #184).
+    static let accidentalSizeRatio = 1.0
+
+    /// Air either side of a chord-symbol accidental, in Bravura staff spaces.  The glyphs'
+    /// outlines run right to their bounding boxes, where a text face's letters carry
+    /// side-bearings of their own.
+    static let accidentalBearing = 0.12
+
+    /// The sign a chord symbol's accidental is drawn with, or `nil` for an alteration no
+    /// chord-symbol glyph shows.
+    static func glyph(for alteration: Alteration) -> SMuFLGlyph? {
+        switch alteration {
+        case .flat:        return .csymAccidentalFlat
+        case .sharp:       return .csymAccidentalSharp
+        case .natural:     return .csymAccidentalNatural
+        case .doubleFlat:  return .csymAccidentalDoubleFlat
+        case .doubleSharp: return .csymAccidentalDoubleSharp
+        default:           return nil
+        }
+    }
+
+    /// The pen advance of `glyph` set beside text of size `fontSize`, bearings included.
+    static func advance(of glyph: SMuFLGlyph, metadata: BravuraMetadata,
+                        fontSize: Double) -> Double {
+        // One Bravura staff space is a quarter of the size it is drawn at.
+        let space = fontSize * accidentalSizeRatio / 4
+        let width = metadata.glyphBBoxes[glyph.rawValue]?.neX ?? 1
+        return (width + 2 * accidentalBearing) * space
+    }
+
+    /// How wide `line` draws in `style`: its text runs measured as they are set, font
+    /// switches and all (issue #204), its accidentals by their glyphs' advances.
+    static func width(of line: Line, style: TextStyle, metadata: BravuraMetadata) -> Double {
+        styledSegments(of: line, style: style).reduce(0) { total, segment in
+            switch segment.segment {
+            case .text(let text):
+                return total + segment.style.width(ofRun: text)
+            case .accidental(let alteration):
+                return total + (glyph(for: alteration).map {
+                    advance(of: $0, metadata: metadata, fontSize: segment.style.size)
+                } ?? 0)
+            }
+        }
+    }
+
+    /// `line`'s segments, each with the style it is set in.  A font switch in a text run
+    /// holds on past the accidentals after it, to the end of the line or the next switch —
+    /// `"$1Bb7"` is bold throughout, its flat drawn at the bold run's size (issue #204).
+    static func styledSegments(of line: Line, style: TextStyle)
+        -> [(segment: ChordSymbol.Segment, style: TextStyle)] {
+        var font: FontSwitch.Font = 0
+        var result: [(segment: ChordSymbol.Segment, style: TextStyle)] = []
+        for segment in line {
+            switch segment {
+            case .text(let text):
+                let split = FontSwitch.runs(in: text, startingWith: font)
+                for run in split.runs {
+                    result.append((.text(run.text), style.switched(to: run.font)))
+                }
+                font = split.endFont
+            case .accidental:
+                result.append((segment, style.switched(to: font)))
+            }
+        }
+        return result
+    }
+
     // MARK: - What a note carries
+
+    /// ``linesAbove(chordSymbol:annotations:)``, each line marked with whether it is on the
+    /// chord line — set in the chord symbol's font — or a `^` annotation.
+    static func styledLinesAbove(chordSymbol: ChordSymbol?, annotations: [Annotation])
+        -> [(line: Line, isChordLine: Bool)] {
+        let annotationLines = texts(in: annotations, at: .above).count
+        return linesAbove(chordSymbol: chordSymbol, annotations: annotations)
+            .enumerated().map { ($1, $0 >= annotationLines) }
+    }
+
+    /// One line of a band: runs of text, and the accidentals of a chord symbol between them.
+    /// Text that is not a chord symbol is always a single run, printed as written.
+    typealias Line = [ChordSymbol.Segment]
 
     /// The lines a note puts above the staff, top to bottom.
     ///
@@ -83,10 +205,14 @@ enum AnnotationBand {
     /// Unprefixed text that is not a chord (``AnnotationPosition/chordLine``) is printed on
     /// the chord line with the chord symbol, as abcm2ps prints it; where a note has more
     /// than one, they stack in the order written, the first at the top (issue #177).
-    static func linesAbove(chordSymbol: ChordSymbol?, annotations: [Annotation]) -> [String] {
-        let chordLine = (chordSymbol.map { [($0.source.byteOffset, $0.raw)] } ?? [])
-            + annotations.filter { $0.position == .chordLine }.map { ($0.source.byteOffset, $0.text.value) }
-        return texts(in: annotations, at: .above)
+    ///
+    /// A chord symbol's line is split where it is spelled with accidentals, which are drawn
+    /// as signs (issue #184); every other line is one run of the text as written.
+    static func linesAbove(chordSymbol: ChordSymbol?, annotations: [Annotation]) -> [Line] {
+        let chordLine: [(Int, Line)] = (chordSymbol.map { [($0.source.byteOffset, $0.segments)] } ?? [])
+            + annotations.filter { $0.position == .chordLine }
+                .map { ($0.source.byteOffset, [.text($0.text.value)]) }
+        return texts(in: annotations, at: .above).map { [.text($0)] }
             + chordLine.sorted { $0.0 < $1.0 }.map(\.1)
     }
 

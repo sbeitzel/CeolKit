@@ -42,7 +42,7 @@ private let usableWidth: Double = 300
     // Non-last system: final widths sum to exactly usableWidth.
     @Test func nonLastSystemFillsUsableWidth() {
         let system = makeSystem(widths: [80, 100, 60], isLast: false)
-        let result = justifier.justify([system], usableWidth: usableWidth, justifyLastSystem: false)
+        let result = justifier.justify([system], usableWidth: usableWidth, stretchLast: 0)
         let totalFinal = result[0].measures.reduce(0.0) { $0 + $1.finalWidth }
         #expect(abs(totalFinal - usableWidth) < 1e-9)
     }
@@ -50,34 +50,86 @@ private let usableWidth: Double = 300
     // Non-last system: every measure's finalWidth ≥ naturalWidth.
     @Test func nonLastSystemNeverShrinksAMeasure() {
         let system = makeSystem(widths: [80, 100, 60], isLast: false)
-        let result = justifier.justify([system], usableWidth: usableWidth, justifyLastSystem: false)
+        let result = justifier.justify([system], usableWidth: usableWidth, stretchLast: 0)
         for (jm, sm) in zip(result[0].measures, system.measures) {
             #expect(jm.finalWidth >= sm.naturalWidth)
         }
     }
 
-    // Last system without justifyLastSystem: finalWidth == naturalWidth for each measure.
+    // Last system with stretchLast 0: finalWidth == naturalWidth for each measure.
     @Test func lastSystemUnchangedWhenNotJustified() {
         let system = makeSystem(widths: [80, 100, 60], isLast: true)
-        let result = justifier.justify([system], usableWidth: usableWidth, justifyLastSystem: false)
+        let result = justifier.justify([system], usableWidth: usableWidth, stretchLast: 0)
         for (jm, sm) in zip(result[0].measures, system.measures) {
             #expect(abs(jm.finalWidth - sm.naturalWidth) < 1e-9)
         }
     }
 
-    // Last system with justifyLastSystem == true: sum equals usableWidth.
+    // Last system with stretchLast 1: sum equals usableWidth.
     @Test func lastSystemFilledWhenJustifyLastEnabled() {
         let system = makeSystem(widths: [80, 100, 60], isLast: true)
-        let result = justifier.justify([system], usableWidth: usableWidth, justifyLastSystem: true)
+        let result = justifier.justify([system], usableWidth: usableWidth, stretchLast: 1)
         let totalFinal = result[0].measures.reduce(0.0) { $0 + $1.finalWidth }
         #expect(abs(totalFinal - usableWidth) < 1e-9)
+    }
+
+    // %%stretchlast F (issue #198): as abcm2ps does, the last system is stretched when its
+    // staff — header and music — reaches 1 − F of the line, and otherwise left short.
+    @Test("The last system is stretched once it fills 1 − stretchLast of the line",
+          arguments: [
+            // (music widths, header, stretchLast, stretched?)
+            ([100.0, 100.0], 0.0, 0.25, false),   // 0.67 of the line
+            ([100.0, 125.0], 0.0, 0.25, true),    // exactly 0.75
+            ([100.0, 100.0], 25.0, 0.25, true),   // the header counts towards the fill
+            ([100.0, 100.0], 0.0, 0.6, true),     // 0.67 ≥ 0.4
+            ([10.0], 0.0, 1.0, true),             // 1 stretches every last system
+            ([290.0], 0.0, 0.0, false),           // 0 stretches none
+          ])
+    func lastSystemStretchThreshold(widths: [Double], header: Double, stretchLast: Double,
+                                    stretched: Bool) {
+        let system = makeSystem(widths: widths, isLast: true)
+        let result = justifier.justify([system], usableWidth: usableWidth,
+                                       stretchLast: stretchLast, systemHeaderWidths: [header])
+        let totalFinal = result[0].measures.reduce(0.0) { $0 + $1.finalWidth }
+        let expected = stretched ? usableWidth - header : widths.reduce(0, +)
+        #expect(abs(totalFinal - expected) < 1e-9)
+    }
+
+    // %%stretchstaff 0: no system is stretched, the last one included; an overrun is still
+    // squeezed onto the line.
+    @Test func stretchStaffOffLeavesEverySystemNatural() {
+        let systems = [makeSystem(widths: [100, 100], isLast: false),
+                       makeSystem(widths: [200, 150], isLast: false),
+                       makeSystem(widths: [280], isLast: true)]
+        let result = justifier.justify(systems, usableWidth: usableWidth, stretchLast: 1,
+                                       stretchStaff: false)
+        let totals = result.map { $0.measures.reduce(0.0) { $0 + $1.finalWidth } }
+        #expect(totals == [200, 300, 280])
+    }
+
+    // A last system too short to stretch is spaced as the line before it was, as abcm2ps
+    // does (issue #198) — never below natural, never past the line.
+    @Test("A short last system takes the previous line's spacing",
+          arguments: [
+            // (previous line's widths, last line's widths, last line's expected width)
+            ([100.0, 100.0], [60.0], 90.0),           // previous stretched 1.5×
+            ([150.0, 200.0], [60.0], 60.0),           // previous compressed: natural
+            ([20.0], [100.0], 300.0),                 // 15× would overrun: the line
+          ])
+    func shortLastSystemFollowsPreviousSpacing(previous: [Double], last: [Double],
+                                                expected: Double) {
+        let systems = [makeSystem(widths: previous, isLast: false),
+                       makeSystem(widths: last, isLast: true)]
+        let result = justifier.justify(systems, usableWidth: usableWidth, stretchLast: 0)
+        let lastTotal = result[1].measures.reduce(0.0) { $0 + $1.finalWidth }
+        #expect(abs(lastTotal - expected) < 1e-9)
     }
 
     // eventOffsets are rescaled proportionally to finalWidth / naturalWidth.
     @Test func eventOffsetsRescaledProportionally() {
         let sized = sizedMeasure(width: 100, offsets: [0, 25, 50, 75])
         let system = System(measures: [sized], isLastSystem: false, sourceForced: false)
-        let result = justifier.justify([system], usableWidth: usableWidth, justifyLastSystem: false)
+        let result = justifier.justify([system], usableWidth: usableWidth, stretchLast: 0)
         let jm = result[0].measures[0]
         let scale = jm.finalWidth / sized.naturalWidth
         let expected = sized.eventOffsets.map { $0 * scale }
@@ -92,7 +144,7 @@ private let usableWidth: Double = 300
             makeSystem(widths: [100, 100], isLast: false, sourceForced: true),
             makeSystem(widths: [80], isLast: true, sourceForced: false),
         ]
-        let result = justifier.justify(systems, usableWidth: usableWidth, justifyLastSystem: false)
+        let result = justifier.justify(systems, usableWidth: usableWidth, stretchLast: 0)
         #expect(result[0].sourceForced == true)
         #expect(result[0].isLastSystem == false)
         #expect(result[1].sourceForced == false)
@@ -101,7 +153,7 @@ private let usableWidth: Double = 300
 
     // Empty system list produces empty output.
     @Test func emptyInputProducesEmptyOutput() {
-        let result = justifier.justify([], usableWidth: usableWidth, justifyLastSystem: false)
+        let result = justifier.justify([], usableWidth: usableWidth, stretchLast: 0)
         #expect(result.isEmpty)
     }
 
@@ -113,7 +165,7 @@ private let usableWidth: Double = 300
         // 60 pt of music on a 300 pt line would need 5×; the cap is 3×.
         let system = makeSystem(widths: [60], isLast: false, staveWasSplit: true)
         let result = Justifier(maxStretch: 3.0)
-            .justify([system], usableWidth: usableWidth, justifyLastSystem: false)
+            .justify([system], usableWidth: usableWidth, stretchLast: 0)
         let total = result[0].measures.reduce(0.0) { $0 + $1.finalWidth }
         #expect(abs(total - 180.0) < 1e-9)
     }
@@ -122,7 +174,7 @@ private let usableWidth: Double = 300
     @Test func splitStaveSystemUnderTheCapStillFillsTheLine() {
         let system = makeSystem(widths: [120, 60], isLast: false, staveWasSplit: true)
         let result = Justifier(maxStretch: 3.0)
-            .justify([system], usableWidth: usableWidth, justifyLastSystem: false)
+            .justify([system], usableWidth: usableWidth, stretchLast: 0)
         let total = result[0].measures.reduce(0.0) { $0 + $1.finalWidth }
         #expect(abs(total - usableWidth) < 1e-9)
     }
@@ -132,7 +184,7 @@ private let usableWidth: Double = 300
     @Test func sourceBrokenSystemIsNotCapped() {
         let system = makeSystem(widths: [60], isLast: false, sourceForced: true, staveWasSplit: false)
         let result = Justifier(maxStretch: 3.0)
-            .justify([system], usableWidth: usableWidth, justifyLastSystem: false)
+            .justify([system], usableWidth: usableWidth, stretchLast: 0)
         let total = result[0].measures.reduce(0.0) { $0 + $1.finalWidth }
         #expect(abs(total - usableWidth) < 1e-9)
     }
@@ -143,7 +195,7 @@ private let usableWidth: Double = 300
     // even when it is the last system and would otherwise keep natural spacing.
     @Test func overrunningLastSystemIsCompressedToFit() {
         let system = makeSystem(widths: [153, 150], isLast: true)   // 303 pt on a 300 pt line
-        let result = justifier.justify([system], usableWidth: usableWidth, justifyLastSystem: false)
+        let result = justifier.justify([system], usableWidth: usableWidth, stretchLast: 0)
         let total = result[0].measures.reduce(0.0) { $0 + $1.finalWidth }
         #expect(abs(total - usableWidth) < 1e-9)
         // Compression is shared out in proportion to natural width.
@@ -160,7 +212,7 @@ private let usableWidth: Double = 300
             makeSystem(widths: [50, 120, 90], isLast: false),
         ])
         let result = justifier.justifyGroups([group], usableWidth: usableWidth,
-                                             justifyLastSystem: false)
+                                             stretchLast: 0)
         #expect(result[0].staves.count == 2)
         #expect(result[0].staves[0].measures.map(\.finalWidth)
                 == result[0].staves[1].measures.map(\.finalWidth))
@@ -179,7 +231,7 @@ private let usableWidth: Double = 300
             makeSystem(widths: [140, 10], isLast: false),
         ])
         let result = justifier.justifyGroups([group], usableWidth: usableWidth,
-                                             justifyLastSystem: false)
+                                             stretchLast: 0)
         let widths = result[0].staves[0].measures.map(\.finalWidth)
         #expect(abs(widths[0] - widths[1]) < 1e-9)
     }
@@ -188,8 +240,8 @@ private let usableWidth: Double = 300
     @Test func groupOfOneMatchesTheSingleSystemPath() {
         let system = makeSystem(widths: [80, 100, 60], isLast: false)
         let viaGroups = justifier.justifyGroups([SystemGroup(staves: [system])],
-                                                usableWidth: usableWidth, justifyLastSystem: false)
-        let direct = justifier.justify([system], usableWidth: usableWidth, justifyLastSystem: false)
+                                                usableWidth: usableWidth, stretchLast: 0)
+        let direct = justifier.justify([system], usableWidth: usableWidth, stretchLast: 0)
         #expect(viaGroups[0].staves[0].measures.map(\.finalWidth)
                 == direct[0].measures.map(\.finalWidth))
     }
@@ -205,7 +257,7 @@ private let usableWidth: Double = 300
         let naturalGap = 10.0
         let sized = sizedMeasure(width: 40, offsets: [7, 17, 27], graceEventIndices: [0])
         let system = System(measures: [sized], isLastSystem: false, sourceForced: false)
-        let result = justifier.justify([system], usableWidth: 60, justifyLastSystem: false)
+        let result = justifier.justify([system], usableWidth: 60, stretchLast: 0)
         let jm = result[0].measures[0]
 
         let stretchedGap = jm.eventOffsets[1] - jm.eventOffsets[0]
@@ -221,7 +273,7 @@ private let usableWidth: Double = 300
         // new offset[2]  = 7 + 10 + (27 - 7 - 10) * (43/23) = 17 + 10*(43/23)
         let sized = sizedMeasure(width: 40, offsets: [7, 17, 27], graceEventIndices: [0])
         let system = System(measures: [sized], isLastSystem: false, sourceForced: false)
-        let result = justifier.justify([system], usableWidth: 60, justifyLastSystem: false)
+        let result = justifier.justify([system], usableWidth: 60, stretchLast: 0)
         let jm = result[0].measures[0]
 
         let elasticScale = (60.0 - 7.0 - 10.0) / (40.0 - 7.0 - 10.0)   // 43/23
@@ -242,7 +294,7 @@ private let usableWidth: Double = 300
         let sized = sizedMeasure(width: 50, offsets: [7, 14, 24, 34, 39],
                                   graceEventIndices: [0, 3])
         let system = System(measures: [sized], isLastSystem: false, sourceForced: false)
-        let result = justifier.justify([system], usableWidth: 70, justifyLastSystem: false)
+        let result = justifier.justify([system], usableWidth: 70, stretchLast: 0)
         let jm = result[0].measures[0]
 
         // Both fixed gaps must be preserved exactly.

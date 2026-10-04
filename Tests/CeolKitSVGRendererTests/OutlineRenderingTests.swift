@@ -58,6 +58,16 @@ private func bounds(of path: GlyphPath) -> (minX: Double, minY: Double, maxX: Do
                 include(GlyphPath.Point(x: x, y: y))
             }
             current = end
+        case .quadCurve(let c, let end):
+            let steps = 64
+            for step in 1...steps {
+                let t = Double(step) / Double(steps)
+                let u = 1 - t
+                let x = u * u * current.x + 2 * u * t * c.x + t * t * end.x
+                let y = u * u * current.y + 2 * u * t * c.y + t * t * end.y
+                include(GlyphPath.Point(x: x, y: y))
+            }
+            current = end
         case .close:
             break
         }
@@ -259,7 +269,7 @@ struct OutlineEmissionTests {
     /// glyph on the page.
     @Test func glyphScaleFactorsKeepEnoughPrecision() throws {
         let page = try #require(try render(.outlines, abc: sampleABC.replacing(
-            "X:1", with: "%%ceolkit:scale 0.85\nX:1")).first)
+            "X:1", with: "%%pagescale 0.85\nX:1")).first)
         let scales = page
             .components(separatedBy: "scale(")
             .dropFirst()

@@ -16,16 +16,17 @@ struct ColumnMetrics: Sendable {
     let metadata: BravuraMetadata
     let graceMetrics: GraceMetrics
     let accidentalMetrics: AccidentalMetrics
-    /// The face syllables are measured in, read once here rather than per column.  `nil`
-    /// where the bundled resource could not be read; see ``LyricBand/width(of:font:fontSize:)``.
-    let lyricFont: OpenTypeFont?
+    /// How the tune's text is set — the faces and sizes the font directives chose (issue
+    /// #186).  Syllables, chord symbols and annotations are measured in these, so the
+    /// columns are spaced for the text as it will be drawn.
+    let styles: TextStyles
 
-    init(config: SVGRenderConfig, metadata: BravuraMetadata) {
+    init(config: SVGRenderConfig, metadata: BravuraMetadata, styles: TextStyles? = nil) {
         self.config = config
         self.metadata = metadata
         self.graceMetrics = GraceMetrics(config: config, metadata: metadata)
         self.accidentalMetrics = AccidentalMetrics(config: config, metadata: metadata)
-        self.lyricFont = OutlineFontSet.textFace()
+        self.styles = styles ?? .standard(staffSize: config.staffSize)
     }
 
     // MARK: - Column width
@@ -110,10 +111,10 @@ struct ColumnMetrics: Sendable {
         guard !lyrics.isEmpty || !nextLyrics.isEmpty else { return 0 }
         let s = config.staffSize
         return LyricBand.columnReservation(
-            own:  LyricBand.widestSyllable(in: lyrics, staffSize: s, font: lyricFont),
-            next: LyricBand.widestSyllable(in: nextLyrics, staffSize: s, font: lyricFont),
+            own:  LyricBand.widestSyllable(in: lyrics, style: styles.vocal),
+            next: LyricBand.widestSyllable(in: nextLyrics, style: styles.vocal),
             hyphenated: LyricBand.isHyphenated(lyrics),
-            staffSize: s, font: lyricFont)
+            staffSize: s, style: styles.vocal)
     }
 
     /// The verses `event` carries, empty for everything that cannot be sung.
@@ -180,13 +181,79 @@ struct ColumnMetrics: Sendable {
         let sep     = metadata.engravingDefaults.barlineSeparation * s
         let wideSep = sep * 2.0
         switch measure.closingBar.kind {
-        case .final, .repeatEnd, .repeatEndSection, .repeatBoth:
+        case .final, .repeatEnd, .repeatEndSection:
             return wideSep + s * 0.5
+        case .repeatBoth:
+            return Self.repeatBothBarOffset(metadata: metadata, staffSize: s) + s * 0.5
         case .double:
             return sep + s * 0.5
         default:
             return s * 0.5
         }
+    }
+
+    /// Centre-to-centre distance between the two thick bars of `::`, which abcm2ps draws as
+    /// `:][:`.  SMuFL has no thick–thick separation, so the bars are set `barlineSeparation`
+    /// apart edge to edge, as every other pair of bar lines is.
+    static func repeatBothBarOffset(metadata: BravuraMetadata, staffSize: Double) -> Double {
+        (metadata.engravingDefaults.thickBarlineThickness
+         + metadata.engravingDefaults.barlineSeparation) * staffSize
+    }
+
+    /// Space from one bar line's anchor to the leftmost ink of a bar written straight after
+    /// it, in staff spaces.  abcm2ps sets `| |`, `|] [|`, `|| ||`, `:| :|` and `:| ::` all
+    /// about 2.4 staff spaces apart, measured that way (issue #212).
+    static let barPairGapRatio = 2.4
+
+    /// How far a bar line's ink reaches left of its anchor: the x ``SVGEmitter`` draws it at.
+    /// Must match `emitBarLine`.  The bars that open a section are left-anchored and reach
+    /// back only half their thick line; the rest are right-anchored and reach back across
+    /// every stroke and dot they draw.
+    func leftExtent(of kind: BarLineKind) -> Double {
+        let s       = config.staffSize
+        let thin    = metadata.engravingDefaults.thinBarlineThickness * s
+        let thick   = metadata.engravingDefaults.thickBarlineThickness * s
+        let sep     = metadata.engravingDefaults.barlineSeparation * s
+        let wideSep = sep * 2.0
+        let dots    = metadata.engravingDefaults.repeatBarlineDotSeparation * s
+            + (metadata.glyphBBoxes["repeatDot"].map { $0.width * s } ?? s * 0.25)
+        switch kind {
+        case .single, .dotted:                           return thin / 2
+        case .double:                                    return sep + thin / 2
+        case .final:                                     return wideSep + thin / 2
+        case .start, .repeatStart, .sectionRepeatStart:  return thick / 2
+        case .repeatEnd, .repeatEndSection:              return wideSep + thin / 2 + dots
+        case .repeatBoth:
+            return Self.repeatBothBarOffset(metadata: metadata, staffSize: s) + thick / 2 + dots
+        }
+    }
+
+    /// How far right of the measure's origin its opening bar stands: see
+    /// ``SizedMeasure/openingBarLead``.
+    ///
+    /// abcm2ps draws every bar that is written, whole, wherever it falls (issue #212).  A bar
+    /// that is only the previous measure's closing bar restated is already drawn there, and
+    /// needs nothing.  One written in its own right is a second bar line, and is moved clear
+    /// of the first:
+    ///
+    /// - part way through a line, ``barPairGapRatio`` past the closing bar it follows;
+    /// - at the head of a system, so its leftmost ink starts where a `|:`'s thick line does —
+    ///   which is where abcm2ps starts every bar it draws there, `|`, `||`, `|]`, `:|` and
+    ///   `::` alike.  A `|:` itself therefore stays where it always was.
+    ///
+    /// - Parameters:
+    ///   - ownsOpeningBar: whether the opening bar was written in its own right rather than
+    ///     being the previous measure's closing bar.
+    ///   - atSystemStart: whether the measure is being sized to open a system.
+    func openingBarLead(for measure: Measure, ownsOpeningBar: Bool,
+                        atSystemStart: Bool = false) -> Double {
+        guard ownsOpeningBar, let kind = measure.openingBar?.kind else { return 0 }
+        let extent = leftExtent(of: kind)
+        guard !atSystemStart else {
+            let thick = metadata.engravingDefaults.thickBarlineThickness * config.staffSize
+            return max(0, extent - thick / 2)
+        }
+        return Self.barPairGapRatio * config.staffSize + extent
     }
 
     /// Left margin before the first event.
@@ -196,7 +263,15 @@ struct ColumnMetrics: Sendable {
     /// pushed past them before the standard one-notehead gap is added.
     /// A mid-line key or time-signature change adds its glyph width before the note gap,
     /// key first — the order they are engraved in, and the order the emitter draws them.
-    func leftMargin(for measure: Measure, keyChange: KeyChange? = nil) -> Double {
+    /// An opening bar the measure owns (see ``openingBarLead(for:ownsOpeningBar:atSystemStart:)``)
+    /// is moved right by its lead, and the rest of the margin with it.
+    func leftMargin(for measure: Measure, keyChange: KeyChange? = nil,
+                    ownsOpeningBar: Bool = false, atSystemStart: Bool = false) -> Double {
+        openingBarLead(for: measure, ownsOpeningBar: ownsOpeningBar, atSystemStart: atSystemStart)
+            + barMargin(for: measure, keyChange: keyChange)
+    }
+
+    private func barMargin(for measure: Measure, keyChange: KeyChange?) -> Double {
         let nhw = noteheadWidth()
         let thin = metadata.engravingDefaults.thinBarlineThickness * config.staffSize
         let keySigW = keyChange.map {
@@ -209,12 +284,19 @@ struct ColumnMetrics: Sendable {
         guard let opening = measure.openingBar else { return signatures + nhw }
         switch opening.kind {
         case .repeatStart, .sectionRepeatStart, .repeatBoth:
-            let wideSep = metadata.engravingDefaults.barlineSeparation * config.staffSize * 2.0
-            // Must match `emitRepeatDots`, which places the dots by this same measurement.
+            // Must match `emitRepeatDots`, which places the dots by this same measurement:
+            // from the edge of the bar they abut.  That is the thin bar `wideSep` right of
+            // the anchor for `|:` and `[|:`, and the thick bar on the anchor for `::`.
+            let dotBar: Double
+            if opening.kind == .repeatBoth {
+                dotBar = metadata.engravingDefaults.thickBarlineThickness * config.staffSize / 2
+            } else {
+                dotBar = metadata.engravingDefaults.barlineSeparation * config.staffSize * 2.0 + thin / 2
+            }
             let dotSep  = metadata.engravingDefaults.repeatBarlineDotSeparation * config.staffSize
             let dotW    = metadata.glyphBBoxes["repeatDot"].map { $0.width * config.staffSize }
                           ?? config.staffSize * 0.25
-            return wideSep + dotSep + dotW + signatures + nhw
+            return dotBar + dotSep + dotW + signatures + nhw
         default:
             return signatures + nhw
         }

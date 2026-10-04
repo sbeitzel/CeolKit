@@ -71,7 +71,11 @@ struct SharedStaffMerger: Sendable {
     ///
     /// Callers with fewer than two sounding voices should size with ``MeasureSizer`` instead;
     /// this handles the case anyway, and identically, but the sizer says what it means.
-    func merge(_ parts: [VoicePart], keyChange: KeyChange? = nil) -> SizedMeasure {
+    ///
+    /// `ownsOpeningBar` is said of the primary voice — the first sounding one — whose bar
+    /// lines the staff draws.  See ``SizedMeasure/openingBarLead``.
+    func merge(_ parts: [VoicePart], keyChange: KeyChange? = nil,
+               ownsOpeningBar: Bool = false, atSystemStart: Bool = false) -> SizedMeasure {
         let sounding = parts.filter { !$0.isPadding }
         // Every voice padded: the bar is furniture only.  Its bar lines still draw, so it
         // keeps its width, and it contributes not one column of music.
@@ -94,8 +98,16 @@ struct SharedStaffMerger: Sendable {
         // The primary voice's ending start, moved to where its event lands in the merge.
         var endingStartIndex: Int?
 
-        var x = voices.map { metrics.leftMargin(for: $0.part.measure, keyChange: keyChange) }.max()
-            ?? metrics.leftMargin(for: primary.measure, keyChange: keyChange)
+        let primaryOwnsBar = { (part: VoicePart) in
+            ownsOpeningBar && part.voiceIndex == primary.voiceIndex
+        }
+        var x = voices.map {
+            metrics.leftMargin(for: $0.part.measure, keyChange: keyChange,
+                               ownsOpeningBar: primaryOwnsBar($0.part),
+                               atSystemStart: atSystemStart)
+        }.max()
+            ?? metrics.leftMargin(for: primary.measure, keyChange: keyChange,
+                                  ownsOpeningBar: ownsOpeningBar, atSystemStart: atSystemStart)
 
         for (index, onset) in onsets.enumerated() {
             let next = index + 1 < onsets.count ? onsets[index + 1] : end
@@ -168,7 +180,11 @@ struct SharedStaffMerger: Sendable {
             unitNoteLength: unitNoteLength,
             graceEventIndices: graceEventIndices,
             eventVoiceIndices: voiceTags,
-            keyChange: keyChange)
+            keyChange: keyChange,
+            ownsOpeningBar: ownsOpeningBar,
+            openingBarLead: metrics.openingBarLead(for: primary.measure,
+                                                   ownsOpeningBar: ownsOpeningBar,
+                                                   atSystemStart: atSystemStart))
     }
 
     /// The measure a fully padded bar keeps: its own furniture, and no music at all.

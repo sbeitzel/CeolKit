@@ -12,14 +12,15 @@ import CeolKitSVGRenderer
 import Foundation
 
 struct Options {
-    var file: URL
-    /// Override `%%ceolkit:scale` before rendering.
+    /// `nil` only with `--fonts`, which needs no ABC file.
+    var file: URL?
+    /// Override the page scale (`%%scale`, as abcm2ps's `-s` does) before rendering.
     var scale: Double?
     /// Override `%%ceolkit:gracenotespacing` before rendering.
     var graceSpacing: Double?
     /// Render once per factor and print a systems/pages table instead of a full report.
     var sweep: [Double]?
-    /// Force `%%ceolkit:justifylast false` so reported widths are natural, not stretched.
+    /// Force `%%stretchstaff 0` so reported widths are natural, not stretched.
     var natural: Bool = false
     /// Directory to write `page0.svg`, `page1.svg`, … into.
     var outputDirectory: URL?
@@ -27,19 +28,27 @@ struct Options {
     /// Defaults to whatever the library defaults to, so `ckprobe` sees what a consumer
     /// sees unless asked otherwise.
     var textRendering: TextRendering = SVGRenderConfig().textRendering
+    /// List the faces the renderer could draw with, then exit.
+    var listFonts: Bool = false
+    /// Turn on `SVGRenderConfig.systemFonts`.
+    var systemFonts: Bool = false
+    /// Font files to register through a `FontLibrary`, as a host app would.
+    var fontFiles: [URL] = []
 
     static let usage = """
         usage: ckprobe <file.abc> [options]
+               ckprobe --fonts [--system-fonts] [--font-file <path> …] [--json]
 
         Parses and renders an ABC file, then reports the layout geometry of the result.
         Includes (I:abc-include) resolve against the file's own directory.
 
         Options:
-          --scale <factor>      Override %%ceolkit:scale before rendering.
+          --scale <factor>      Override %%scale (abcm2ps -s; default 0.75) before
+                                rendering.
           --grace-spacing <f>   Override %%ceolkit:gracenotespacing (>= 1) before
                                 rendering.
-          --sweep <f,f,…>       Render at each factor; print a systems/pages table.
-          --natural             Force %%ceolkit:justifylast false, so system widths
+          --sweep <f,f,…>       Render at each %%scale; print a systems/pages table.
+          --natural             Force %%stretchstaff 0, so system widths
                                 are reported unstretched.
           --out <dir>           Write page0.svg, page1.svg, … into <dir>.
           --json                Emit JSON instead of the text report.
@@ -48,6 +57,12 @@ struct Options {
           --font-face           Emit <text> + @font-face instead of outlines.  Only
                                 renders correctly in a browser, or on a host that has
                                 the bundled faces installed.
+          --fonts               List the faces text could be drawn in (registered,
+                                system with --system-fonts, bundled), then exit.
+                                Needs no ABC file.
+          --system-fonts        Let font directives find the machine's installed fonts.
+          --font-file <path>    Register a font file (.otf, .ttf, .ttc) as a host app
+                                would.  Repeatable.
           -h, --help            Show this message.
 
         To look at a page:
@@ -69,6 +84,9 @@ struct Options {
         var outputDirectory: URL?
         var json = false
         var textRendering = SVGRenderConfig().textRendering
+        var listFonts = false
+        var systemFonts = false
+        var fontFiles: [URL] = []
 
         /// Consumes the value that follows a flag.
         func value(after index: inout Int, of flag: String, in args: [String]) throws -> String {
@@ -126,6 +144,15 @@ struct Options {
             case "--font-face":
                 textRendering = .fontFace
 
+            case "--fonts":
+                listFonts = true
+
+            case "--system-fonts":
+                systemFonts = true
+
+            case "--font-file":
+                fontFiles.append(URL(fileURLWithPath: try value(after: &i, of: "--font-file", in: arguments)))
+
             default:
                 guard !argument.hasPrefix("-") else {
                     throw ParseError(description: "unknown option '\(argument)'")
@@ -135,21 +162,24 @@ struct Options {
             i += 1
         }
 
-        guard positional.count == 1 else {
+        guard positional.count == 1 || (listFonts && positional.isEmpty) else {
             throw ParseError(description: positional.isEmpty
                 ? "expected an ABC file"
                 : "expected exactly one ABC file, got \(positional.count)")
         }
 
         return Options(
-            file: URL(fileURLWithPath: positional[0]),
+            file: positional.first.map { URL(fileURLWithPath: $0) },
             scale: scale,
             graceSpacing: graceSpacing,
             sweep: sweep,
             natural: natural,
             outputDirectory: outputDirectory,
             json: json,
-            textRendering: textRendering
+            textRendering: textRendering,
+            listFonts: listFonts,
+            systemFonts: systemFonts,
+            fontFiles: fontFiles
         )
     }
 }

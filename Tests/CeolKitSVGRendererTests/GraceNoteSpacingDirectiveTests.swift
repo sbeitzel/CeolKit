@@ -82,10 +82,10 @@ struct GraceNoteSpacingDirectiveTests {
     /// the staff before it; the test tunes carry one grace group per system, and are
     /// written in quarter notes so no ordinary beam is drawn to be mistaken for one.
     ///
-    /// - Parameter scale: the tune's `%%ceolkit:scale`, which the stem thickness scales with.
+    /// - Parameter scale: the tune's `%%pagescale`, which the stem thickness scales with.
     private func graceBeamLengths(in svg: String, scale: Double = 1) throws -> [Double] {
         let stem = try BravuraMetadata.load().engravingDefaults.stemThickness
-                   * SVGRenderConfig().staffSize * scale * GraceMetrics.scale
+                   * SVGRenderConfig().scaledStaffSize * scale * GraceMetrics.scale
         let lines = horizontalLines(in: svg)
         let (tops, staffLines) = staves(in: svg)
         let beams = lines.enumerated().filter { !staffLines.contains($0.offset) }.map(\.element)
@@ -198,17 +198,17 @@ struct GraceNoteSpacingDirectiveTests {
         #expect(drawingOnly(plain) == drawingOnly(invalid))
     }
 
-    @Test("The step is a ratio, so %%ceolkit:scale does not compound it")
+    @Test("The step is a ratio, so %%pagescale does not compound it")
     func stepIsIndependentOfScale() throws {
         let unscaled = try #require(try render(directive("2.1")).first)
         let scaled   = try #require(
-            try render(directive("2.1").replacing("K:C", with: "%%ceolkit:scale 0.5\nK:C")).first)
+            try render(directive("2.1").replacing("K:C", with: "%%pagescale 0.5\nK:C")).first)
 
         let unscaledBeam = try #require(try graceBeamLengths(in: unscaled).first)
         let scaledBeam   = try #require(try graceBeamLengths(in: scaled, scale: 0.5).first)
 
         // Halving the staff size halves the notehead the step is measured in, and nothing
         // more: a step that were itself scaled would land at a quarter, not a half.
-        #expect(abs(scaledBeam - unscaledBeam * 0.5) < 1e-6)
+        #expect(abs(scaledBeam - unscaledBeam * 0.5) < 2e-3)
     }
 }

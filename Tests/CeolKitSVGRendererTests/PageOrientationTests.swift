@@ -236,12 +236,12 @@ struct PageOrientationTests {
 
     @Test("The systems after a mid-tune turn are broken to the new page's width")
     func midTuneSystemsFillTheNewWidth() throws {
-        // `%%ceolkit:justifylast` so that both systems are stretched to their own page's
+        // `%%stretchlast 1` so that both systems are stretched to their own page's
         // line: without it the last system of the tune is left at its natural width, which
         // is the same music either side of the break and so says nothing about the width it
         // was given.
         let abc = """
-        %%ceolkit:justifylast true
+        %%stretchlast 1
         X:1
         T:Only
         M:4/4
@@ -271,9 +271,9 @@ struct PageOrientationTests {
 
     @Test("Orientation changes how much music a page holds")
     func paginationFollowsTheOrientation() throws {
-        // Eleven staves of one bar each: more than a portrait page holds, and the landscape
+        // Seventeen staves of one bar each: more than a portrait page holds, and the landscape
         // page that follows is shorter still, so the page counts differ between the two.
-        let staves = Array(repeating: "CDEF|", count: 11).joined(separator: "\n")
+        let staves = Array(repeating: "CDEF|", count: 17).joined(separator: "\n")
         let head = """
         X:1
         T:Only

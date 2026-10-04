@@ -76,7 +76,7 @@ struct SharedStaffCollisionTests {
     /// The width a notehead is displaced by, which is its own.
     private func noteheadWidth() throws -> Double {
         let metadata = try BravuraMetadata.load()
-        return try #require(metadata.glyphBBoxes["noteheadBlack"]).width * config.staffSize
+        return try #require(metadata.glyphBBoxes["noteheadBlack"]).width * config.scaledStaffSize
     }
 
     // MARK: - Unison
@@ -94,7 +94,7 @@ struct SharedStaffCollisionTests {
     func sharedUnisonKeepsBothStems() throws {
         let metadata = try BravuraMetadata.load()
         let stems = probedStems(in: try svg(tune("c c c c", "c c c c")),
-                                staffSize: config.staffSize, metadata: metadata)
+                                staffSize: config.scaledStaffSize, metadata: metadata)
         // Two stems per shared head, opposed: what tells a reader two parts are sounding it.
         try #require(stems.count == 8)
         #expect(stems.filter(\.isUp).count == 4)
@@ -180,7 +180,7 @@ struct SharedStaffCollisionTests {
         let dots = dots(in: document)
         try #require(dots.count == 2)
         #expect(dots[0].y == c.y)
-        #expect(dots[1].y == b.y + config.staffSize / 2)
+        #expect(dots[1].y == b.y + config.scaledStaffSize / 2)
     }
 
     @Test("A staff of one voice dots its notes exactly as it always has")
@@ -211,7 +211,7 @@ struct SharedStaffCollisionTests {
         // Sorted by x: the further-left glyph is the lower note's.
         #expect(sharps[0].y > sharps[1].y)
         let metadata = try BravuraMetadata.load()
-        let sharpWidth = try #require(metadata.glyphBBoxes["accidentalSharp"]).width * config.staffSize
+        let sharpWidth = try #require(metadata.glyphBBoxes["accidentalSharp"]).width * config.scaledStaffSize
         #expect(sharps[1].x - sharps[0].x >= sharpWidth)
     }
 

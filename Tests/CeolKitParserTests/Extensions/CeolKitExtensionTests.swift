@@ -1,6 +1,6 @@
 // CeolKit extension directive conformance tests.
 // Tests %%ceolkit:pipeformat, %%ceolkit:pagenumber, %%ceolkit:stemalignment,
-// %%ceolkit:justifylast, %%ceolkit:scale.
+// %%stretchlast / %%ceolkit:justifylast, %%scale / %%pagescale / %%ceolkit:scale.
 // See EXTENSIONS.md and CeolKit spec §7.
 import Testing
 import CeolKitModel
@@ -296,68 +296,75 @@ struct CeolKitExtensionTests {
         #expect(!warnings.isEmpty)
     }
 
-    // MARK: %%ceolkit:justifylast
+    // MARK: %%stretchlast and %%ceolkit:justifylast (issue #198)
 
-    @Test("%%ceolkit:justifylast true attaches justifyLast(true) directive")
-    func justifylastTrue() {
-        let abc = """
-        X:1
-        T:Test
-        M:4/4
-        L:1/4
-        %%ceolkit:justifylast true
-        K:G
-        GABC|
-        """
-        let result = parse(abc)
-        let tune = result.score.firstTune
-        let directive = tune?.directives.first(where: {
-            if case .justifyLast = $0.directive { return true }
-            return false
-        })
-        #expect(directive != nil)
-        if case .justifyLast(let value) = directive?.directive {
-            #expect(value == true)
+    /// The `%%stretchlast` values attached to the first tune, in order.
+    private func stretchLastValues(_ abc: String) -> [Double] {
+        (parse(abc).score.firstTune?.directives ?? []).compactMap {
+            if case .stretchLast(let value) = $0.directive { return value }
+            return nil
         }
     }
 
-    @Test("%%ceolkit:justifylast false attaches justifyLast(false) directive")
-    func justifylastFalse() {
-        let abc = """
-        X:1
-        T:Test
-        M:4/4
-        L:1/4
-        %%ceolkit:justifylast false
-        K:G
-        GABC|
-        """
-        let result = parse(abc)
-        let tune = result.score.firstTune
-        let directive = tune?.directives.first(where: {
-            if case .justifyLast = $0.directive { return true }
-            return false
-        })
-        #expect(directive != nil)
-        if case .justifyLast(let value) = directive?.directive {
-            #expect(value == false)
-        }
+    private func tune(header line: String) -> String {
+        "X:1\nT:Test\nM:4/4\nL:1/4\n\(line)\nK:G\nGABC|"
+    }
+
+    @Test("%%stretchlast takes abcm2ps's fraction of the line",
+          arguments: [("0", 0.0), ("0.25", 0.25), ("0.6", 0.6), ("1", 1.0)])
+    func stretchLastFraction(payload: String, expected: Double) {
+        #expect(stretchLastValues(tune(header: "%%stretchlast \(payload)")) == [expected])
+    }
+
+    @Test("%%stretchlast takes the spec's logical as the two ends of the range",
+          arguments: [("true", 1.0), ("false", 0.0)])
+    func stretchLastLogical(payload: String, expected: Double) {
+        #expect(stretchLastValues(tune(header: "%%stretchlast \(payload)")) == [expected])
+    }
+
+    @Test("%%stretchlast outside 0…1, or not a number, is dropped with a warning",
+          arguments: ["1.5", "-0.2", "yes", "0.3x"])
+    func stretchLastInvalid(payload: String) {
+        let abc = tune(header: "%%stretchlast \(payload)")
+        #expect(stretchLastValues(abc).isEmpty)
+        let warnings = parse(abc).score.diagnostics.filter { $0.code == .invalidStretchLast }
+        #expect(warnings.count == 1)
+    }
+
+    @Test("%%ceolkit:justifylast is a deprecated %%stretchlast 1 or 0",
+          arguments: [("true", 1.0), ("false", 0.0)])
+    func justifyLastIsDeprecatedStretchLast(payload: String, expected: Double) {
+        let abc = tune(header: "%%ceolkit:justifylast \(payload)")
+        #expect(stretchLastValues(abc) == [expected])
+        let deprecations = parse(abc).score.diagnostics.filter { $0.code == .deprecatedDirective }
+        #expect(deprecations.count == 1)
+        #expect(deprecations.first?.message.contains("%%stretchlast \(Int(expected))") == true)
+    }
+
+    @Test("%%stretchstaff takes a logical", arguments: [("1", true), ("false", false)])
+    func stretchStaffLogical(payload: String, expected: Bool) {
+        let values = (parse(tune(header: "%%stretchstaff \(payload)")).score.firstTune?
+            .directives ?? []).compactMap { scope -> Bool? in
+                if case .stretchStaff(let on) = scope.directive { return on }
+                return nil
+            }
+        #expect(values == [expected])
     }
 
     @Test("%%ceolkit:justifylast with invalid payload emits warning and drops directive")
     func justifylastInvalidPayloadEmitsWarning() {
         let abc = "%%ceolkit:justifylast yes\nX:1\nT:T\nM:4/4\nL:1/4\nK:C\nC|"
         let result = parse(abc)
-        let warnings = result.score.diagnostics.filter { $0.code == .unknownDirective }
+        let warnings = result.score.diagnostics.filter { $0.code == .invalidStretchLast }
         #expect(!warnings.isEmpty)
         let hasDirective = result.score.tunes.flatMap(\.directives).contains {
-            if case .justifyLast = $0.directive { return true }
+            if case .stretchLast = $0.directive { return true }
             return false
         }
         #expect(!hasDirective)
     }
 
-    // MARK: %%ceolkit:scale
+    // MARK: %%scale, %%pagescale and %%ceolkit:scale (issue #203)
 
     /// Returns the scale factor from the first `.scale` directive on any tune, if present.
     private func scaleFactor(in result: ParseResult) -> Double? {
@@ -367,18 +374,13 @@ struct CeolKitExtensionTests {
         }.first
     }
 
-    @Test("%%ceolkit:scale 0.8 attaches scale(0.8) directive at tune scope")
+    private func headerTune(_ directive: String) -> String {
+        "X:1\nT:T\nM:4/4\nL:1/4\n\(directive)\nK:C\nC|"
+    }
+
+    @Test("%%scale 0.8 attaches scale(0.8) directive at tune scope")
     func scaleValidFactor() {
-        let abc = """
-        X:1
-        T:Test
-        M:4/4
-        L:1/4
-        %%ceolkit:scale 0.8
-        K:G
-        GABC|
-        """
-        let result = parse(abc)
+        let result = parse(headerTune("%%scale 0.8"))
         let directive = result.score.firstTune?.directives.first(where: {
             if case .scale = $0.directive { return true }
             return false
@@ -388,27 +390,37 @@ struct CeolKitExtensionTests {
         if let d = directive, case .tuneGlobal = d.scope {} else {
             Issue.record("Expected .tuneGlobal scope, got \(String(describing: directive?.scope))")
         }
+        #expect(result.score.diagnostics.isEmpty)
     }
 
-    @Test("%%ceolkit:scale accepts a factor greater than 1")
-    func scaleGreaterThanOne() {
-        let abc = "X:1\nT:T\nM:4/4\nL:1/4\n%%ceolkit:scale 1.5\nK:C\nC|"
-        #expect(scaleFactor(in: parse(abc)) == 1.5)
+    @Test("%%pagescale F is %%scale 0.75 × F", arguments: [
+        ("%%pagescale 1", 0.75),
+        ("%%pagescale 2", 1.5),
+        ("%%pagescale 0.5", 0.375),
+    ])
+    func pageScale(_ directive: String, _ expected: Double) {
+        let result = parse(headerTune(directive))
+        #expect(scaleFactor(in: result) == expected)
+        #expect(result.score.diagnostics.isEmpty)
     }
 
-    @Test("%%ceolkit:scale accepts an integer payload")
-    func scaleIntegerPayload() {
-        let abc = "X:1\nT:T\nM:4/4\nL:1/4\n%%ceolkit:scale 2\nK:C\nC|"
-        #expect(scaleFactor(in: parse(abc)) == 2.0)
+    @Test("%%ceolkit:scale F is %%pagescale F, and deprecated")
+    func ceolKitScaleIsDeprecatedPageScale() {
+        let result = parse(headerTune("%%ceolkit:scale 1.5"))
+        #expect(scaleFactor(in: result) == 1.125)
+        let deprecated = result.score.diagnostics.filter { $0.code == .deprecatedDirective }
+        #expect(deprecated.count == 1)
+        #expect(deprecated.first?.severity == .warning)
+        #expect(deprecated.first?.message.contains("%%pagescale 1.5") == true)
     }
 
-    @Test("%%ceolkit:scale in the file preamble is promoted to the first tune")
+    @Test("%%scale in the file preamble is promoted to the first tune")
     func scaleInPreamble() {
-        let abc = "%%ceolkit:scale 0.5\nX:1\nT:T\nM:4/4\nL:1/4\nK:C\nC|"
+        let abc = "%%scale 0.5\nX:1\nT:T\nM:4/4\nL:1/4\nK:C\nC|"
         #expect(scaleFactor(in: parse(abc)) == 0.5)
     }
 
-    @Test("%%ceolkit:scale in the tune body is accepted, not reported as unknown")
+    @Test("%%scale in the tune body is accepted and noted as scaling the whole tune")
     func scaleInBody() {
         let abc = """
         X:1
@@ -417,52 +429,28 @@ struct CeolKitExtensionTests {
         L:1/4
         K:C
         CDEC|
-        %%ceolkit:scale 0.75
+        %%scale 0.6
         CDEC|
         """
         let result = parse(abc)
-        #expect(scaleFactor(in: result) == 0.75)
-        let unknowns = result.score.diagnostics.filter { $0.code == .unknownDirective }
-        #expect(unknowns.isEmpty)
+        #expect(scaleFactor(in: result) == 0.6)
+        #expect(!result.score.diagnostics.contains { $0.code == .unknownDirective })
+        let notes = result.score.diagnostics.filter { $0.code == .scaleAppliesToWholeTune }
+        #expect(notes.count == 1)
+        #expect(notes.first?.severity == .info)
     }
 
-    @Test("%%ceolkit:scale 0 is invalid — emits warning and drops directive")
-    func scaleZeroEmitsWarning() {
-        let abc = "%%ceolkit:scale 0\nX:1\nT:T\nM:4/4\nL:1/4\nK:C\nC|"
-        let result = parse(abc)
+    @Test("An invalid page scale emits a warning and drops the directive", arguments: [
+        "%%scale 0", "%%pagescale -0.5", "%%scale big", "%%pagescale inf",
+        "%%scale nan", "%%ceolkit:scale 0",
+    ])
+    func invalidScale(_ directive: String) {
+        let result = parse(directive + "\nX:1\nT:T\nM:4/4\nL:1/4\nK:C\nC|")
         let warnings = result.score.diagnostics.filter {
             $0.severity == .warning && $0.code == .invalidScale
         }
-        #expect(!warnings.isEmpty)
+        #expect(warnings.count == 1)
         #expect(scaleFactor(in: result) == nil)
-    }
-
-    @Test("%%ceolkit:scale -0.5 is invalid — emits warning and drops directive")
-    func scaleNegativeEmitsWarning() {
-        let abc = "%%ceolkit:scale -0.5\nX:1\nT:T\nM:4/4\nL:1/4\nK:C\nC|"
-        let result = parse(abc)
-        let warnings = result.score.diagnostics.filter { $0.code == .invalidScale }
-        #expect(!warnings.isEmpty)
-        #expect(scaleFactor(in: result) == nil)
-    }
-
-    @Test("%%ceolkit:scale big (non-numeric) emits warning and drops directive")
-    func scaleNonNumericEmitsWarning() {
-        let abc = "%%ceolkit:scale big\nX:1\nT:T\nM:4/4\nL:1/4\nK:C\nC|"
-        let result = parse(abc)
-        let warnings = result.score.diagnostics.filter { $0.code == .invalidScale }
-        #expect(!warnings.isEmpty)
-        #expect(scaleFactor(in: result) == nil)
-    }
-
-    @Test("%%ceolkit:scale with a non-finite payload emits warning and drops directive")
-    func scaleNonFiniteEmitsWarning() {
-        for payload in ["inf", "nan"] {
-            let result = parse("%%ceolkit:scale \(payload)\nX:1\nT:T\nM:4/4\nL:1/4\nK:C\nC|")
-            #expect(result.score.diagnostics.contains { $0.code == .invalidScale },
-                    "expected invalidScale for payload '\(payload)'")
-            #expect(scaleFactor(in: result) == nil)
-        }
     }
 
     // MARK: %%ceolkit:gracenotespacing

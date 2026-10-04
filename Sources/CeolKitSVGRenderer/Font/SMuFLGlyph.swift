@@ -88,6 +88,13 @@ public enum SMuFLGlyph: String, Sendable, CaseIterable {
     /// Stretchy: drawn at whatever height the staves it joins span, not at its natural one.
     case brace
 
+    // Chord symbol accidentals: drawn on a text baseline, at text size (issue #184)
+    case csymAccidentalFlat
+    case csymAccidentalNatural
+    case csymAccidentalSharp
+    case csymAccidentalDoubleSharp
+    case csymAccidentalDoubleFlat
+
     public var unicodeScalar: Unicode.Scalar {
         // swiftlint:disable:next force_unwrapping — all values are valid PUA codepoints
         Unicode.Scalar(codepoint)!
@@ -149,6 +156,11 @@ public enum SMuFLGlyph: String, Sendable, CaseIterable {
         case .fermataBelow:                return 0xE4C1
         case .bracketTop:                  return 0xE003
         case .bracketBottom:               return 0xE004
+        case .csymAccidentalFlat:          return 0xED60
+        case .csymAccidentalNatural:       return 0xED61
+        case .csymAccidentalSharp:         return 0xED62
+        case .csymAccidentalDoubleSharp:   return 0xED63
+        case .csymAccidentalDoubleFlat:    return 0xED64
         case .brace:                       return 0xE000
         }
     }

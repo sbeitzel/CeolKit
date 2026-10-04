@@ -83,13 +83,28 @@ public struct ChordSymbol: Hashable, Sendable {
     public let quality: String           // e.g. "m7"; empty string for plain major
     public let bassNote: PitchClass?     // slash-chord bass, e.g. E in "C/E"
     public let raw: String               // verbatim text between the quotes
+    /// `raw`, trimmed, split where the parser read a character as an accidental — in the
+    /// root, the bass note, the type (`"C7b9"`) and an alternate chord (`"G(Bb)"`) — so that
+    /// a renderer can draw ♭ and ♯ signs where the source spelled them `b` and `#`, without
+    /// having to tell the `b` of `"Bb"` from the one of `"7(b9)"` itself (issue #184).
+    public let segments: [Segment]
     public let source: SourceRange
 
-    public init(root: PitchClass, quality: String, bassNote: PitchClass?, raw: String, source: SourceRange) {
+    /// A run of a chord symbol's text: written as it stands, or an accidental to draw as a
+    /// sign whatever character spelled it.
+    public enum Segment: Hashable, Sendable {
+        case text(String)
+        case accidental(Alteration)
+    }
+
+    /// - Parameter segments: `nil` takes `raw` as one run of text with no accidentals.
+    public init(root: PitchClass, quality: String, bassNote: PitchClass?, raw: String,
+                segments: [Segment]? = nil, source: SourceRange) {
         self.root = root
         self.quality = quality
         self.bassNote = bassNote
         self.raw = raw
+        self.segments = segments ?? [.text(raw)]
         self.source = source
     }
 }

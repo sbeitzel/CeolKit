@@ -14,11 +14,14 @@ struct LayoutDirectives {
     /// choice to the note's staff position, which is the ordinary engraving rule.  A voice's
     /// own `V:` `stem=` outranks it; the emitter resolves the two per staff (issue #74).
     var stemDirection: StemDirection = .auto
-    /// Whether the last system of a tune is stretched to the full measure, from
-    /// `%%ceolkit:justifylast`.
-    var justifyLastSystem: Bool
-    /// Multiplier on the staff size, from `%%ceolkit:scale`.  `1.0` = renderer default.
-    var scale: Double = 1.0
+    /// How full the last system of a tune must be to be stretched to the line, from
+    /// `%%stretchlast` (or the deprecated `%%ceolkit:justifylast`).
+    var stretchLast: Double
+    /// Whether systems are stretched to the line at all, from `%%stretchstaff`.
+    var stretchStaff: Bool
+    /// The page scale, as abcm2ps's `%%scale` value: ``SVGRenderConfig/scale`` unless
+    /// `%%scale`, `%%pagescale` or `%%ceolkit:scale` says otherwise (issue #203).
+    var scale: Double
     /// Step between adjacent grace noteheads, in grace notehead widths, from
     /// `%%ceolkit:gracenotespacing`.
     var graceNoteSpacing: Double
@@ -37,21 +40,36 @@ struct LayoutDirectives {
     /// each tune's pages their own label (issue #168).
     var label: String = ""
 
+    /// The font each kind of text is asked to be set in (§11.4.2; issue #186): the host's
+    /// ``SVGRenderConfig/textFonts``, with the font directives in force laid over it.
+    var fonts: [TextFontRole: FontSpec] = [:]
+    /// Where the directive that last named a role's face was written, for reporting what
+    /// became of the font it asked for.  A role the host's configuration styles and no
+    /// directive restates has none.
+    var fontSources: [TextFontRole: SourceRange] = [:]
+
     /// The document baseline before any directive has been read: what the config asks for.
     init(config: SVGRenderConfig) {
-        justifyLastSystem = config.justifyLastSystem
+        fonts = config.textFonts
+        stretchLast = config.stretchLast
+        stretchStaff = config.stretchStaff
+        scale = config.scale
         graceNoteSpacing = config.graceNoteSpacing
         straightFlags = config.straightFlags
         graceSlurs = config.graceSlurs
     }
 
-    mutating func apply(_ directive: CeolKitDirective) {
+    mutating func apply(_ directive: CeolKitDirective, source: SourceRange? = nil) {
         switch directive {
+        case .font(let role, let spec):
+            fonts[role] = spec.overriding(fonts[role])
+            if spec.name != nil { fontSources[role] = source }
         // `false` has to put the direction back, not merely fail to set it: a tune header
         // saying `pipeformat false` under a preamble saying `true` is asking for the
         // ordinary pitch rule, and nothing else in the tune can ask for it.
         case .pipeFormat(let on):         stemDirection = on ? .down : .auto
-        case .justifyLast(let on):        justifyLastSystem = on
+        case .stretchLast(let fraction):  stretchLast = fraction
+        case .stretchStaff(let on):       stretchStaff = on
         case .scale(let factor):          scale = factor
         case .graceNoteSpacing(let step): graceNoteSpacing = step
         case .straightFlags(let on):      straightFlags = on
@@ -70,7 +88,7 @@ struct LayoutDirectives {
     /// later tune carries none of them at all.  ``WriteFieldsConfig`` is layered the same way.
     func layering(_ tune: Tune) -> LayoutDirectives {
         var resolved = self
-        for scope in tune.directives { resolved.apply(scope.directive) }
+        for scope in tune.directives { resolved.apply(scope.directive, source: scope.source) }
         return resolved
     }
 }

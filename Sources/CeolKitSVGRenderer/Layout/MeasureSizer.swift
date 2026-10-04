@@ -9,10 +9,19 @@ import CeolKitModel
 public struct MeasureSizer: Sendable {
     private let metrics: ColumnMetrics
     private let merger: SharedStaffMerger
+    /// Opens the columns up wherever the text on the notes would otherwise collide; run on
+    /// every bar either sizing path produces (issue #185).
+    private let annotationSpacing: AnnotationSpacing
 
     public init(config: SVGRenderConfig, metadata: BravuraMetadata) {
-        self.metrics = ColumnMetrics(config: config, metadata: metadata)
+        self.init(config: config, metadata: metadata, styles: nil)
+    }
+
+    /// - Parameter styles: how the tune's text is set (issue #186); `nil` for the defaults.
+    init(config: SVGRenderConfig, metadata: BravuraMetadata, styles: TextStyles?) {
+        self.metrics = ColumnMetrics(config: config, metadata: metadata, styles: styles)
         self.merger = SharedStaffMerger(metrics: metrics)
+        self.annotationSpacing = AnnotationSpacing(metrics: metrics)
     }
 
     /// Sizes a single measure.
@@ -29,8 +38,16 @@ public struct MeasureSizer: Sendable {
     ///     ``Measure/key`` says the key moved here (issue #129).  Resolved by the caller,
     ///     which is the only place that knows the key the staff was in and the clef it
     ///     carries; the signature's glyphs are reserved for at the head of the bar.
+    ///   - ownsOpeningBar: Whether the measure's opening bar was written in its own right —
+    ///     after a bar of its own, or at the head of the tune — rather than being the previous
+    ///     measure's closing bar.  Only the caller, which walks the voice in order, can say.
+    ///     See ``SizedMeasure/openingBarLead``.
+    ///   - atSystemStart: Whether the measure is being sized to open a system, where an
+    ///     opening bar it owns stands at the head of the staff rather than after another bar.
     public func size(_ measure: Measure, voiceIndex: Int = 0,
-                     keyChange: KeyChange? = nil) -> SizedMeasure {
+                     keyChange: KeyChange? = nil,
+                     ownsOpeningBar: Bool = false,
+                     atSystemStart: Bool = false) -> SizedMeasure {
         let unitNoteLength = measure.unitNoteLength
         // Quarter-note duration expressed in unit-note-length units.
         // e.g. unitNoteLength = 1/8 → quarterInUnits = 2.0
@@ -39,7 +56,9 @@ public struct MeasureSizer: Sendable {
 
         var offsets: [Double] = []
         var graceEventIndices: Set<Int> = []
-        var x: Double = metrics.leftMargin(for: measure, keyChange: keyChange)
+        var x: Double = metrics.leftMargin(for: measure, keyChange: keyChange,
+                                           ownsOpeningBar: ownsOpeningBar,
+                                           atSystemStart: atSystemStart)
         var i = 0
 
         while i < measure.events.count {
@@ -73,10 +92,14 @@ public struct MeasureSizer: Sendable {
         // the measure's right edge.
         let naturalWidth = x + metrics.rightPadding(for: measure)
 
-        return SizedMeasure(measure: measure, naturalWidth: naturalWidth, eventOffsets: offsets,
-                            unitNoteLength: unitNoteLength, graceEventIndices: graceEventIndices,
-                            eventVoiceIndices: Array(repeating: voiceIndex, count: offsets.count),
-                            keyChange: keyChange)
+        return annotationSpacing.widen(SizedMeasure(
+            measure: measure, naturalWidth: naturalWidth, eventOffsets: offsets,
+            unitNoteLength: unitNoteLength, graceEventIndices: graceEventIndices,
+            eventVoiceIndices: Array(repeating: voiceIndex, count: offsets.count),
+            keyChange: keyChange,
+            ownsOpeningBar: ownsOpeningBar,
+            openingBarLead: metrics.openingBarLead(for: measure, ownsOpeningBar: ownsOpeningBar,
+                                                   atSystemStart: atSystemStart)))
     }
 
     /// The next event of the bar that a column runs to.  A column is spaced for the syllable
@@ -94,16 +117,21 @@ public struct MeasureSizer: Sendable {
     ///
     /// `keyChange` is the staff's, not a voice's: §7.3 makes a `K:` belong to the voice that
     /// wrote it, but one staff carries one signature, and the lead voice is the one whose
-    /// clef and key the staff head already draws.
-    public func size(sharedStaff parts: [SharedVoice], keyChange: KeyChange? = nil) -> SizedMeasure {
+    /// clef and key the staff head already draws.  So is `ownsOpeningBar`, for the same
+    /// reason: the staff draws its first sounding voice's bar lines.
+    public func size(sharedStaff parts: [SharedVoice], keyChange: KeyChange? = nil,
+                     ownsOpeningBar: Bool = false,
+                     atSystemStart: Bool = false) -> SizedMeasure {
         let sounding = parts.filter { !$0.isPadding }
         if let only = sounding.count == 1 ? sounding[0] : nil {
-            return size(only.measure, voiceIndex: only.voiceIndex, keyChange: keyChange)
+            return size(only.measure, voiceIndex: only.voiceIndex, keyChange: keyChange,
+                        ownsOpeningBar: ownsOpeningBar, atSystemStart: atSystemStart)
         }
-        return merger.merge(parts.map {
+        return annotationSpacing.widen(merger.merge(parts.map {
             SharedStaffMerger.VoicePart(measure: $0.measure, voiceIndex: $0.voiceIndex,
                                         isPadding: $0.isPadding)
-        }, keyChange: keyChange)
+        }, keyChange: keyChange, ownsOpeningBar: ownsOpeningBar,
+           atSystemStart: atSystemStart))
     }
 
     /// One voice's contribution to one bar of a shared staff.

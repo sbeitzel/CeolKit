@@ -66,7 +66,7 @@ struct EventVoiceTagTests {
 
         let system = System(measures: [sized], isLastSystem: false, sourceForced: false)
         let justified = Justifier().justify([system], usableWidth: sized.naturalWidth * 2,
-                                            justifyLastSystem: true)
+                                            stretchLast: 1)
         let jm = justified[0].measures[0]
 
         #expect(jm.eventOffsets != sized.eventOffsets)   // it really did stretch
@@ -129,7 +129,7 @@ struct EventVoiceTagTests {
 
         let lines = voices.indices.map { LineBreaker.VoiceLine(measures: columnsPerVoice[$0]) }
         let groups = LineBreaker().breakIntoGroups(lines, breaks: breaks, usableWidth: 500)
-        let justified = Justifier().justifyGroups(groups, usableWidth: 500, justifyLastSystem: false)
+        let justified = Justifier().justifyGroups(groups, usableWidth: 500, stretchLast: 0)
         let block  = TuneBlock(systemGroups: justified)
         let layout = VerticalLayoutEngine(config: config, metadata: metadata).layout([block])
 

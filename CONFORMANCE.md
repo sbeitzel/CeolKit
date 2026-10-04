@@ -253,9 +253,10 @@ later is a change at a break.
 **Syntax:** `"Am7"` — a chord symbol; `"^text"`, `"_text"`, `"<text"`, `">text"`, `"@text"`
 — an annotation above, below, left or right of the following note, or placed by the program.
 
-Both are set in the text face at twice the staff space — the ratio abcm2ps's 12-point
-`%%gchordfont` and `%%annotationfont` bear to its 6-point staff space — and drawn as outlines
-or `<text>`, whichever the document's `TextRendering` asks for.
+Both are set in the text face at twice the staff space by default — the ratio abcm2ps's
+12-point `%%gchordfont` and `%%annotationfont` bear to its 6-point staff space — or in the face
+and size those directives set (see [§11.4.2](#1142-font-directives)), and drawn as outlines or
+`<text>`, whichever the document's `TextRendering` asks for.
 
 ### Where each placement goes
 
@@ -327,6 +328,97 @@ previous system has no number and takes none.
   the next note.
 - **Chord symbol typography.** A chord symbol is printed as written: `#` and `b` are not set as
   ♯ and ♭, and `"G(Em)"`'s alternate chord is not set smaller.
+
+---
+
+## §11.4.2 Font directives
+
+**Syntax:** `%%<role>font <font name> [<size>]`, e.g. `%%wordsfont Courier-Bold 16`.
+
+Each directive sets the face and size of one kind of text, and leaves every other kind as it
+was. Written in the file header it governs every tune; in a tune header, or the tune body, it
+governs that tune and overrides the file header's (§4.23). The size is optional, and `*` in
+place of the name keeps the face in force (abcm2ps), so `%%vocalfont * 14` changes only the
+size. A name with spaces may be quoted: `%%titlefont "Times New Roman" 24`.
+
+| Directive | Sets | Default size |
+|---|---|---|
+| `titlefont` | the first `T:` | Libertinus Serif 20 |
+| `subtitlefont` | later `T:` | Libertinus Serif Italic 16 |
+| `composerfont` | `C:`, with `O:` appended | Libertinus Serif Italic 14 |
+| `infofont` | `R:` and other `%%writefields` fields | Libertinus Serif Italic 14 |
+| `tempofont` | `Q:`, in the header and in the music | Libertinus Serif 15 |
+| `wordsfont` | `W:` words | Libertinus Serif 16 |
+| `gchordfont` | chord symbols and chord-line text | Libertinus Serif 12 |
+| `annotationfont` | `^ _ < > @` annotations | Libertinus Serif 12 |
+| `vocalfont` | `w:` lyrics | Libertinus Serif 13 |
+| `setfont-1`…`4` | text after `$1`…`$4` in any string; see below | the string's own face, 12 |
+| `partsfont`, `textfont` | parsed and scoped; see below | |
+
+The default sizes are abcm2ps's; the faces are CeolKit's. Every size, a default's or a
+directive's, is in abcm2ps's nominal units and is drawn scaled by the page scale (`%%scale`,
+default 0.75; see [`EXTENSIONS.md`](EXTENSIONS.md)), so a 20-point title is drawn at 15 points
+unless the document says otherwise. Only the `%%footer` is set in absolute points. A row of
+the title block set larger than its default grows to hold it, as do the chord, annotation and
+lyric bands, and chord symbols are measured in their own font when the notes are spaced.
+
+### Font switches in a string — `$1`…`$4`
+
+`$1`…`$4` set the rest of a string, up to the next switch, in the face and size
+`%%setfont-1`…`4` name; `$0` returns to the string's own font, and `$$` prints `$`. A `$`
+before anything else, `$5` included, prints as written. This holds for every string CeolKit
+prints: titles, subtitles, composer, `R:` and the other info fields, `Q:` text (the
+metronome mark after it is always in the tempo font), chord symbols, chord-line text,
+annotations, `w:` lyrics and `W:` words. As in abcm2ps, a switch in a `w:` line carries
+from one syllable to the next, to a `$0` or the end of the line. The switched text is
+measured in its own face, so a title stays centred and notes are spaced for it.
+
+A switch to a `%%setfont-n` no directive set keeps the string's own face, at abcm2ps's
+documented default size of 12, and is reported as an `unsetFontSwitch` warning. (abcm2ps
+itself reports a null size and falls back to 8-point Helvetica.) `%%setfont-n * 14` sets
+only the size, and the string's face is kept without a warning.
+
+`%%footer` is not affected: its `$` placeholders are its own, `$1` there prints as written,
+and `$T` gives the title without its switches. abcm2ps 8.14 does not switch font in a footer
+either.
+
+A host app can set a house style beneath the document's directives with
+`SVGRenderConfig.textFonts` — say, every composer line in Zapf Chancery — and a directive in
+the document still overrides it.
+
+### How a font name is found
+
+The name is read as a PostScript name — `Times-BoldItalic` is the Times family, bold, italic
+— and looked up in the faces the host registered (`SVGRenderConfig.fontLibrary`), then, where
+`SVGRenderConfig.systemFonts` allows, the fonts installed on the machine (through CoreText on
+Apple platforms, and fontconfig on Linux where `libfontconfig.so.1` is installed), then the
+faces CeolKit bundles: Libertinus Serif in regular, italic, bold and bold italic.
+The PostScript base 14 and the generic families `serif`, `sans-serif` and `monospace` are
+also tried under the names of the fonts that stand in for them (Times New Roman, Liberation,
+Nimbus, DejaVu). A face whose licence forbids embedding is passed over in outline output.
+
+Where the face named is not found, the text is set in Libertinus Serif in the weight and
+style the name asked for, and the substitution is reported at the directive: a note while
+system lookup is off — that is the configuration working as asked — and a warning where the
+system was searched and nothing answered.
+
+### What CeolKit does not do
+
+- **`partsfont` and `textfont`** have nothing to style yet: `P:` part labels and `%%text`
+  blocks are not printed.
+- **`%%font`** declarations, and abcm2ps's `box`/`class=` arguments, are not read; a
+  directive with anything after its size is reported and dropped.
+
+---
+
+## §11.4.3 Page scale — `%%scale`
+
+`%%scale` and abcm2ps's `%%pagescale` are implemented as abcm2ps implements them. The default
+is `%%scale 0.75` (≡ `%%pagescale 1`), so a document without either prints the size abcm2ps
+prints it. Everything except the page, its margins and the footer is scaled, and the
+directive applies to the whole tune it is written in. Details are in
+[`EXTENSIONS.md`](EXTENSIONS.md#the-page-scale-scale-and-pagescale). The other §11.4.3 space
+directives are not implemented.
 
 ---
 

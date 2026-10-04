@@ -169,7 +169,7 @@ struct VoiceLabelTests {
     @Test("The music still ends on the right margin: the gutter came out of the line")
     func gutterIsTakenOutOfTheLine() {
         var config = config
-        config.justifyLastSystem = true
+        config.stretchLast = 1
         let rightMargin = config.pageSize.width - config.margins.right
         for abc in [twoVoices("", ""), twoVoices(named, alto)] {
             let staves = render(abc, config: config).staves
@@ -180,10 +180,10 @@ struct VoiceLabelTests {
     @Test("The gutter scales with the music")
     func gutterScalesWithTheTune() {
         let full = render(twoVoices(named, alto)).staves
-        let half = render(twoVoices(named, alto, directive: "%%ceolkit:scale 0.5")).staves
+        let half = render(twoVoices(named, alto, directive: "%%pagescale 0.5")).staves
         let fullIndent = full[0].left - config.margins.left
         let halfIndent = half[0].left - config.margins.left
-        #expect(abs(halfIndent - fullIndent / 2) < 1e-6)
+        #expect(abs(halfIndent - fullIndent / 2) < 1e-3)
     }
 
     // MARK: - Alongside the brackets

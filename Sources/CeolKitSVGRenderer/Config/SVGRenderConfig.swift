@@ -1,9 +1,20 @@
+import CeolKitModel
 import Foundation
 
 public struct SVGRenderConfig: Sendable {
     public var pageSize: PageSize
     public var margins: EdgeInsets
+    /// The staff space at a page scale of 1 — abcm2ps's `%%scale 1`.  What is drawn is this
+    /// times ``scale``; see ``scaled(by:)``.
     public var staffSize: Double
+    /// The page scale, as abcm2ps's `%%scale` value (issue #203), before the document says
+    /// anything: what abcm2ps's `-s` flag sets.  A `%%scale`, `%%pagescale` or
+    /// `%%ceolkit:scale` in the document overrides it.
+    ///
+    /// Defaults to abcm2ps's own `0.75` (`%%pagescale 1`), so a document comes out the size
+    /// abcm2ps prints it.  It scales the music, the title block, the words and every other
+    /// piece of text the tune sets; not the page, its margins or the footer.
+    public var scale: Double
     /// Vertical gap added between systems within a single tune.
     public var systemGap: Double
     /// Vertical gap added between two staves of one system that no brace or bracket joins
@@ -27,7 +38,15 @@ public struct SVGRenderConfig: Sendable {
     public var spanStaffGap: Double
     /// Vertical gap added after the last system of a tune, before the next tune's title block.
     public var tuneGap: Double
-    public var justifyLastSystem: Bool
+    /// abcm2ps's `%%stretchlast`, from 0 to 1: the last system of a tune is stretched to the
+    /// full line when its natural width reaches `1 − stretchLast` of it (issue #198).  The
+    /// default, `0.25`, is abcm2ps's.  `0` leaves every last system at its natural width; `1`
+    /// stretches every one.  A `%%stretchlast` in the document overrides it.
+    public var stretchLast: Double
+    /// abcm2ps's `%%stretchstaff`: whether systems are stretched to the line at all.  `false`
+    /// draws every system at its natural width, the last one included; a system that
+    /// overruns is still compressed to fit.  A `%%stretchstaff` in the document overrides it.
+    public var stretchStaff: Bool
     public var straightFlags: Bool
     public var graceSlurs: Bool
     /// Step between adjacent grace noteheads within one grace group, as a multiple of the
@@ -49,42 +68,72 @@ public struct SVGRenderConfig: Sendable {
     /// short rather than smeared across the page.  Systems the source broke are not capped.
     /// Generous by design — see ``Justifier/maxStretch``.
     public var maxSystemStretch: Double
+    /// Faces the host supplies, tried before any other when text names a font (issue #190).
+    /// `nil` — the default — leaves the system's fonts, if enabled, and the bundled faces.
+    public var fontLibrary: FontLibrary?
+    /// Whether a font named by the document may be looked up among the fonts installed on
+    /// the machine: through CoreText on Apple platforms, and on Linux through fontconfig,
+    /// where `libfontconfig.so.1` is installed (it is loaded at run time, never linked).
+    /// Elsewhere it finds nothing.  Off by default, because it makes the output
+    /// depend on the machine it is rendered on; the SVG that results is still portable in
+    /// ``TextRendering/outlines`` mode, which carries the glyphs with it.
+    public var systemFonts: Bool
+    /// A house style: the font for each kind of text, before the document says anything
+    /// (issue #186).  Laid over CeolKit's own defaults and under the document's font
+    /// directives (§11.4.2) — a `%%composerfont` in the ABC still wins — so a host can, say,
+    /// set every composer line in Zapf Chancery and leave everything else as it is.  Each
+    /// spec's `nil` half keeps the default's.
+    public var textFonts: [TextFontRole: FontSpec]
 
     public init(
         pageSize: PageSize = .letter,
         margins: EdgeInsets = EdgeInsets(top: 36, bottom: 36, left: 36, right: 36),
         staffSize: Double = 6.0,
+        scale: Double = 0.75,
         systemGap: Double? = nil,
         staffGap: Double? = nil,
         spanStaffGap: Double? = nil,
         tuneGap: Double? = nil,
-        justifyLastSystem: Bool = false,
+        stretchLast: Double = 0.25,
+        stretchStaff: Bool = true,
         straightFlags: Bool = false,
         graceSlurs: Bool = true,
         graceNoteSpacing: Double = 1.05,
         textRendering: TextRendering = .outlines,
         lineOverflowTolerance: Double = 0.02,
-        maxSystemStretch: Double = 3.0
+        maxSystemStretch: Double = 3.0,
+        fontLibrary: FontLibrary? = nil,
+        systemFonts: Bool = false,
+        textFonts: [TextFontRole: FontSpec] = [:]
     ) {
         self.pageSize = pageSize
         self.margins = margins
         self.staffSize = staffSize
+        self.scale = scale
         self.systemGap = systemGap ?? staffSize * 4
         self.staffGap = staffGap ?? staffSize * 3
         self.spanStaffGap = spanStaffGap ?? staffSize * 2
         self.tuneGap = tuneGap ?? staffSize * 16
-        self.justifyLastSystem = justifyLastSystem
+        self.stretchLast = min(max(stretchLast, 0), 1)
+        self.stretchStaff = stretchStaff
         self.straightFlags = straightFlags
         self.graceSlurs = graceSlurs
         self.graceNoteSpacing = graceNoteSpacing
         self.textRendering = textRendering
         self.lineOverflowTolerance = lineOverflowTolerance
         self.maxSystemStretch = maxSystemStretch
+        self.fontLibrary = fontLibrary
+        self.systemFonts = systemFonts
+        self.textFonts = textFonts
     }
 
+    /// The staff space as drawn where the document sets no page scale of its own:
+    /// ``staffSize`` at ``scale``.  4.5 points at the defaults, as abcm2ps draws it.
+    public var scaledStaffSize: Double { staffSize * scale }
+
     /// Returns a copy with `staffSize` and the vertical gaps derived from it multiplied
-    /// by `factor` (`%%ceolkit:scale`).  Page size and margins are absolute and unchanged:
-    /// scaling the music must not resize the page.
+    /// by `factor` — the page scale, ``scale`` or the document's `%%scale`.  Page size and
+    /// margins are absolute and unchanged: scaling the music must not resize the page.
     public func scaled(by factor: Double) -> SVGRenderConfig {
         guard factor != 1.0 else { return self }
         var copy = self

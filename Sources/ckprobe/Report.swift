@@ -66,10 +66,30 @@ struct Report: Codable {
         let topY: Double
     }
 
+    /// What one kind of text in a tune was set in (CeolKit #191).
+    struct Font: Codable {
+        let role: String
+        /// The font directives' (or host's) request, as written; absent for the default.
+        let requestedName: String?
+        let requestedSize: Double?
+        /// The line of the directive that named the face, where one did.
+        let line: Int?
+        let postScriptName: String
+        let family: String
+        let weight: String
+        let style: String
+        let origin: String
+        let size: Double
+        let exact: Bool
+        let summary: String
+    }
+
     let file: String
     let diagnostics: [Diagnostic]
     let tunes: [Tune]
     let placements: [Placement]
+    /// Per tune, in score order.
+    let fonts: [[Font]]
     let pages: [PageGeometry]
 }
 
@@ -77,7 +97,7 @@ struct Report: Codable {
 
 extension Report {
     init(file: URL, score: Score, diagnostics: [CeolKitModel.Diagnostic],
-         placements: [TunePlacement], pages: [PageGeometry]) {
+         placements: [TunePlacement], fonts: [TuneFontReport], pages: [PageGeometry]) {
         self.file = file.lastPathComponent
         self.diagnostics = diagnostics.map {
             Diagnostic(severity: "\($0.severity)", code: "\($0.code)",
@@ -108,6 +128,18 @@ extension Report {
         self.placements = placements.map {
             Placement(tuneIndex: $0.tuneIndex, pageIndex: $0.pageIndex,
                       printedPageNumber: $0.printedPageNumber, topY: $0.topY)
+        }
+        self.fonts = fonts.map { tune in
+            tune.roles.map { role in
+                Font(role: role.role.rawValue, requestedName: role.requested?.name,
+                     requestedSize: role.requested?.size, line: role.source?.line,
+                     postScriptName: role.resolution.postScriptName,
+                     family: role.resolution.family,
+                     weight: role.resolution.weight.rawValue,
+                     style: role.resolution.style.rawValue,
+                     origin: role.resolution.origin.rawValue, size: role.size,
+                     exact: role.resolution.isExact, summary: role.summary)
+            }
         }
         self.pages = pages
     }
@@ -161,6 +193,17 @@ extension Report {
             }
         }
 
+        if fonts.contains(where: { !$0.isEmpty }) {
+            out.append("")
+            out.append("fonts:")
+            for (tuneIndex, roles) in fonts.enumerated() {
+                for font in roles {
+                    let line = font.line.map { " (line \($0))" } ?? ""
+                    out.append("  tune[\(tuneIndex)] \(font.summary)\(line)")
+                }
+            }
+        }
+
         out.append("")
         out.append("pages: \(pages.count)")
         for (pageIndex, page) in pages.enumerated() {
@@ -171,6 +214,22 @@ extension Report {
             }
         }
 
+        return out.joined(separator: "\n")
+    }
+
+    /// `--fonts`: one face per line, in the order a request searches them.
+    static func fontTable(_ faces: [FontFaceInfo]) -> String {
+        let width = faces.map(\.postScriptName.count).max() ?? 0
+        var out = [pad("postScriptName", width) + "  " + pad("origin", 10) + "  "
+                   + pad("format", 8) + "  " + pad("weight", 7) + "  " + pad("style", 7)
+                   + "  " + "family"]
+        for face in faces {
+            out.append(pad(face.postScriptName, width) + "  " + pad(face.origin.rawValue, 10)
+                       + "  " + pad(face.format.rawValue, 8) + "  "
+                       + pad(face.weight.rawValue, 7) + "  " + pad(face.style.rawValue, 7)
+                       + "  " + face.family + (face.embeddable ? "" : "  (not embeddable)"))
+        }
+        out.append("\(faces.count) faces")
         return out.joined(separator: "\n")
     }
 

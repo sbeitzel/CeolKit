@@ -2,7 +2,8 @@
 //  ScaleDirectiveTests.swift
 //  CeolKitSVGRendererTests
 //
-//  Rendering behaviour of %%ceolkit:scale (issue #32).
+//  Rendering behaviour of the page scale: %%scale, %%pagescale and the deprecated
+//  %%ceolkit:scale (issues #32, #203).
 //
 
 import CeolKitModel
@@ -10,7 +11,7 @@ import CeolKitParser
 import Testing
 @testable import CeolKitSVGRenderer
 
-@Suite("%%ceolkit:scale rendering")
+@Suite("%%scale / %%pagescale rendering")
 struct ScaleDirectiveTests {
 
     private static let tuneBody = """
@@ -79,20 +80,83 @@ struct ScaleDirectiveTests {
         svg.firstMatch(of: /<svg [^>]*(width="[\d.]+pt" height="[\d.]+pt")/).map { String($0.1) }
     }
 
-    @Test("%%ceolkit:scale 0.5 halves staff line spacing")
+    private func scaled(_ directive: String) -> String {
+        Self.tuneBody.replacing("K:C", with: "\(directive)\nK:C")
+    }
+
+    /// The size of every `<text>` run whose content is `content`, in `fontFace` mode.
+    private func textSizes(_ content: String, in abc: String) throws -> [Double] {
+        let score = CeolKitParser().parse(abc, options: .default).score
+        return try textProbeRenderer().render(score).joined()
+            .matches(of: /<text [^>]*font-size="([\d.]+)"[^>]*>([^<]*)<\/text>/)
+            .filter { $0.2 == content }
+            .compactMap { Double($0.1) }
+    }
+
+    // MARK: - The baseline
+
+    @Test("With no directive the staff is drawn at abcm2ps's default %%scale 0.75")
+    func defaultIsAbcm2psScale() throws {
+        let page = try #require(try render(Self.tuneBody).first)
+        #expect(staffSpacings(in: page).first == 4.5)
+        #expect(SVGRenderConfig().scaledStaffSize == 4.5)
+    }
+
+    @Test("%%scale 0.75, %%pagescale 1 and no directive all engrave alike")
+    func scaleAndPageScaleAgree() throws {
+        let plain = drawingOnly(try render(Self.tuneBody))
+        #expect(drawingOnly(try render(scaled("%%scale 0.75"))) == plain)
+        #expect(drawingOnly(try render(scaled("%%pagescale 1"))) == plain)
+    }
+
+    @Test("%%ceolkit:scale F engraves as %%pagescale F")
+    func ceolKitScaleIsPageScale() throws {
+        #expect(drawingOnly(try render(scaled("%%ceolkit:scale 0.6")))
+                == drawingOnly(try render(scaled("%%pagescale 0.6"))))
+    }
+
+    @Test("The host's default scale is what a document without a directive gets")
+    func configScaleIsTheDefault() throws {
+        let score = CeolKitParser().parse(Self.tuneBody, options: .default).score
+        let page = try #require(try SVGRenderer(config: SVGRenderConfig(scale: 1)).render(score).first)
+        #expect(staffSpacings(in: page).first == 6)
+
+        // …and a document's own directive still overrides it.
+        let directed = CeolKitParser().parse(scaled("%%scale 0.5"), options: .default).score
+        let directedPage = try #require(
+            try SVGRenderer(config: SVGRenderConfig(scale: 1)).render(directed).first)
+        #expect(staffSpacings(in: directedPage).first == 3)
+    }
+
+    // MARK: - Size
+
+    @Test("%%scale 0.375 halves staff line spacing")
     func halfScaleHalvesStaffSpacing() throws {
         let plainPage  = try #require(try render(Self.tuneBody).first)
-        let scaledPage = try #require(
-            try render(Self.tuneBody.replacing("K:C", with: "%%ceolkit:scale 0.5\nK:C")).first)
+        let scaledPage = try #require(try render(scaled("%%scale 0.375")).first)
 
         let plainSpacing  = try #require(staffSpacings(in: plainPage).first)
         let scaledSpacing = try #require(staffSpacings(in: scaledPage).first)
-
-        #expect(plainSpacing == SVGRenderConfig().staffSize)
         #expect(abs(scaledSpacing - plainSpacing * 0.5) < 1e-9)
     }
 
-    @Test("%%ceolkit:scale applies per tune — only the tune carrying it is resized")
+    @Test("The title block and words scale with the page; the footer does not")
+    func textScalesButNotTheFooter() throws {
+        let body = Self.tuneBody + "\nW:the words\n"
+        let footer = "%%footer \"the footer\"\n"
+        let plain = footer + body
+        let half  = footer + "%%pagescale 0.5\n" + body
+        #expect(try textSizes("First", in: plain) == [15])
+        #expect(try textSizes("First", in: half) == [7.5])
+        #expect(try textSizes("the words", in: plain) == [12])
+        #expect(try textSizes("the words", in: half) == [6])
+        #expect(try textSizes("the footer", in: plain) == [FooterBand.fontSize])
+        #expect(try textSizes("the footer", in: half) == [FooterBand.fontSize])
+    }
+
+    // MARK: - Scope
+
+    @Test("%%scale applies per tune — only the tune carrying it is resized")
     func scaleIsScopedToItsTune() throws {
         let abc = """
         X:1
@@ -106,21 +170,21 @@ struct ScaleDirectiveTests {
         T:Second
         M:4/4
         L:1/4
-        %%ceolkit:scale 0.5
+        %%scale 0.375
         K:C
         CDEF|GABc|
         """
         let page = try #require(try render(abc).first)
         let spacings = staffSpacings(in: page)
         try #require(spacings.count == 2)
-        #expect(spacings[0] == SVGRenderConfig().staffSize)
+        #expect(spacings[0] == SVGRenderConfig().scaledStaffSize)
         #expect(abs(spacings[1] - spacings[0] * 0.5) < 1e-9)
     }
 
-    @Test("A preamble %%ceolkit:scale governs every following tune")
+    @Test("A preamble %%scale governs every following tune")
     func preambleScalePersistsAcrossTunes() throws {
         let abc = """
-        %%ceolkit:scale 0.5
+        %%scale 0.375
         X:1
         T:First
         M:4/4
@@ -138,29 +202,41 @@ struct ScaleDirectiveTests {
         let page = try #require(try render(abc).first)
         let spacings = staffSpacings(in: page)
         try #require(spacings.count == 2)
-        #expect(spacings.allSatisfy { abs($0 - SVGRenderConfig().staffSize * 0.5) < 1e-9 })
+        #expect(spacings.allSatisfy { abs($0 - 2.25) < 1e-9 })
     }
 
-    @Test("%%ceolkit:scale 1.0 engraves identically to no directive at all")
-    func unitScaleMatchesAbsentDirective() throws {
-        let plain = try render(Self.tuneBody)
-        let unit  = try render(Self.tuneBody.replacing("K:C", with: "%%ceolkit:scale 1.0\nK:C"))
-        #expect(drawingOnly(plain) == drawingOnly(unit))
+    @Test("A %%scale in the tune body scales the whole tune, and the last one wins")
+    func bodyScaleGovernsTheWholeTune() throws {
+        let abc = """
+        X:1
+        T:First
+        M:4/4
+        L:1/4
+        K:C
+        CDEF|
+        %%scale 0.6
+        GABc|
+        %%pagescale 0.5
+        CDEF|
+        """
+        let page = try #require(try render(abc).first)
+        let spacings = staffSpacings(in: page)
+        try #require(spacings.count == 3)
+        #expect(spacings.allSatisfy { abs($0 - 2.25) < 1e-9 })
     }
 
     @Test("Scaling the music leaves the page size untouched")
     func scaleDoesNotResizePage() throws {
         let plainPage  = try #require(try render(Self.tuneBody).first)
-        let scaledPage = try #require(
-            try render(Self.tuneBody.replacing("K:C", with: "%%ceolkit:scale 0.5\nK:C")).first)
+        let scaledPage = try #require(try render(scaled("%%scale 0.375")).first)
         let plainAttrs = try #require(pageAttributes(of: plainPage))
         #expect(pageAttributes(of: scaledPage) == plainAttrs)
     }
 
-    @Test("An invalid %%ceolkit:scale leaves the tune at the renderer default")
+    @Test("An invalid %%scale leaves the tune at the default")
     func invalidScaleFallsBackToDefault() throws {
-        let plain   = try render(Self.tuneBody)
-        let invalid = try render(Self.tuneBody.replacing("K:C", with: "%%ceolkit:scale 0\nK:C"))
-        #expect(drawingOnly(plain) == drawingOnly(invalid))
+        let plain = try render(Self.tuneBody)
+        #expect(drawingOnly(plain) == drawingOnly(try render(scaled("%%scale 0"))))
+        #expect(drawingOnly(plain) == drawingOnly(try render(scaled("%%pagescale nope"))))
     }
 }

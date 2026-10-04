@@ -27,7 +27,7 @@ struct StemDirectionTests {
         let score = CeolKitParser().parse(abc, options: .default).score
         var diagnostics: [Diagnostic] = []
         let svg = try textProbeRenderer(config).render(score, diagnostics: &diagnostics).joined()
-        return probedStemsByPitchGroup(in: svg, staffSize: config.staffSize, metadata: metadata,
+        return probedStemsByPitchGroup(in: svg, staffSize: config.scaledStaffSize, metadata: metadata,
                                        bucketCount: staffCount)
     }
 

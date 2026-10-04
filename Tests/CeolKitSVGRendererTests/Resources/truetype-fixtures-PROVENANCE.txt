@@ -1,0 +1,22 @@
+TrueType fixtures — provenance
+==============================
+
+Files:     CeolKitTest-Short.ttf, CeolKitTest-Long.ttf, CeolKitTest.ttc,
+           truetype-reference.json
+Generator: truetype-fixtures.py (this directory), with fontTools 4.63.0
+Licence:   CeolKit's own. Every outline is drawn by the script for the tests; no third-party
+           font data is included.
+
+Why they exist
+--------------
+`TrueTypeOutlineTests` (issue #189) checks `OpenTypeFont`'s reading of TrueType `glyf`
+outlines and font collections against fontTools' reading of the same bytes, recorded in
+truetype-reference.json. The glyphs cover what the parser has to get right: on-curve-only
+contours, runs of off-curve points with implied midpoints, a contour that starts off-curve,
+one with no on-curve point at all, composites with byte and word offsets, each of the three
+transform forms, a nested composite, and a point-matched component. Both `loca` formats are
+covered, and the collection's two faces differ in PostScript name and `OS/2.fsType`.
+
+To regenerate, run `python3 truetype-fixtures.py` here and commit all four outputs together.
+
+These are test resources only, never shipped to consumers of the package.

@@ -62,10 +62,22 @@ public struct SVGRenderer: CeolKitRenderer {
         let labelFont = score.tunes.contains(where: \.hasVoiceLabels)
             ? OutlineFontSet.textFace() : nil
 
+        // Where the faces font directives name are looked up (issues #186, #190), shared by
+        // every tune so each face is found once.  `nil` only where the bundled faces cannot
+        // be read, which leaves every directive's size honoured and its face unchanged.
+        let fontProvider = try? FontProvider(config: effectiveConfig)
+        // Each font directive is reported once, however many tunes it governs.
+        var reportedFonts: Set<String> = []
+
         let breaker   = LineBreaker(overflowTolerance: effectiveConfig.lineOverflowTolerance)
         let justifier = Justifier(maxStretch: effectiveConfig.maxSystemStretch)
-        let engine    = VerticalLayoutEngine(config: effectiveConfig, metadata: metadata,
-                                             labelFont: labelFont)
+        // Footers are stamped on after layout, and which one a page gets depends on the tune
+        // that opens it — something only layout decides.  So the band is kept clear on every
+        // page of a document that prints any footer at all (issue #192); one that prints none
+        // reserves nothing and lays out exactly as before.
+        let engine    = VerticalLayoutEngine(
+            config: effectiveConfig, metadata: metadata, labelFont: labelFont,
+            bottomReserve: Self.hasFooter(score) ? FooterBand.reservedHeight : 0)
 
         // The line width one page size gives.  A function rather than the single number it
         // used to be: `%%landscape` at a `%%newpage` turns the page part-way through the
@@ -94,12 +106,13 @@ public struct SVGRenderer: CeolKitRenderer {
             var resolved = LayoutDirectives(config: effectiveConfig)
             for scope in score.tunes.first?.directives ?? [] {
                 guard case .fileGlobal = scope.scope else { continue }
-                resolved.apply(scope.directive)
+                resolved.apply(scope.directive, source: scope.source)
             }
             return resolved
         }()
 
         var tuneBlocks: [TuneBlock] = []
+        var fontReports: [TuneFontReport] = []
 
         // The size of the page the document is currently on, threaded through the tunes in
         // order: a page size persists until a `%%landscape` at a `%%newpage` changes it, so a
@@ -107,7 +120,7 @@ public struct SVGRenderer: CeolKitRenderer {
         var runningPageSize = Size(width: effectiveConfig.pageSize.width,
                                    height: effectiveConfig.pageSize.height)
 
-        for tune in score.tunes {
+        for (tuneIndex, tune) in score.tunes.enumerated() {
             // Where this tune's pages change size, and what they change to.  Resolved before
             // anything is packed because a page size decides the *width* the music is broken
             // to as well as the height it is packed into.
@@ -115,7 +128,7 @@ public struct SVGRenderer: CeolKitRenderer {
                                               portrait: config.pageSize)
             runningPageSize = pageSizes.closing
             // Resolved per tune, from the file baseline rather than from the tune before it:
-            // a tune header applies to its own tune (ABC v2.2 §4.23), so a `%%ceolkit:scale`
+            // a tune header applies to its own tune (ABC v2.2 §4.23), so a `%%scale`
             // in tune 1's header must not still be in force in tune 2 (issue #153).
             let layout = fileLayout.layering(tune)
             // The music scales; the page does not. Sizing and header widths are therefore
@@ -124,7 +137,39 @@ public struct SVGRenderer: CeolKitRenderer {
             // A ratio within the grace group, not a size derived from the staff, so it is
             // set after `scaled(by:)` and never multiplied by the scale factor.
             tuneConfig.graceNoteSpacing = layout.graceNoteSpacing
-            let sizer = MeasureSizer(config: tuneConfig, metadata: metadata)
+            // How this tune's text is set: the font directives in force for it, over the
+            // host's house style and CeolKit's defaults (§11.4.2; issue #186).
+            let (styles, fontResolutions) = TextStyles.resolve(
+                layout.fonts, sources: layout.fontSources, provider: fontProvider,
+                staffSize: tuneConfig.staffSize)
+            for found in fontResolutions {
+                guard let source = found.source,
+                      reportedFonts.insert("\(found.role.rawValue)@\(source.byteOffset)").inserted
+                else { continue }
+                diagnostics += found.resolution.diagnostics(at: source)
+            }
+            let unset = Set((1...FontSwitch.maxFont).filter {
+                FontSwitchStyles.role($0).map { layout.fonts[$0] == nil } ?? false
+            })
+            for use in FontSwitchUsage.firstUses(of: unset, in: tune) {
+                diagnostics.append(Diagnostic(
+                    severity: .warning, code: .unsetFontSwitch,
+                    message: "$\(use.font) switches to %%setfont-\(use.font), which is not set; "
+                        + "the text keeps its face, at the default size",
+                    source: use.source,
+                    hint: "Add %%setfont-\(use.font) <font> <size> to the file or tune header"))
+            }
+            let report = styles.report(specs: layout.fonts, sources: layout.fontSources)
+            fontReports.append(TuneFontReport(tuneIndex: tuneIndex, roles: report))
+            diagnostics += Self.fontListDiagnostics(
+                for: tune, tuneReport: report, config: effectiveConfig,
+                fileReport: {
+                    TextStyles.resolve(
+                        fileLayout.fonts, sources: fileLayout.fontSources, provider: fontProvider,
+                        staffSize: effectiveConfig.scaled(by: fileLayout.scale).staffSize
+                    ).styles.report(specs: fileLayout.fonts, sources: fileLayout.fontSources)
+                })
+            let sizer = MeasureSizer(config: tuneConfig, metadata: metadata, styles: styles)
 
             // §11.1: a `%%score` / `%%staves` plan decides which voices are printed and in
             // what order, and one written in the tune body resets that part-way through.
@@ -144,6 +189,11 @@ public struct SVGRenderer: CeolKitRenderer {
             // whatever key the music before it reached (#134).  Empty until a body `K:` moves
             // a voice, which leaves the tune's own key standing for everything else.
             var runningKeys: [VoiceId: KeySignature] = [:]
+            // The bar each voice last closed on, threaded the same way.  A measure whose
+            // opening bar is not this one wrote that bar in its own right — `:| ::`, two bars
+            // with nothing between them — and abcm2ps draws it whole, wherever it falls
+            // (issue #212).
+            var lastClosingBars: [VoiceId: BarLine] = [:]
             // The line width each system was broken to, parallel to `groups`: the justifier
             // has to spend exactly what the breaker charged, and across an orientation change
             // that is not one number for the tune (issue #158).
@@ -220,10 +270,27 @@ public struct SVGRenderer: CeolKitRenderer {
                                     voiceIndex: position,
                                     isPadding: stave.isPadding(voice: voice, column: column))
                             }
-                            let sized = sizer.size(sharedStaff: parts, keyChange: keyChange)
+                            // The staff draws the bar lines of its first sounding voice.  A
+                            // bar padding invents was not written by anyone, so it owns none.
+                            let barVoice = members.first {
+                                !stave.isPadding(voice: $0, column: column)
+                            }
+                            let ownsOpeningBar = barVoice.flatMap { voice in
+                                stave.measures[voice][column].openingBar
+                                    .map { $0 != lastClosingBars[printedVoices[voice].id] }
+                            } ?? false
+                            let sized = sizer.size(sharedStaff: parts, keyChange: keyChange,
+                                                   ownsOpeningBar: ownsOpeningBar)
                             columnsPerStaff[staffIndex].append(sized)
+                            // An opening bar of its own stands somewhere else at the head of a
+                            // system than after another bar, so it is sized for both too.
                             startColumnsPerStaff[staffIndex].append(
-                                keyChange == nil ? sized : sizer.size(sharedStaff: parts))
+                                keyChange == nil && !ownsOpeningBar ? sized
+                                    : sizer.size(sharedStaff: parts, ownsOpeningBar: ownsOpeningBar,
+                                                 atSystemStart: true))
+                        }
+                        for (voice, printed) in printedVoices.enumerated() {
+                            lastClosingBars[printed.id] = stave.measures[voice][column].closingBar
                         }
                     }
                 }
@@ -350,7 +417,7 @@ public struct SVGRenderer: CeolKitRenderer {
             }
             let tuneGroups = groups.isEmpty ? [] : justifier.justifyGroups(
                 groups, usableWidth: usableWidth(on: pageSizes.opening),
-                justifyLastSystem: layout.justifyLastSystem,
+                stretchLast: layout.stretchLast, stretchStaff: layout.stretchStaff,
                 systemHeaderWidths: headerWidths, systemUsableWidths: usableWidthOfGroup)
 
             // Build the title block for this tune per §6.1.3.
@@ -364,11 +431,13 @@ public struct SVGRenderer: CeolKitRenderer {
             // Centred on the page the tune's title actually prints on, which is the one it
             // opens on: a tune that turns the page landscape is titled across the landscape
             // width, not the document's (issue #158).
-            var titleConfig = effectiveConfig
+            // Scaled like the music: abcm2ps's `%%scale` sizes the title block too (#203).
+            var titleConfig = tuneConfig
             titleConfig.pageSize = PageSize(width: pageSizes.opening.width,
                                             height: pageSizes.opening.height)
             let (titleRows, titleBlockHeight) = SpecTitleBlockBuilder(
-                tune: tune, writeFields: tuneWriteFields, layoutConfig: titleConfig
+                tune: tune, writeFields: tuneWriteFields, layoutConfig: titleConfig,
+                styles: styles
             ).build()
             tuneBlocks.append(TuneBlock(systemGroups: tuneGroups, titleRows: titleRows,
                                         titleBlockHeight: titleBlockHeight, scale: layout.scale,
@@ -378,7 +447,11 @@ public struct SVGRenderer: CeolKitRenderer {
                                         graceSlurs: layout.graceSlurs,
                                         pageBreaks: Self.forcedPageBreaks(
                                             tune.pageBreaks, staveOfGroup: staveOfGroup,
-                                            portrait: config.pageSize)))
+                                            portrait: config.pageSize),
+                                        // §11.4.6: `W` is in the default `%%writefields` set.
+                                        words: tuneWriteFields.includes("W")
+                                            ? tune.words.map(\.value) : [],
+                                        textStyles: styles))
         }
 
         let firstPageNumber = Self.firstPageNumber(of: score)
@@ -393,7 +466,41 @@ public struct SVGRenderer: CeolKitRenderer {
                                         firstPageNumber: firstPageNumber, fileLayout: fileLayout)
         // One `TuneBlock` is built per tune above, so a block's index is its tune's index.
         return RenderedDocument(pages: try emitter.emit(finalLayout), layout: finalLayout,
-                                placements: placements)
+                                placements: placements, fonts: fontReports)
+    }
+
+    // MARK: - Font lists
+
+    /// What each `%%ceolkit:fontlist` in `tune` reports, as notes at the directive
+    /// (issue #191).
+    ///
+    /// Font directives are scoped, not positional — one anywhere in a tune sets that tune's
+    /// text throughout — so a list reports the fonts of the scope it is written in: the
+    /// tune's, or, written in the file preamble, the document's baseline (`fileReport`,
+    /// asked for only where a preamble list needs it).
+    static func fontListDiagnostics(for tune: Tune, tuneReport: [TextFontReport],
+                                    config: SVGRenderConfig,
+                                    fileReport: () -> [TextFontReport]) -> [Diagnostic] {
+        var out: [Diagnostic] = []
+        for scope in tune.directives {
+            guard case .fontList(let mode) = scope.directive else { continue }
+            func note(_ message: String) {
+                out.append(Diagnostic(severity: .info, code: .fontList, message: message,
+                                      source: scope.source))
+            }
+            switch mode {
+            case .resolved:
+                let fileGlobal = if case .fileGlobal = scope.scope { true } else { false }
+                for role in fileGlobal ? fileReport() : tuneReport { note(role.summary) }
+            case .available:
+                for face in CeolKitFonts.availableFaces(config: config) {
+                    note("\(face.postScriptName): \(face.family), \(face.weight.rawValue) "
+                         + "\(face.style.rawValue), \(face.format.rawValue), \(face.origin.rawValue)"
+                         + (face.embeddable ? "" : ", not embeddable"))
+                }
+            }
+        }
+        return out
     }
 
     // MARK: - Page breaks
@@ -513,9 +620,7 @@ public struct SVGRenderer: CeolKitRenderer {
                                firstPageNumber: Int, fileLayout: LayoutDirectives) -> ResolvedLayout {
         // Nothing anywhere in the document asks for a footer: the whole pass is skipped, and
         // no page gains an empty footer row it did not have before.
-        guard score.footer?.isEmpty == false
-                || score.tunes.contains(where: { $0.footer?.isEmpty == false })
-        else { return layout }
+        guard Self.hasFooter(score) else { return layout }
 
         let pageCount = layout.pages.count
         let updatedPages = layout.pages.enumerated().map { pageIndex, page -> ResolvedPage in
@@ -527,7 +632,10 @@ public struct SVGRenderer: CeolKitRenderer {
                     template: template,
                     pageNumber: page.pageNumber ?? firstPageNumber + pageIndex,
                     pageCount: pageCount,
-                    title: (tune ?? score.tunes.first)?.titles.first?.value ?? "",
+                    // The title as it reads: a footer does not follow the title's font
+                    // switches, and must not print them either (issue #204).
+                    title: FontSwitch.plainText(
+                        (tune ?? score.tunes.first)?.titles.first?.value ?? ""),
                     config: config,
                     // The footer sits against *this* page's margins, and a document can hold
                     // both orientations at once (issue #158), so the row is laid out on the
@@ -545,6 +653,12 @@ public struct SVGRenderer: CeolKitRenderer {
         return ResolvedLayout(pageSize: layout.pageSize, margins: layout.margins, pages: updatedPages)
     }
 
+    /// Whether any page of the document can carry a footer: the file's own, or any tune's.
+    static func hasFooter(_ score: Score) -> Bool {
+        score.footer?.isEmpty == false
+            || score.tunes.contains(where: { $0.footer?.isEmpty == false })
+    }
+
     private func buildFooterRows(template: String, pageNumber: Int, pageCount: Int,
                                   title: String, config: SVGRenderConfig,
                                   pageSize: Size,
@@ -558,11 +672,9 @@ public struct SVGRenderer: CeolKitRenderer {
                                                                      context: context))
             .map(FooterTemplate.trimmed)
 
-        let fontSize  = 12.0
-        // Shift baseline up by the descender depth so the bottom of descenders (p, g, y, …)
-        // lands precisely at the bottom margin line, not below it.
-        let baselineY = pageSize.height - config.margins.bottom
-            - fontSize * LibertinusSerifMetrics.descenderRatio
+        let fontSize  = FooterBand.fontSize
+        let baselineY = FooterBand.baselineY(pageHeight: pageSize.height,
+                                             bottomMargin: config.margins.bottom)
         let leftX     = config.margins.left
         let centerX   = pageSize.width / 2.0
         let rightX    = pageSize.width - config.margins.right

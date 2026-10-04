@@ -48,10 +48,14 @@ public struct RenderedDocument: Sendable {
     /// `pageIndex` is clamped to the last page there is, so a score that renders no pages
     /// at all leaves every entry pointing at an index `pages` does not have.
     public let placements: [TunePlacement]
+    /// What each tune's text is set in, one entry per tune in score order (issue #191).
+    public let fonts: [TuneFontReport]
 
-    public init(pages: [String], layout: ResolvedLayout, placements: [TunePlacement]) {
+    public init(pages: [String], layout: ResolvedLayout, placements: [TunePlacement],
+                fonts: [TuneFontReport] = []) {
         self.pages = pages
         self.layout = layout
         self.placements = placements
+        self.fonts = fonts
     }
 }

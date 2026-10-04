@@ -13,15 +13,27 @@ public struct VerticalLayoutEngine: Sendable {
     /// could not be read.  ``VoiceLabelGutter`` falls back to an estimate, and the caller
     /// that reserved the gutter took the same fallback, so the two still agree.
     private let labelFont: OpenTypeFont?
+    /// Space kept clear above the bottom margin on every page, for a `%%footer` that will be
+    /// stamped there once layout is done (issue #192).  Zero in a document with no footer,
+    /// which therefore lays out exactly as it did before there was a reservation at all.
+    private let bottomReserve: Double
 
     public init(config: SVGRenderConfig, metadata: BravuraMetadata) {
         self.init(config: config, metadata: metadata, labelFont: nil)
     }
 
-    init(config: SVGRenderConfig, metadata: BravuraMetadata, labelFont: OpenTypeFont?) {
+    init(config: SVGRenderConfig, metadata: BravuraMetadata, labelFont: OpenTypeFont?,
+         bottomReserve: Double = 0) {
         self.config = config
         self.metadata = metadata
         self.labelFont = labelFont
+        self.bottomReserve = bottomReserve
+    }
+
+    /// The lowest y anything laid out on a page of height `pageHeight` may reach: the bottom
+    /// margin, raised by the footer band where the document prints one.
+    private func floorY(pageHeight: Double) -> Double {
+        pageHeight - config.margins.bottom - bottomReserve
     }
 
     /// Converts justified systems into a fully positioned layout.
@@ -51,11 +63,12 @@ public struct VerticalLayoutEngine: Sendable {
         for (index, jsystem) in systems.enumerated() {
             let runs = endingRuns[index][0]
             let extent = verticalExtent(of: jsystem, staffSize: config.staffSize,
+                                        styles: .standard(staffSize: config.staffSize),
                                         hasEndingBracket: !runs.isEmpty)
             let (extraAbove, extraBelow) = (extent.extraAbove, extent.extraBelow)
             let totalHeight = extraAbove + staffHeight + extraBelow
 
-            if !pageSystems.isEmpty && y + totalHeight > config.pageSize.height - config.margins.bottom {
+            if !pageSystems.isEmpty && y + totalHeight > floorY(pageHeight: config.pageSize.height) {
                 let rows = isFirstPage ? titleRows : []
                 pages.append(ResolvedPage(systems: pageSystems, titleRows: rows))
                 pageSystems = []
@@ -194,13 +207,14 @@ public struct VerticalLayoutEngine: Sendable {
             // The same table is read by the fits-on-this-page pre-pass below and by the
             // placement that follows it, so the space reserved is the space drawn into.
             let endingRuns = EndingBracketBand.runs(in: groups)
-            // %%ceolkit:scale sizes this tune's music (and the gaps derived from staffSize)
-            // relative to the renderer default. Page size and margins stay absolute.
+            // The page scale (`%%scale`) sizes this tune's music, text and the gaps derived
+            // from staffSize. Page size and margins stay absolute.
             let tuneConfig  = config.scaled(by: block.scale)
             let staffSize   = tuneConfig.staffSize
             let staffHeight = 4.0 * staffSize
             let systemGap   = tuneConfig.systemGap
             let tuneGap     = tuneConfig.tuneGap
+            let styles      = block.textStyles ?? .standard(staffSize: staffSize)
 
             // A `%%newpage` standing before the tune moves its title block too, so it is
             // honoured ahead of everything else this block does.
@@ -212,7 +226,7 @@ public struct VerticalLayoutEngine: Sendable {
             // inner system loop below handles the mid-tune page breaks they require.
             if !pageSystems.isEmpty {
                 let tuneH = totalHeight(of: block, endingRuns: endingRuns)
-                if y + tuneH > pageSize.height - config.margins.bottom {
+                if y + tuneH > floorY(pageHeight: pageSize.height) {
                     flushPage()
                 }
             }
@@ -227,16 +241,12 @@ public struct VerticalLayoutEngine: Sendable {
             // Place this tune's title rows, offsetting their tune-relative baselineY by y.
             if !block.titleRows.isEmpty && pageOpeningTune == nil { pageOpeningTune = blockIndex }
             for row in block.titleRows {
-                pageTitleRows.append(ResolvedTitleRow(items: row.items.map {
-                    ResolvedTitleRow.Item(
-                        text: $0.text, x: $0.x, baselineY: $0.baselineY + y,
-                        anchor: $0.anchor, fontSize: $0.fontSize, isItalic: $0.isItalic)
-                }))
+                pageTitleRows.append(ResolvedTitleRow(items: row.items.map { $0.offset(by: y) }))
             }
             y += block.titleBlockHeight
 
             for (gi, group) in groups.enumerated() {
-                let metrics = groupMetrics(of: group, config: tuneConfig,
+                let metrics = groupMetrics(of: group, config: tuneConfig, styles: styles,
                                            endingRuns: endingRuns[gi])
 
                 // The tune's own breaks, resolved to the system each stands in front of.
@@ -245,7 +255,7 @@ public struct VerticalLayoutEngine: Sendable {
 
                 // A group breaks to the next page whole: splitting it would separate staves
                 // that only mean anything read together.
-                if !pageSystems.isEmpty && y + metrics.totalHeight > pageSize.height - config.margins.bottom {
+                if !pageSystems.isEmpty && y + metrics.totalHeight > floorY(pageHeight: pageSize.height) {
                     flushPage()
                 }
 
@@ -261,10 +271,40 @@ public struct VerticalLayoutEngine: Sendable {
                     tuneStemDirection: block.stemDirection,
                     straightFlags: block.straightFlags, graceSlurs: block.graceSlurs,
                     abcLine: abcLine,
-                    endingRuns: endingRuns[gi]))
+                    endingRuns: endingRuns[gi]).map {
+                        var system = $0
+                        system.textStyles = styles
+                        return system
+                    })
 
                 let isLastInBlock = gi == groups.count - 1
-                y += metrics.totalHeight + (isLastInBlock ? tuneGap : systemGap)
+                // The tune's gap follows its words, where it has any, not its last system.
+                let after = !isLastInBlock ? systemGap : block.words.isEmpty ? tuneGap : 0
+                y += metrics.totalHeight + after
+            }
+
+            // The `W:` words, a line at a time below the last system, so a long set of
+            // verses carries on over the page like the music does (issue #187).
+            if !block.words.isEmpty {
+                let words = styles.words
+                y += WordsBlock.topGap(words)
+                for line in block.words {
+                    let pageHasContent = !pageSystems.isEmpty || !pageTitleRows.isEmpty
+                    if pageHasContent && y + WordsBlock.lineHeight(words) > floorY(pageHeight: pageSize.height) {
+                        flushPage()
+                        // A blank line only separates verses; at the top of a page there is
+                        // nothing above it to separate from.
+                        if line.isEmpty { continue }
+                    }
+                    if pageOpeningTune == nil { pageOpeningTune = blockIndex }
+                    if !line.isEmpty {
+                        pageTitleRows.append(ResolvedTitleRow(items: [ResolvedTitleRow.Item(
+                            text: line, x: config.margins.left,
+                            baselineY: y + words.ascent, anchor: .start, style: words)]))
+                    }
+                    y += WordsBlock.lineHeight(words)
+                }
+                y += tuneGap
             }
 
             // A `%%newpage` written past the tune's last stave — at the foot of its body
@@ -318,7 +358,7 @@ public struct VerticalLayoutEngine: Sendable {
     }
 
     private func groupMetrics(of group: JustifiedSystemGroup,
-                              config: SVGRenderConfig,
+                              config: SVGRenderConfig, styles: TextStyles,
                               endingRuns: [[EndingBracketBand.Run]]) -> GroupMetrics {
         // Parallel to `group.staves` by construction: `EndingBracketBand.runs(in:)` walks
         // the very groups this is being called for, one entry per staff of each.
@@ -333,7 +373,7 @@ public struct VerticalLayoutEngine: Sendable {
         var startWidth = 0.0
         for (i, staff) in group.staves.enumerated() {
             let extent = verticalExtent(
-                of: staff, staffSize: staffSize,
+                of: staff, staffSize: staffSize, styles: styles,
                 hasEndingBracket: !endingRuns[i].isEmpty)
             let (extraAbove, extraBelow) = (extent.extraAbove, extent.extraBelow)
             staves.append((extraAbove, extraBelow, offset + extraAbove, extent.annotationFloors))
@@ -454,13 +494,14 @@ public struct VerticalLayoutEngine: Sendable {
     private func totalHeight(of block: TuneBlock,
                             endingRuns: [[[EndingBracketBand.Run]]]) -> Double {
         let tuneConfig = config.scaled(by: block.scale)
+        let styles = block.textStyles ?? .standard(staffSize: tuneConfig.staffSize)
         var h = block.titleBlockHeight
         for (i, group) in block.systemGroups.enumerated() {
-            h += groupMetrics(of: group, config: tuneConfig,
+            h += groupMetrics(of: group, config: tuneConfig, styles: styles,
                               endingRuns: endingRuns[i]).totalHeight
             if i < block.systemGroups.count - 1 { h += tuneConfig.systemGap }
         }
-        return h
+        return h + WordsBlock.height(lines: block.words.count, style: styles.words)
     }
 
     /// Width of the clef + key signature + time signature run that precedes the first
@@ -511,6 +552,7 @@ public struct VerticalLayoutEngine: Sendable {
     /// with the extent for the emitter to find them again (issue #171).
     private func verticalExtent(of system: JustifiedSystem,
                                 staffSize: Double,
+                                styles: TextStyles,
                                 hasEndingBracket: Bool
     ) -> (extraAbove: Double, extraBelow: Double, annotationFloors: AnnotationFloors) {
         var maxLedgerAbove = 0
@@ -538,19 +580,23 @@ public struct VerticalLayoutEngine: Sendable {
         let floor = AnnotationBand.floorRatio * s
         let floorAbove = Double(maxLedgerAbove) * s + graceOvershoot + (lines.above > 0 ? floor : 0)
         let floorBelow = Double(maxLedgerBelow) * s + (lines.below > 0 ? floor : 0)
-        let baseAbove = floorAbove + AnnotationBand.height(lines: lines.above, staffSize: s)
-        // Tempo annotations (from inline Q: events) are placed 1.5 staffSizes above the top
-        // staff line; font size is 1.5 staffSizes, so the bounding box extends ~3× above.
+        let baseAbove = floorAbove + AnnotationBand.height(
+            lines: lines.above, metrics: AnnotationBand.aboveMetrics(styles), staffSize: s)
         let hasTempoChanges = system.measures.contains { jm in
             jm.source.measure.events.contains { if case .tempoChange = $0 { return true }; return false }
         }
-        var extraAbove = hasTempoChanges ? max(baseAbove, s * 3) : baseAbove
+        // A tempo change stands 1.5 staff spaces above the staff and rises a full em of its
+        // own size above that.
+        let tempoReach = s * 1.5 + styles.tempoChange.size
+        var extraAbove = hasTempoChanges ? max(baseAbove, tempoReach) : baseAbove
         if hasEndingBracket { extraAbove += EndingBracketBand.height(staffSize: s) }
         // The verses hang below the ledger lines and the annotations, so the three are added
         // rather than maxed: a low note and what is written under it need the space each of
         // them asked for.
-        let extraBelow = floorBelow + AnnotationBand.height(lines: lines.below, staffSize: s)
-            + LyricBand.height(verses: verses, staffSize: s)
+        let extraBelow = floorBelow
+            + AnnotationBand.height(lines: lines.below, metrics: AnnotationBand.belowMetrics(styles),
+                                    staffSize: s)
+            + LyricBand.height(verses: verses, style: styles.vocal)
         return (extraAbove, extraBelow, AnnotationFloors(above: floorAbove, below: floorBelow))
     }
 
@@ -641,12 +687,29 @@ public struct VerticalLayoutEngine: Sendable {
             // section-start markers ([|, [|:, |:, ::), which are conventionally
             // restated at the start of a line.  Anything else would appear as a
             // spurious bar line between the clef/key signature and the first note.
+            //
+            // A repeat sign that falls on a system break is split across it, as abcm2ps
+            // and engraving convention both do it (issue #197): the half that looks back
+            // closes the system, the half that looks forward opens the next one.  So `::`
+            // restated at the start of a line keeps only its start-repeat half...
+            //
+            // None of this applies to a bar written in its own right — `:|` ending one line
+            // and `::` opening the next, or `| |` part way through one.  Nothing was split or
+            // shared: it is a second bar, drawn whole, as written, wherever it falls (issue
+            // #212).  The sizer has said which it is, and kept the room it needs clear of
+            // whatever stands before it: the lead.
             let openingBar: ResolvedBarLine? = {
                 guard let bar = jm.source.measure.openingBar else { return nil }
+                if jm.source.ownsOpeningBar {
+                    return ResolvedBarLine(x: measureOrigin.x + jm.source.openingBarLead,
+                                           kind: bar.kind)
+                }
                 guard i > 0 else {
                     switch bar.kind {
-                    case .start, .sectionRepeatStart, .repeatStart, .repeatBoth:
+                    case .start, .sectionRepeatStart, .repeatStart:
                         return ResolvedBarLine(x: measureOrigin.x, kind: bar.kind)
+                    case .repeatBoth:
+                        return ResolvedBarLine(x: measureOrigin.x, kind: .repeatStart)
                     default:
                         return nil
                     }
@@ -654,9 +717,21 @@ public struct VerticalLayoutEngine: Sendable {
                 guard bar != measures[i - 1].source.measure.closingBar else { return nil }
                 return ResolvedBarLine(x: measureOrigin.x, kind: bar.kind)
             }()
+            // ...and at the end of a system a start-repeat draws as a plain bar line, and
+            // `::` as its end-repeat half.  Drawn whole, either one's dots — and the thick
+            // line of a `|:` — would land past the end of the staff.
+            let closingKind: BarLineKind = {
+                let kind = jm.source.measure.closingBar.kind
+                guard i == measures.count - 1 else { return kind }
+                switch kind {
+                case .repeatStart, .sectionRepeatStart: return .single
+                case .repeatBoth:                       return .repeatEnd
+                default:                                return kind
+                }
+            }()
             let closingBar = ResolvedBarLine(
                 x: measureOrigin.x + jm.finalWidth,
-                kind: jm.source.measure.closingBar.kind
+                kind: closingKind
             )
 
             resolved.append(ResolvedMeasure(

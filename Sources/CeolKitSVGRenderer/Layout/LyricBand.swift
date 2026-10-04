@@ -13,9 +13,9 @@ import CeolKitModel
 /// keeps every page of every tune without lyrics exactly as it was.
 enum LyricBand {
 
-    /// Syllable size as a multiple of the staff space.  Twelve points against a 24-point
-    /// staff, which is what abcm2ps sets `%%vocalfont` at.
-    static let fontSizeRatio = 2.0
+    /// Syllable size as a multiple of the staff space: abcm2ps's default `%%vocalfont` size,
+    /// 13 against a 24-unit staff.
+    static let fontSizeRatio = TextStyles.defaultSize(.vocal) / TextStyles.nominalStaffSize
 
     /// Distance between one verse's baseline and the next, as a multiple of the syllable
     /// size.  Enough to clear a descender in the verse above and leave a little air.
@@ -41,6 +41,19 @@ enum LyricBand {
     static func baselineOffset(verse: Int, staffSize: Double) -> Double {
         Double(verse) * lineHeight(staffSize: staffSize)
             + fontSize(staffSize: staffSize) * LibertinusSerifMetrics.ascenderRatio
+    }
+
+    // MARK: - Styled metrics (issue #186)
+
+    static func lineHeight(_ style: TextStyle) -> Double { lineHeightRatio * style.size }
+
+    static func height(verses: Int, style: TextStyle) -> Double {
+        guard verses > 0 else { return 0 }
+        return Double(verses) * lineHeight(style)
+    }
+
+    static func baselineOffset(verse: Int, style: TextStyle) -> Double {
+        Double(verse) * lineHeight(style) + style.ascent
     }
 
     /// Thickness of a melisma's extender line.
@@ -69,11 +82,11 @@ enum LyricBand {
     /// Zero where neither note is sung, so a tune without lyrics is spaced exactly as it was
     /// before they were drawn.
     static func columnReservation(own: Double, next: Double, hyphenated: Bool,
-                                  staffSize: Double, font: OpenTypeFont?) -> Double {
+                                  staffSize: Double, style: TextStyle) -> Double {
         guard own > 0 || next > 0 else { return 0 }
         var gap = syllableGapRatio * staffSize
         if hyphenated {
-            gap += width(of: "-", font: font, fontSize: fontSize(staffSize: staffSize))
+            gap += style.width(of: "-")
         }
         return (own + next) / 2 + gap
     }
@@ -86,12 +99,10 @@ enum LyricBand {
 
     /// Width of the widest syllable a note's verses put under it, `0` for a note no verse
     /// reaches or that only holds a melisma.
-    static func widestSyllable(in lyrics: [LyricSyllable?], staffSize: Double,
-                               font: OpenTypeFont?) -> Double {
+    static func widestSyllable(in lyrics: [LyricSyllable?], style: TextStyle) -> Double {
         lyrics.reduce(0.0) { widest, syllable in
             guard case .text(let text, _) = syllable else { return widest }
-            return max(widest, width(of: displayText(text.value), font: font,
-                                     fontSize: fontSize(staffSize: staffSize)))
+            return max(widest, style.width(of: displayText(text.value)))
         }
     }
 

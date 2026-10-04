@@ -34,14 +34,31 @@ struct CanzonettaConformanceTests {
         let x: Double, y1: Double, y2: Double
     }
 
-    private func render() throws -> (svg: String, staves: [SystemGeometry], diagnostics: [Diagnostic]) {
+    /// The tune rendered, as a whole and page by page.
+    ///
+    /// §14.4 asks for its title, composer and lyrics in larger fonts than the defaults
+    /// (`%%titlefont Times-Bold 32`, `%%vocalfont Times-Roman 14`, …), which are honoured
+    /// (issue #186), and for `%%scale 0.7`, which shrinks the whole page back (issue #203).
+    /// Checks that pair a bracket with its staves still make the pairing page by page, so
+    /// they hold wherever the page breaks fall.
+    private func render() throws -> (svg: String, staves: [SystemGeometry],
+                                     diagnostics: [Diagnostic],
+                                     pages: [(svg: String, staves: [SystemGeometry])]) {
         let result = CeolKitParser().parse(canzonettaABC, options: .default)
         var diagnostics = result.score.diagnostics
         let pages = try SVGRenderer(config: config).render(result.score, diagnostics: &diagnostics)
-        // One page: the whole point of the fixture is that the three systems land together.
-        #expect(pages.count == 1)
         let geometry = try SVGGeometry.pages(from: pages)
-        return (pages.joined(), geometry.flatMap(\.systems), diagnostics)
+        return (pages.joined(), geometry.flatMap(\.systems), diagnostics,
+                zip(pages, geometry).map { ($0, $1.systems) })
+    }
+
+    /// Every system of the tune, page by page: the staves each bracket spans.
+    private func allSystems(_ pages: [(svg: String, staves: [SystemGeometry])])
+        -> [(bracket: Stroke, staves: [SystemGeometry])] {
+        pages.flatMap { page in
+            let brackets = bracketSpines(in: page.svg, staves: page.staves)
+            return zip(brackets, systems(staves: page.staves, brackets: brackets)).map { ($0, $1) }
+        }
     }
 
     /// The brackets: the vertical strokes that open flush with some staff's top line and
@@ -82,24 +99,36 @@ struct CanzonettaConformanceTests {
                 "Unexpected diagnostics: \(complaints.map { "line \($0.source.line): \($0.message)" })")
     }
 
+    // MARK: - Page scale (issue #203)
+
+    @Test("At its own %%scale 0.7 the tune fits one page, as abcm2ps prints it")
+    func fitsOnePageAtItsOwnScale() throws {
+        #expect(try render().pages.count == 1)
+    }
+
+    @Test("The 32-point title is drawn at %%scale 0.7: 22.4 points")
+    func titleIsScaled() throws {
+        let result = CeolKitParser().parse(canzonettaABC, options: .default)
+        let fonts = try SVGRenderer(config: config).renderDocument(result.score).fonts
+        let title = try #require(fonts.first?.roles.first { $0.role == .title })
+        #expect(abs(title.size - 22.4) < 1e-9)
+    }
+
     // MARK: - Systems
 
-    @Test("Three systems of three staves, and every staff belongs to one")
+    @Test("Systems of three staves, and every staff belongs to one")
     func threeStavesPerSystem() throws {
-        let (svg, staves, _) = try render()
-        let brackets = bracketSpines(in: svg, staves: staves)
-        #expect(brackets.count == 3)
-        let systems = systems(staves: staves, brackets: brackets)
-        #expect(systems.map(\.count) == [3, 3, 3])
+        let rendered = try render()
+        let systems = allSystems(rendered.pages).map(\.staves)
+        #expect(systems.count >= 3)
+        #expect(systems.allSatisfy { $0.count == 3 }, "\(systems.map(\.count))")
         // No staff drawn outside a system, and none counted twice.
-        #expect(systems.reduce(0) { $0 + $1.count } == staves.count)
-        #expect(staves.count == 9)
+        #expect(systems.reduce(0) { $0 + $1.count } == rendered.staves.count)
     }
 
     @Test("The staves of a system share one x-span")
     func stavesOfASystemShareAnXSpan() throws {
-        let (svg, staves, _) = try render()
-        for system in systems(staves: staves, brackets: bracketSpines(in: svg, staves: staves)) {
+        for system in allSystems(try render().pages).map(\.staves) {
             #expect(Set(system.map(\.left)).count == 1)
             #expect(Set(system.map(\.right)).count == 1)
         }
@@ -107,9 +136,7 @@ struct CanzonettaConformanceTests {
 
     @Test("Bar lines are aligned across all three staves of a system")
     func barLinesAlignAcrossTheSystem() throws {
-        let (svg, staves, _) = try render()
-        for (index, system) in systems(staves: staves,
-                                       brackets: bracketSpines(in: svg, staves: staves)).enumerated() {
+        for (index, system) in allSystems(try render().pages).map(\.staves).enumerated() {
             guard let top = system.first else { Issue.record("System \(index) has no staves"); return }
             #expect(!top.barlineXs.isEmpty)
             for staff in system.dropFirst() {
@@ -125,10 +152,7 @@ struct CanzonettaConformanceTests {
 
     @Test("Each system carries one bracket, spanning all three of its staves")
     func oneBracketPerSystemSpanningIt() throws {
-        let (svg, staves, _) = try render()
-        let brackets = bracketSpines(in: svg, staves: staves)
-        let systems = systems(staves: staves, brackets: brackets)
-        for (bracket, system) in zip(brackets, systems) {
+        for (bracket, system) in allSystems(try render().pages) {
             guard let first = system.first, let last = system.last else {
                 Issue.record("A bracket spans no staves")
                 return

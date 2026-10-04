@@ -68,11 +68,27 @@ public enum DiagnosticCode: String, Codable, Sendable {
     // CeolKit extensions
     case invalidPageNumber
     case misplacedStemAlignment
+    /// `%%scale`, `%%pagescale` or `%%ceolkit:scale` whose value is not a positive number.
     case invalidScale
+    /// A `%%scale` or `%%pagescale` written in a tune body (issue #203).  abcm2ps applies the
+    /// page scale to the whole of the tune being generated, and so does CeolKit: the value
+    /// takes effect from the tune's first system, not from where it is written.  (abc2svg
+    /// would change scale from the next music line; that is not implemented.)
+    case scaleAppliesToWholeTune
     case invalidGraceNoteSpacing
+    /// `%%stretchlast` whose value is neither a number from 0 to 1 nor a logical, or a
+    /// `%%ceolkit:justifylast` that is not `true` or `false`.
+    case invalidStretchLast
+    /// A font directive (§11.4.2) whose payload is not `<font name> [<size>]`: no name, a
+    /// size that is not a positive number, or words after the size.
+    case invalidFontDirective
     // Directives
     case unknownDirective
     case redundantDirective
+    /// A directive CeolKit still honours but is going to remove, with its replacement named
+    /// in the message — `%%ceolkit:scale`, which is `%%pagescale` (issue #203), and
+    /// `%%ceolkit:justifylast`, which is `%%stretchlast` (issue #198).
+    case deprecatedDirective
     /// A `%%footer` template contains a `$`-token CeolKit does not substitute — an
     /// abcm2ps placeholder that is not implemented here, or a typo such as `$p`.  The
     /// characters are engraved literally, and under the default outline mode they are
@@ -127,4 +143,16 @@ public enum DiagnosticCode: String, Codable, Sendable {
     case circularInclude
     case includeIgnoredInline
     case usingDefaultFileResolver
+    // Fonts (issue #190)
+    /// The font a document named was not available, and another face was used in its place.
+    case fontSubstituted
+    /// A face matched the font a document named, but its licence (`OS/2.fsType`) forbids
+    /// copying its outlines into a document, so another face was used.
+    case fontNotEmbeddable
+    /// A report `%%ceolkit:fontlist` asked for: one face, or what one kind of text is set in
+    /// (issue #191).  Always `.info`.
+    case fontList
+    /// Text switches with `$1` … `$4` to a `%%setfont-n` no directive set; the run keeps
+    /// the face it is in, at abcm2ps's default size (issue #204).
+    case unsetFontSwitch
 }

@@ -189,6 +189,11 @@ public struct SVGRenderer: CeolKitRenderer {
             // whatever key the music before it reached (#134).  Empty until a body `K:` moves
             // a voice, which leaves the tune's own key standing for everything else.
             var runningKeys: [VoiceId: KeySignature] = [:]
+            // The bar each voice last closed on, threaded the same way.  A measure whose
+            // opening bar is not this one wrote that bar in its own right — `:| ::`, two bars
+            // with nothing between them — and abcm2ps draws it whole, wherever it falls
+            // (issue #212).
+            var lastClosingBars: [VoiceId: BarLine] = [:]
             // The line width each system was broken to, parallel to `groups`: the justifier
             // has to spend exactly what the breaker charged, and across an orientation change
             // that is not one number for the tune (issue #158).
@@ -265,10 +270,27 @@ public struct SVGRenderer: CeolKitRenderer {
                                     voiceIndex: position,
                                     isPadding: stave.isPadding(voice: voice, column: column))
                             }
-                            let sized = sizer.size(sharedStaff: parts, keyChange: keyChange)
+                            // The staff draws the bar lines of its first sounding voice.  A
+                            // bar padding invents was not written by anyone, so it owns none.
+                            let barVoice = members.first {
+                                !stave.isPadding(voice: $0, column: column)
+                            }
+                            let ownsOpeningBar = barVoice.flatMap { voice in
+                                stave.measures[voice][column].openingBar
+                                    .map { $0 != lastClosingBars[printedVoices[voice].id] }
+                            } ?? false
+                            let sized = sizer.size(sharedStaff: parts, keyChange: keyChange,
+                                                   ownsOpeningBar: ownsOpeningBar)
                             columnsPerStaff[staffIndex].append(sized)
+                            // An opening bar of its own stands somewhere else at the head of a
+                            // system than after another bar, so it is sized for both too.
                             startColumnsPerStaff[staffIndex].append(
-                                keyChange == nil ? sized : sizer.size(sharedStaff: parts))
+                                keyChange == nil && !ownsOpeningBar ? sized
+                                    : sizer.size(sharedStaff: parts, ownsOpeningBar: ownsOpeningBar,
+                                                 atSystemStart: true))
+                        }
+                        for (voice, printed) in printedVoices.enumerated() {
+                            lastClosingBars[printed.id] = stave.measures[voice][column].closingBar
                         }
                     }
                 }

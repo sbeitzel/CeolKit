@@ -39,6 +39,15 @@ public struct SizedMeasure: Sendable {
     /// music.  Equal to ``eventOffsets`` and ``naturalWidth`` in a bar no text widened.
     public let musicOffsets: [Double]
     public let musicWidth: Double
+    /// Whether the opening bar was written in its own right — after a bar of its own, as in
+    /// `:| ::` or `| |`, or at the head of the tune — rather than being the previous
+    /// measure's closing bar restated.  abcm2ps draws such a bar whole wherever it falls,
+    /// the head of a system included, and so does this renderer (issue #212).
+    public let ownsOpeningBar: Bool
+    /// How far right of the measure's origin its opening bar is anchored, so that it stands
+    /// clear of whatever is drawn before it: the bar it follows, or the head of the staff.
+    /// Zero for a bar the measure does not own.  See ``ColumnMetrics/openingBarLead(for:ownsOpeningBar:atSystemStart:)``.
+    public let openingBarLead: Double
 
     public init(
         measure: Measure,
@@ -49,9 +58,13 @@ public struct SizedMeasure: Sendable {
         eventVoiceIndices: [Int]? = nil,
         keyChange: KeyChange? = nil,
         musicOffsets: [Double]? = nil,
-        musicWidth: Double? = nil
+        musicWidth: Double? = nil,
+        ownsOpeningBar: Bool = false,
+        openingBarLead: Double = 0
     ) {
         self.measure = measure
+        self.ownsOpeningBar = ownsOpeningBar
+        self.openingBarLead = openingBarLead
         self.naturalWidth = naturalWidth
         self.eventOffsets = eventOffsets
         self.musicOffsets = musicOffsets ?? eventOffsets

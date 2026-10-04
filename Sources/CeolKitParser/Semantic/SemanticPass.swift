@@ -1827,7 +1827,7 @@ struct SemanticPass {
             var staves: [Staff] = []
             if let state {
                 let accumulator = state.accumulator
-                var (measures, voiceDiags) = finaliseAccumulator(accumulator, openingMeter: bodyCtx.openingMeter)
+                var (measures, voiceDiags) = finaliseAccumulator(accumulator)
                 diagnostics += voiceDiags
 
                 // §7.4: each `&` layer of this voice, finished the same way and then squared
@@ -1835,7 +1835,7 @@ struct SemanticPass {
                 var layers: [(source: SourceRange, measures: [Measure])] = []
                 for overlay in bodyCtx.overlays(of: voiceId) {
                     let (overlayMeasures, overlayDiags) =
-                        finaliseAccumulator(overlay.state.accumulator, openingMeter: bodyCtx.openingMeter)
+                        finaliseAccumulator(overlay.state.accumulator)
                     diagnostics += overlayDiags
                     layers.append((overlay.source, overlayMeasures))
                 }
@@ -1968,14 +1968,10 @@ struct SemanticPass {
     /// Closes a voice out into measures: the last open bar, tie resolution across the whole
     /// voice, and beaming.
     ///
-    /// `openingMeter` is the meter the voice's *first* measure is in, not the one the body
-    /// ended in.  Meter and unit note length both move part way through a tune, and every
-    /// measure knows which it is in — `Measure.meter` where the meter moved, and
-    /// `Measure.unitNoteLength` always — so the beams are grouped measure by measure against
+    /// The unit note length moves part way through a tune, and every measure knows which it is
+    /// in (`Measure.unitNoteLength`), so the beams are grouped measure by measure against
     /// whatever was in force there (#85, #122).
-    private func finaliseAccumulator(
-        _ acc: VoiceAccumulator, openingMeter: Meter
-    ) -> ([Measure], [Diagnostic]) {
+    private func finaliseAccumulator(_ acc: VoiceAccumulator) -> ([Measure], [Diagnostic]) {
         var measures = acc.closedMeasures
         var diagnostics: [Diagnostic] = []
 
@@ -2065,20 +2061,18 @@ struct SemanticPass {
             ))
         }
 
-        // Beam measure by measure, against the meter and unit note length in force *there*.
-        // Both start at what the voice opened in; the meter moves where a measure records a
-        // change and the unit note length wherever a measure differs from the last.  A tune
-        // that changes neither builds one resolver and uses it throughout.
-        var currentMeter = openingMeter
+        // Beam measure by measure, against the unit note length in force *there*: it starts at
+        // what the voice opened in and moves wherever a measure differs from the last.  A tune
+        // that never changes it builds one resolver and uses it throughout.  The meter has no
+        // say (§4.7): only a note short enough to carry a flag can be beamed.
         var currentUnit = acc.openingUnitNoteLength
-        var resolver = BeamResolver(meter: currentMeter, unitNoteLength: currentUnit)
+        var resolver = BeamResolver(unitNoteLength: currentUnit)
         var beamResolved: [Measure] = []
         beamResolved.reserveCapacity(resolvedMeasures.count)
         for m in resolvedMeasures {
-            if m.meter != nil || m.unitNoteLength != currentUnit {
-                currentMeter = m.meter ?? currentMeter
+            if m.unitNoteLength != currentUnit {
                 currentUnit = m.unitNoteLength
-                resolver = BeamResolver(meter: currentMeter, unitNoteLength: currentUnit)
+                resolver = BeamResolver(unitNoteLength: currentUnit)
             }
             beamResolved.append(Measure(
                 openingBar: m.openingBar,

@@ -5,6 +5,10 @@ import CeolKitModel
 /// Issue #85: an inline `[L:]` or `[M:]` part way through a tune has to reach the beam
 /// resolver, and reach it *where it was written*.
 ///
+/// Since #217 only the unit note length matters to beaming — a note is beamable when it is
+/// short enough to carry a flag, whatever the meter — so the `[M:]` tests now check that
+/// the meter lands on the right measure and leaves the beams alone.
+///
 /// Both used to be voice-lifetime constants at beam time — the unit note length captured
 /// when the voice's accumulator was first created, the meter read off the body context
 /// after the whole body had been walked — so a tune that changed either had every one of
@@ -130,10 +134,10 @@ struct InlineLengthAndMeterBeamingTests {
 
     // MARK: [M:]
 
-    @Test("Measures either side of an inline [M:] are beamed against their own meter")
-    func inlineMeterDoesNotReachBackwards() throws {
-        // A quarter note is the whole beat in 4/4 and two thirds of it in 6/8, so the same
-        // written run beams on one side of the change and not on the other.
+    @Test("An inline [M:] does not change which notes are beamed")
+    func inlineMeterDoesNotChangeBeaming() throws {
+        // A quarter note is two thirds of the beat in 6/8, but it carries no flag, so it is
+        // not beamed on either side of the change (§4.7, #217).
         let bars = measures("""
         X:1
         M:4/4
@@ -144,8 +148,8 @@ struct InlineLengthAndMeterBeamingTests {
         try #require(bars.count == 3)
 
         #expect(beams(bars[0]) == [.single, .single, .single, .single])
-        #expect(beams(bars[1]) == [.start, .middle, .end])
-        #expect(beams(bars[2]) == [.start, .middle, .end])
+        #expect(beams(bars[1]) == [.single, .single, .single])
+        #expect(beams(bars[2]) == [.single, .single, .single])
     }
 
     @Test("An [M:] written against the bar line governs the bar after it")
@@ -162,7 +166,7 @@ struct InlineLengthAndMeterBeamingTests {
         #expect(bars[1].meter != nil)
 
         #expect(beams(bars[0]) == [.single, .single, .single, .single])
-        #expect(beams(bars[1]) == [.start, .middle, .end])
+        #expect(beams(bars[1]) == [.single, .single, .single])
     }
 
     @Test("A mid-voice [L:] belongs to the voice that carries it")

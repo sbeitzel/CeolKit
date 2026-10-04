@@ -103,9 +103,9 @@ enum FloatingVoiceSplitter {
                         attachesForward = false
                         beamOpen = false
                         tieOpen = false
-                    case .spacer, .tempoChange:
-                        // Neither ends a beam: `y` is written *inside* beamed runs to space
-                        // them, and an inline `Q:` is not music at all.
+                    case .spacer, .tempoChange, .clefChange:
+                        // None ends a beam: `y` is written *inside* beamed runs to space
+                        // them, and an inline `Q:` or clef is not music at all.
                         attachesForward = false
                     }
                 }

@@ -46,6 +46,10 @@ public struct Measure: Sendable {
     /// A `K:` written part way through a bar lands on the bar it falls in, exactly as a
     /// mid-bar `L:` does (#122): a measure carries one signature, so there is nowhere finer
     /// for it to go.
+    ///
+    /// Only a `K:` that names a key sets this.  One that changes the clef alone (`K:bass`,
+    /// `[K:clef=bass]`) leaves the signature as it was, and is an `Event.clefChange` in
+    /// `events` instead (#223).  The key's `clef` is the clef in force from this measure on.
     public let key: KeySignature?
     /// The unit note length this measure's durations are counted in — always the effective
     /// value, on every measure, not only where an `L:` moved it.

@@ -189,6 +189,8 @@ public struct SVGRenderer: CeolKitRenderer {
             // whatever key the music before it reached (#134).  Empty until a body `K:` moves
             // a voice, which leaves the tune's own key standing for everything else.
             var runningKeys: [VoiceId: KeySignature] = [:]
+            // The clef each voice is standing in, threaded the same way (issue #223).
+            var runningClefs: [VoiceId: ClefSpec] = [:]
             // The bar each voice last closed on, threaded the same way.  A measure whose
             // opening bar is not this one wrote that bar in its own right — `:| ::`, two bars
             // with nothing between them — and abcm2ps draws it whole, wherever it falls
@@ -215,6 +217,7 @@ public struct SVGRenderer: CeolKitRenderer {
                 // The unit note length is not resolved here either — an `L:` moves it part
                 // way through a voice, so it is the measure that carries it (issue #122).
                 let voiceKeys = printedVoices.map { runningKeys[$0.id] ?? tune.effectiveKey(for: $0) }
+                let voiceClefs = printedVoices.map { runningClefs[$0.id] ?? $0.properties.clef }
 
                 // Bring the voices into agreement about how much music each source line
                 // holds, so the break points chosen below are legal for every one of them.
@@ -251,16 +254,37 @@ public struct SVGRenderer: CeolKitRenderer {
                 // before anything is packed — because it depends only on the columns before it
                 // and not on how they were broken (#134).
                 var columnKeysPerStaff = [[KeySignature?]](repeating: [], count: voicesByStaff.count)
+                // The clef each staff is in, kept the same way: a `K:` part way through moves
+                // it, and the head of a system opening at a column draws the one in force
+                // there (issue #223).  The lead voice's, as for the key.
+                var staffClefs: [ClefSpec] = voicesByStaff.map { voiceClefs[$0[0]] }
+                var columnClefsPerStaff = [[ClefSpec]](repeating: [], count: voicesByStaff.count)
+                // Every lead measure of the region in column order, so a column can see whether
+                // the next one opens on a clef change — which abcm2ps draws before the bar
+                // line, at the end of this one.
+                let leadMeasures = voicesByStaff.map { members in
+                    alignedStaves.flatMap { $0.measures[members[0]] }
+                }
+                var globalColumn = 0
                 for (si, stave) in alignedStaves.enumerated() {
                     let isLastStave = si == alignedStaves.count - 1
                     for column in 0..<stave.measureCount {
                         breaks.append(!isLastStave && column == stave.measureCount - 1 ? .hard : nil)
                         for (staffIndex, members) in voicesByStaff.enumerated() {
                             let lead = members[0]
+                            let leadMeasure = stave.measures[lead][column]
+                            // A change before the bar's music is drawn before its opening
+                            // bar, so the bar itself is in the new clef from the start.
+                            let entryClef = leadingClefChange(of: leadMeasure) ?? staffClefs[staffIndex]
+                            let nextColumn = globalColumn + 1
+                            let trailingClef = nextColumn < leadMeasures[staffIndex].count
+                                ? leadingClefChange(of: leadMeasures[staffIndex][nextColumn]) : nil
+                            columnClefsPerStaff[staffIndex].append(entryClef)
+                            staffClefs[staffIndex] = clefLeaving(leadMeasure, entering: entryClef)
                             var keyChange: KeyChange? = nil
-                            if let newKey = stave.measures[lead][column].key {
+                            if let newKey = leadMeasure.key {
                                 keyChange = KeyChange(from: staffKeys[staffIndex], to: newKey,
-                                                      clef: printedVoices[lead].properties.clef)
+                                                      clef: entryClef)
                                 staffKeys[staffIndex] = newKey
                             }
                             columnKeysPerStaff[staffIndex].append(staffKeys[staffIndex])
@@ -279,16 +303,25 @@ public struct SVGRenderer: CeolKitRenderer {
                                 stave.measures[voice][column].openingBar
                                     .map { $0 != lastClosingBars[printedVoices[voice].id] }
                             } ?? false
+                            let trailingWidth = trailingClef.map {
+                                clefChangeWidth(for: $0, metadata: metadata,
+                                                staffSize: tuneConfig.staffSize)
+                            } ?? 0
                             let sized = sizer.size(sharedStaff: parts, keyChange: keyChange,
                                                    ownsOpeningBar: ownsOpeningBar)
+                                .placed(clef: entryClef, trailingClef: trailingClef,
+                                        trailingWidth: trailingWidth)
                             columnsPerStaff[staffIndex].append(sized)
                             // An opening bar of its own stands somewhere else at the head of a
                             // system than after another bar, so it is sized for both too.
                             startColumnsPerStaff[staffIndex].append(
                                 keyChange == nil && !ownsOpeningBar ? sized
                                     : sizer.size(sharedStaff: parts, ownsOpeningBar: ownsOpeningBar,
-                                                 atSystemStart: true))
+                                                 atSystemStart: true)
+                                        .placed(clef: entryClef, trailingClef: trailingClef,
+                                                trailingWidth: trailingWidth))
                         }
+                        globalColumn += 1
                         for (voice, printed) in printedVoices.enumerated() {
                             lastClosingBars[printed.id] = stave.measures[voice][column].closingBar
                         }
@@ -298,6 +331,7 @@ public struct SVGRenderer: CeolKitRenderer {
                 // Hand the keys this region ended in to the next one.  A staff carries one
                 // signature, so every voice drawn on it leaves in the key its lead does.
                 for (staffIndex, members) in voicesByStaff.enumerated() {
+                    for voice in members { runningClefs[printedVoices[voice].id] = staffClefs[staffIndex] }
                     guard let key = staffKeys[staffIndex] else { continue }
                     for voice in members { runningKeys[printedVoices[voice].id] = key }
                 }
@@ -338,7 +372,8 @@ public struct SVGRenderer: CeolKitRenderer {
                                               printedVoices[$0].properties.stemDirection
                                           },
                                           systemStartMeasures: startColumnsPerStaff[staffIndex],
-                                          columnKeys: columnKeysPerStaff[staffIndex])
+                                          columnKeys: columnKeysPerStaff[staffIndex],
+                                          columnClefs: columnClefsPerStaff[staffIndex])
                 }
                 // Space for the region's braces and brackets, reserved before anything is
                 // packed into the line.  It is added to the header widths rather than taken
@@ -370,12 +405,12 @@ public struct SVGRenderer: CeolKitRenderer {
                 // fall, and of the systems it decided on, so the justifier spends what the
                 // breaker charged.
                 let headerWidth = { (isOpening: Bool,
-                                     signature: (Int) -> (KeySignature?, KeyChange?)) -> Double in
+                                     signature: (Int) -> (ClefSpec, KeySignature?, KeyChange?)) -> Double in
                     indent + (isOpening ? openingGutter : laterGutter)
                         + staffLead.indices.reduce(0.0) { widest, staffIndex in
-                            let (key, change) = signature(staffIndex)
+                            let (clef, key, change) = signature(staffIndex)
                             return max(widest, systemHeaderWidth(
-                                clef: printedVoices[staffLead[staffIndex]].properties.clef,
+                                clef: clef,
                                 keySignature: key, meter: isOpening ? regionMeter : nil,
                                 metadata: metadata, staffSize: tuneConfig.staffSize,
                                 keyChange: change))
@@ -386,13 +421,15 @@ public struct SVGRenderer: CeolKitRenderer {
                     grouping: selection.grouping,
                     headerWidth: { systemIndex, startColumn in
                         headerWidth(systemIndex == 0) { staffIndex in
-                            (columnKeysPerStaff[staffIndex][startColumn],
+                            (columnClefsPerStaff[staffIndex][startColumn],
+                             columnKeysPerStaff[staffIndex][startColumn],
                              columnsPerStaff[staffIndex][startColumn].keyChange)
                         }
                     })
                 headerWidths += regionGroups.enumerated().map { index, group in
                     headerWidth(index == 0) { staffIndex in
-                        (group.staves[staffIndex].keySignature,
+                        (group.staves[staffIndex].clef,
+                         group.staves[staffIndex].keySignature,
                          group.staves[staffIndex].headerKeyChange)
                     }
                 }

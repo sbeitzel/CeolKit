@@ -74,6 +74,10 @@ public struct LineBreaker: Sendable {
         /// to ``measures``; empty means the voice never changes key and every system's head
         /// draws ``keySignature``.
         public let columnKeys: [KeySignature?]
+        /// The clef the staff is in at each column's first note — ``clef`` until a body `K:`
+        /// changes it (issue #223).  Parallel to ``measures``; empty means it never changes.
+        /// A system opening at a column draws this one in its head.
+        public let columnClefs: [ClefSpec]
         /// Stamped on the voice's first system only.
         public let meter: Meter?
         /// What the voice is called on the first system it appears on — its `V:` `name=`.
@@ -93,7 +97,8 @@ public struct LineBreaker: Sendable {
                     firstSystemLabel: String? = nil, laterSystemLabel: String? = nil,
                     voiceStemDirections: [StemDirection] = [],
                     systemStartMeasures: [SizedMeasure] = [],
-                    columnKeys: [KeySignature?] = []) {
+                    columnKeys: [KeySignature?] = [],
+                    columnClefs: [ClefSpec] = []) {
             self.measures = measures
             // A caller with nothing to say about key changes gets the plain columns back for
             // both roles, so everything below can index one array without testing the other.
@@ -101,6 +106,8 @@ public struct LineBreaker: Sendable {
                 ? systemStartMeasures : measures
             self.columnKeys = columnKeys.count == measures.count
                 ? columnKeys : Array(repeating: keySignature, count: measures.count)
+            self.columnClefs = columnClefs.count == measures.count
+                ? columnClefs : Array(repeating: clef, count: measures.count)
             self.clef = clef
             self.keySignature = keySignature
             self.meter = meter
@@ -191,7 +198,7 @@ public struct LineBreaker: Sendable {
                         // Only the system that ends on the source break inherited it.
                         sourceForced: stave.endsAtSourceBreak && isLastOfStave,
                         staveWasSplit: ranges.count > 1,
-                        clef: voice.clef,
+                        clef: voice.columnClefs[start],
                         keySignature: voice.columnKeys[start],
                         meter: isFirstOfTune ? voice.meter : nil,
                         voiceLabel: isFirstOfTune ? voice.firstSystemLabel : voice.laterSystemLabel,

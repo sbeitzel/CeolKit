@@ -827,7 +827,9 @@ struct SemanticPass {
         let step = diatonicStep(from: tok.pitchLetter)
         // ABC octave convention: uppercase C..B = octave 4 (middle C = C4), lowercase c..b = octave 5
         let baseOctave = tok.pitchLetter.isUppercase ? 4 : 5
-        let octave = baseOctave + tok.octaveMarks
+        // `octave=` moves the music itself (§4.6), so the pitch is the moved one — for bar
+        // memory, for engraving and for playback alike, as abcm2ps applies it (#224).
+        let octave = baseOctave + tok.octaveMarks + ctx.octave(in: voice)
 
         let currentResolved = ctx.resolveAccidental(step: step, octave: octave, in: voice)
         let writtenAlt = tok.accidental.map { alterationFromToken($0) }
@@ -887,7 +889,7 @@ struct SemanticPass {
         let resolvedNotes: [Note] = notes.map { tok in
             let step = diatonicStep(from: tok.pitchLetter)
             let baseOctave = tok.pitchLetter.isUppercase ? 4 : 5
-            let octave = baseOctave + tok.octaveMarks
+            let octave = baseOctave + tok.octaveMarks + ctx.octave(in: voice)
 
             let currentResolved = ctx.resolveAccidental(step: step, octave: octave, in: voice)
             let writtenAlt = tok.accidental.map { alterationFromToken($0) }

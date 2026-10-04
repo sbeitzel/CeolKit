@@ -16,6 +16,7 @@ enum VoiceFieldParser {
         var staffLines = 5
         var transposeSemitones = 0
         var transposeOctave = 0
+        var statesOctave = false
         var middleNote: Pitch? = nil
         var diagnostics: [Diagnostic] = []
 
@@ -50,7 +51,7 @@ enum VoiceFieldParser {
                 lex.skipWhitespace()
                 var sign = 1
                 if lex.consume("-") { sign = -1 } else { _ = lex.consume("+") }
-                if let n = lex.scanInt() { transposeOctave = sign * n }
+                if let n = lex.scanInt() { transposeOctave = sign * n; statesOctave = true }
             case "stafflines":
                 if let n = lex.scanInt() { staffLines = n }
             case "middle", "m":
@@ -82,7 +83,8 @@ enum VoiceFieldParser {
 
         let props = VoiceProperties(
             clef: ClefSpec(clef: clef, octaveShift: octaveShift),
-            transposition: Transposition(semitones: transposeSemitones, octave: transposeOctave),
+            transposition: Transposition(semitones: transposeSemitones, octave: transposeOctave,
+                                         statesOctave: statesOctave),
             staffProperties: StaffProperties(staffLines: staffLines),
             name: name,
             subname: subname,

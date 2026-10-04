@@ -689,6 +689,13 @@ struct BodyContext {
     /// with no music: `%%score` may place a voice the body never switches into (issue #61).
     private(set) var declaredVoices: Set<String>
     var voiceProperties: [String: VoiceProperties] = [:]
+    /// The `octave=` each voice is under, by voice id, where one was stated for it (§4.6,
+    /// issue #224).  Kept apart from `voiceProperties`, which reports what a voice was
+    /// declared with: a `K:` part way through moves the octave without redeclaring anything.
+    private var voiceOctaves: [String: Int] = [:]
+    /// The `octave=` of the tune header's `K:`, under which every voice stands until it states
+    /// its own.
+    private var tuneOctave = 0
     var voiceDirectives: [String: [CeolKitDirectiveScope]] = [:]
     var bodyTuneDirectives: [CeolKitDirectiveScope] = []
     /// `%%score` / `%%staves` met in the body, in source order, each already carrying the
@@ -731,6 +738,15 @@ struct BodyContext {
         self.keySignatureAlterations = keyAlterations(for: key)
         self.userSymbols = userSymbols
         self.voiceProperties = headerVoices
+        // abcm2ps's order: the header's `V:` lines give each voice its own octave, and the
+        // header's `K:`, which closes the header, then gives every voice the one it states.
+        if key.transposition.statesOctave {
+            self.tuneOctave = key.transposition.octave
+        } else {
+            for (id, properties) in headerVoices where properties.transposition.statesOctave {
+                self.voiceOctaves[id] = properties.transposition.octave
+            }
+        }
         self.linebreakChars = linebreakChars
         self.linebreakOnEOL = linebreakOnEOL
     }
@@ -809,6 +825,17 @@ struct BodyContext {
         } else {
             voiceProperties[id] = properties
         }
+        if properties.transposition.statesOctave {
+            voiceOctaves[id] = properties.transposition.octave
+        }
+    }
+
+    // MARK: Octave
+
+    /// How many octaves `voice`'s music is moved from where it is written (§4.6).  An `&`
+    /// layer is part of its voice and moves with it.
+    func octave(in voice: VoiceKey) -> Int {
+        voiceOctaves[voice.base] ?? tuneOctave
     }
 
     // MARK: Meter
@@ -838,6 +865,10 @@ struct BodyContext {
     /// that carries it — §7.3 asks for such a field to be repeated in every voice it should
     /// affect, which is only meaningful if one voice's does not reach the rest.
     mutating func setKey(_ newKey: KeySignature, in voice: VoiceKey, source: SourceRange) {
+        // The octave a `K:` states belongs to the voice that carries it, like the key itself.
+        if newKey.transposition.statesOctave {
+            voiceOctaves[voice.base] = newKey.transposition.octave
+        }
         let alterations = keyAlterations(for: newKey)
         withVoice(voice, source: source) { $0.setKey(newKey, alterations: alterations) }
     }

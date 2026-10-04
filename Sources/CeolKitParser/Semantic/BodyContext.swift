@@ -659,10 +659,6 @@ struct BodyContext {
     /// an `L:` in the body belongs to the voice that carries it (§7.3).
     let unitNoteLength: Fraction
     private(set) var meter: Meter
-    /// The meter the tune opened in — every voice's first measure is in it, whatever `meter`
-    /// has moved on to by the time the body has been walked.  What the beam resolver starts
-    /// from, with `Measure.meter` moving it on from there.
-    let openingMeter: Meter
     /// Bumped by every `[M:]`, so each voice can tag its own next measure exactly once.
     private(set) var meterGeneration: Int = 0
     /// The tune's `K:`, governing every voice that does not state one of its own.  Like
@@ -726,7 +722,6 @@ struct BodyContext {
         self.declaredVoices = Set(headerVoiceOrder)
         self.unitNoteLength = unitNoteLength
         self.meter = meter
-        self.openingMeter = meter
         self.key = key
         self.keySignatureAlterations = keyAlterations(for: key)
         self.userSymbols = userSymbols

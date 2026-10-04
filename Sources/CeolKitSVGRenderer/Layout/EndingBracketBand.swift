@@ -241,7 +241,7 @@ enum EndingBracketBand {
                     .map { accidentals.reservation(for: $0.displayedAccidental) }.max() ?? 0)
             case .rest, .grace, .tuplet:
                 return event.origin.x
-            case .spacer, .directiveAnchor, .tempoChange:
+            case .spacer, .directiveAnchor, .tempoChange, .clefChange:
                 return nil
             }
         }

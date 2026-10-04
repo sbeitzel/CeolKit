@@ -78,6 +78,11 @@ public struct MeasureSizer: Sendable {
                     for: measure.events[i + 1], quarterInUnits: quarterInUnits,
                     followedBy: nextSpacingEvent(after: i + 1, in: measure.events))
                 i += 2
+            } else if case .clefChange = event, !measure.events[..<i].contains(where: isMusic) {
+                // A clef change before any of the bar's music is drawn before its opening bar,
+                // at the end of the bar before, which makes the room for it (issue #223).
+                offsets.append(x)
+                i += 1
             } else {
                 offsets.append(x)
                 x += metrics.columnWidth(

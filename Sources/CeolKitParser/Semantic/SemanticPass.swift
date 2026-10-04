@@ -434,7 +434,9 @@ struct SemanticPass {
         switch field {
         case .referenceNumber(let n, _): ctx.reference = n
         case .title(let t):             ctx.titles.append(t)
-        case .key(let k):               ctx.key = k
+        case .key(let k):
+            // A second header `K:` is measured against the first; the first against nothing.
+            ctx.key = k.resolved(against: ctx.key, clef: ctx.key?.clef)
         case .meter(let m, _):          ctx.meter = m
         case .unitNoteLength(let f, _): ctx.unitNoteLength = f
         case .tempo(let t, _):          ctx.tempo = t
@@ -2104,8 +2106,8 @@ struct SemanticPass {
     /// suppresses can only put treble back.
     ///
     /// A `K:` part way through a voice is not considered: `openingKey` is only the key of a
-    /// `K:` that arrives before the voice's first note, and the renderer has one clef per
-    /// voice for the whole tune, so a mid-tune change has nowhere to go yet (#126).
+    /// `K:` that arrives before the voice's first note.  A later one that changes the clef is
+    /// an `Event.clefChange` where it was written (#223).
     private func foldingKeyClef(
         into props: VoiceProperties,
         openingKey: KeySignature?,

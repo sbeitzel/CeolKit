@@ -81,9 +81,6 @@ struct SVGEmitter: Sendable {
     /// order — carried from ``ResolvedSystem/voiceStemDirections``, so its count is how many
     /// voices share the staff.  Empty on the page-level emitter, which draws nothing itself.
     let voiceStemDirections: [StemDirection]
-    /// The clef of the staff being emitted, which is what places every notehead on it (issue
-    /// #222).  Treble on the page-level emitter, which draws no notes itself.
-    let clef: ClefSpec
     /// The number the first page prints, per `%%ceolkit:pagenumber` (issue #138).  1 for a
     /// document that does not use the directive, which numbers pages from 1 as before.
     let firstPageNumber: Int
@@ -99,14 +96,12 @@ struct SVGEmitter: Sendable {
          stemDirection: StemDirection = .auto,
          systemStemDirection: StemDirection? = nil,
          voiceStemDirections: [StemDirection] = [],
-         clef: ClefSpec = .treble,
          firstPageNumber: Int = 1) {
         self.config = config
         self.metadata = metadata
         self.documentStemDirection = stemDirection
         self.stemDirection = systemStemDirection ?? stemDirection
         self.voiceStemDirections = voiceStemDirections
-        self.clef = clef
         self.firstPageNumber = firstPageNumber
         let accidentalMetrics = AccidentalMetrics(config: config, metadata: metadata)
         self.accidentalMetrics = accidentalMetrics
@@ -254,8 +249,7 @@ struct SVGEmitter: Sendable {
                 || graceSlurs != config.graceSlurs
                 || tuneStem != documentStemDirection
                 || systemStem != stemDirection
-                || system.voiceStemDirections != voiceStemDirections
-                || system.clef != clef else { return self }
+                || system.voiceStemDirections != voiceStemDirections else { return self }
         var systemConfig = config
         systemConfig.staffSize = system.staffSize
         systemConfig.graceNoteSpacing = system.graceNoteSpacing
@@ -264,7 +258,6 @@ struct SVGEmitter: Sendable {
         return SVGEmitter(config: systemConfig, metadata: metadata,
                           stemDirection: tuneStem, systemStemDirection: systemStem,
                           voiceStemDirections: system.voiceStemDirections,
-                          clef: system.clef,
                           firstPageNumber: firstPageNumber)
     }
 
@@ -357,7 +350,7 @@ struct SVGEmitter: Sendable {
                                 unitNoteLength: Fraction) -> [CollisionHead] {
         let direction = resolvedStemDirection(forVoice: event.voiceIndex)
         func head(_ note: Note) -> CollisionHead {
-            let staffPos = self.staffPos(for: note.pitch)
+            let staffPos = self.staffPos(for: note.pitch, clef: event.clef)
             let absDur = absoluteDuration(note.duration, unitNoteLength: unitNoteLength)
             return CollisionHead(voiceIndex: event.voiceIndex, staffPos: staffPos,
                                  glyph: .notehead(absoluteDuration: absDur),
@@ -390,7 +383,7 @@ struct SVGEmitter: Sendable {
                 if r.kind != .invisible && r.kind != .fullMeasureInvisible {
                     voices.insert(event.voiceIndex)
                 }
-            case .spacer, .directiveAnchor, .tempoChange:
+            case .spacer, .directiveAnchor, .tempoChange, .clefChange:
                 break
             }
         }
@@ -848,7 +841,9 @@ struct SVGEmitter: Sendable {
 
                 // Beside the notehead, and at a stated offset from it.  A chord's are centred
                 // on the middle of its span, which is what they stand beside.
-                let ys = notes.map { noteY(staffPos: staffPos(for: $0.pitch), bottomStaffY: bottomY) }
+                let ys = notes.map {
+                    noteY(staffPos: staffPos(for: $0.pitch, clef: event.clef), bottomStaffY: bottomY)
+                }
                 guard let highest = ys.min(), let lowest = ys.max() else { continue }
                 let centreY = (highest + lowest) / 2
                 // Half a cap height below the centre puts the letterforms' middle on it.
@@ -1046,15 +1041,23 @@ struct SVGEmitter: Sendable {
     // MARK: - Clef
 
     private func emitClef(_ system: ResolvedSystem, builder: inout SVGBuilder) {
-        guard let glyph = clefGlyph(for: system.clef) else { return }
+        emitClefGlyph(system.clef, x: system.origin.x + 0.25 * config.staffSize,
+                      bottomStaffY: system.origin.y + system.staffOrigin + system.staffHeight,
+                      scale: 1, builder: &builder)
+    }
+
+    /// Draws `spec` with its left edge at `x`.  `scale` below 1 is a clef change part way
+    /// through the staff: SMuFL anchors a clef on the line it names, so the smaller glyph
+    /// names the same line from the same origin.
+    private func emitClefGlyph(_ spec: ClefSpec, x: Double, bottomStaffY: Double, scale: Double,
+                               builder: inout SVGBuilder) {
+        guard let glyph = clefGlyph(for: spec) else { return }
         let s = config.staffSize
-        let bottomStaffY = system.origin.y + system.staffOrigin + system.staffHeight
-        let fontSize = 4.0 * s
-        let x = system.origin.x + 0.25 * s
+        let fontSize = 4.0 * s * scale
         // The octave numeral hangs off the same origin the plain clef has, so a shifted
         // clef still names the same staff line and there is nothing extra to place here.
         let y: Double
-        switch system.clef.clef {
+        switch spec.clef {
         case .none:                 return
         case .treble:               y = bottomStaffY - s
         case .bass:                 y = bottomStaffY - 3 * s
@@ -1201,6 +1204,12 @@ struct SVGEmitter: Sendable {
         }
         emitBarLine(measure.closingBar, topY: topY, bottomY: bottomY,
                     lineBottomY: lineBottomY, builder: &builder)
+        // A clef changing at the closing bar is drawn small just before it (issue #223).
+        if let clef = measure.trailingClef {
+            let width = clefChangeWidth(for: clef, metadata: metadata, staffSize: config.staffSize)
+            emitClefGlyph(clef, x: measure.closingBar.x - width, bottomStaffY: bottomY,
+                          scale: clefChangeScale, builder: &builder)
+        }
 
         // A key or time signature changing here is drawn at the head of the bar, in the
         // space `ColumnMetrics.leftMargin` kept ahead of the first note — key first, which is
@@ -1253,8 +1262,13 @@ struct SVGEmitter: Sendable {
             let anchorX = event.origin.x + (eventPlacements.first?.dx ?? 0)
             // Grace events are handled here so their stem-tip Y can be forwarded
             // to the next note for fermata clearance.
+            if case .clefChange = event.kind,
+               !measure.events[..<index].contains(where: { $0.kind.isMusic }) {
+                continue
+            }
             if case .grace(let g) = event.kind {
-                lastGraceBeamY[voice] = emitGraceGroup(g, originX: event.origin.x, topStaffY: topY,
+                lastGraceBeamY[voice] = emitGraceGroup(g, clef: event.clef,
+                                                       originX: event.origin.x, topStaffY: topY,
                                                        bottomStaffY: bottomY, builder: &builder)
                 continue
             }
@@ -1288,7 +1302,7 @@ struct SVGEmitter: Sendable {
             // a .continuesTie note draws the arc from the previous note to itself and
             // then registers itself as a new tie start.
             if let note = noteFrom(event), note.ties != .none {
-                let sp = staffPos(for: note.pitch)
+                let sp = staffPos(for: note.pitch, clef: event.clef)
                 let ny = noteY(staffPos: sp, bottomStaffY: bottomY)
 
                 if note.ties == .endsTie || note.ties == .continuesTie {
@@ -1315,7 +1329,7 @@ struct SVGEmitter: Sendable {
             // Slur handling: close slurs first (innermost first, LIFO), then open new ones.
             // A slur arc is visually identical to a tie arc; the difference is semantic.
             if let note = noteFrom(event), note.slurs.opens > 0 || note.slurs.closes > 0 {
-                let sp = staffPos(for: note.pitch)
+                let sp = staffPos(for: note.pitch, clef: event.clef)
                 let ny = noteY(staffPos: sp, bottomStaffY: bottomY)
 
                 for _ in 0..<note.slurs.closes {
@@ -1394,8 +1408,11 @@ struct SVGEmitter: Sendable {
             let direction = resolvedStemDirection(forVoice: event.voiceIndex)
             let part = PartKey(staff: staffIndex, voice: event.voiceIndex)
             if let group = groupAt[index] {
-                let positions = group.compactMap { noteFrom(measure.events[$0]) }
-                    .map { staffPos(for: $0.pitch) }
+                let positions = group.compactMap { member in
+                    noteFrom(measure.events[member]).map {
+                        staffPos(for: $0.pitch, clef: measure.events[member].clef)
+                    }
+                }
                 let up: Bool
                 switch direction {
                 case .up:   up = true
@@ -1407,7 +1424,7 @@ struct SVGEmitter: Sendable {
                 }
                 lastStemUp[part] = up
             } else if note.beam == .single {
-                let position = staffPos(for: note.pitch)
+                let position = staffPos(for: note.pitch, clef: event.clef)
                 let up: Bool
                 if direction == .auto && position == middleLine {
                     // The middle line is the same tie-break for a lone note (#221).
@@ -1633,7 +1650,7 @@ struct SVGEmitter: Sendable {
         let stem = stemOverride ?? resolvedStemDirection(forVoice: event.voiceIndex)
         switch event.kind {
         case .note(let n):
-            return emitNote(n, x: event.origin.x, topStaffY: topStaffY, bottomStaffY: bottomStaffY,
+            return emitNote(n, clef: event.clef, x: event.origin.x, topStaffY: topStaffY, bottomStaffY: bottomStaffY,
                             unitNoteLength: unitNoteLength, stemDirection: stem,
                             precedingGraceBeamY: precedingGraceBeamY,
                             placement: placements.first ?? .unmoved,
@@ -1645,7 +1662,7 @@ struct SVGEmitter: Sendable {
                      builder: &builder)
         case .chord(let c):
             for (i, note) in c.notes.enumerated() {
-                emitNote(note, x: event.origin.x, topStaffY: topStaffY, bottomStaffY: bottomStaffY,
+                emitNote(note, clef: event.clef, x: event.origin.x, topStaffY: topStaffY, bottomStaffY: bottomStaffY,
                          unitNoteLength: unitNoteLength, stemDirection: stem,
                          precedingGraceBeamY: precedingGraceBeamY,
                          placement: i < placements.count ? placements[i] : .unmoved,
@@ -1655,6 +1672,11 @@ struct SVGEmitter: Sendable {
             break // handled in emitMeasure to capture stem-tip Y
         case .tuplet, .spacer, .directiveAnchor:
             break // deferred to a future pass
+        case .clefChange(let clef):
+            // Only a change part way through the bar reaches here; one before any of its
+            // music was drawn before the bar line, as the bar before's trailing clef.
+            emitClefGlyph(clef, x: event.origin.x, bottomStaffY: bottomStaffY,
+                          scale: clefChangeScale, builder: &builder)
         case .tempoChange(let t):
             let text = tempoAnnotationText(t)
             if !text.isEmpty {
@@ -1673,12 +1695,12 @@ struct SVGEmitter: Sendable {
     ///   the marks that belong to it (issue #79).  ``HeadPlacement/unmoved`` — every note on
     ///   a staff of its own — draws exactly where `x` says.
     @discardableResult
-    private func emitNote(_ note: Note, x: Double, topStaffY: Double, bottomStaffY: Double,
+    private func emitNote(_ note: Note, clef: ClefSpec, x: Double, topStaffY: Double, bottomStaffY: Double,
                           unitNoteLength: Fraction, stemDirection: StemDirection,
                           precedingGraceBeamY: Double? = nil,
                           placement: HeadPlacement = .unmoved,
                           builder: inout SVGBuilder) -> StemInfo? {
-        let staffPos  = self.staffPos(for: note.pitch)
+        let staffPos  = self.staffPos(for: note.pitch, clef: clef)
         let y         = noteY(staffPos: staffPos, bottomStaffY: bottomStaffY)
         let absDur    = absoluteDuration(note.duration, unitNoteLength: unitNoteLength)
         let glyph     = noteheadGlyph(absoluteDuration: absDur)
@@ -1877,7 +1899,7 @@ struct SVGEmitter: Sendable {
     private var graceScale: Double { GraceMetrics.scale }
 
     @discardableResult
-    private func emitGraceGroup(_ grace: GraceGroup, originX: Double,
+    private func emitGraceGroup(_ grace: GraceGroup, clef: ClefSpec, originX: Double,
                                  topStaffY: Double, bottomStaffY: Double,
                                  builder: inout SVGBuilder) -> Double {
         guard !grace.notes.isEmpty else { return 0 }
@@ -1899,7 +1921,7 @@ struct SVGEmitter: Sendable {
         let stemXs     = metrics.stemOffsets(grace.notes)
         let positions: [GracePos] = grace.notes.enumerated().map { i, note in
             let x   = originX + noteheadXs[i]
-            let sp  = self.staffPos(for: note.pitch)
+            let sp  = self.staffPos(for: note.pitch, clef: clef)
             let y   = noteY(staffPos: sp, bottomStaffY: bottomStaffY)
             return GracePos(x: x, noteheadY: y, stemX: originX + stemXs[i],
                             stemBaseY: y - metrics.stemBaseDY, staffPos: sp)
@@ -2130,7 +2152,10 @@ struct SVGEmitter: Sendable {
 
     // MARK: - Helpers
 
-    private func staffPos(for pitch: Pitch) -> Int {
+    /// Where `pitch` sits on a staff carrying `clef` — the clef in force at the event it
+    /// belongs to (``ResolvedEvent/clef``), which a body `K:` can change part way through
+    /// a staff (issues #222, #223).
+    private func staffPos(for pitch: Pitch, clef: ClefSpec) -> Int {
         clef.staffPosition(of: pitch)
     }
 

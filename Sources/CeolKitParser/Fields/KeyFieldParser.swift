@@ -7,6 +7,7 @@ enum KeyFieldParser {
         var rest = t[...]
         let tonic: PitchClass?
         let mode: Mode
+        var statesKey = true
 
         // The keys named by a word rather than by a tonic.  The word is consumed like any
         // other, not matched against the whole payload: `K:none clef=bass` states a clef the
@@ -16,15 +17,7 @@ enum KeyFieldParser {
             tonic = nil
             mode = specialMode
             rest = rest.dropFirst(firstWord.count)
-        } else {
-            // Tonic letter (A–G)
-            guard let first = rest.first, "ABCDEFG".contains(first),
-                  let step = diatonicStep(from: first) else {
-                return (
-                    makeKey(tonic: nil, mode: .major, source: source),
-                    [malformed("Key must start with A–G, 'none', 'HP', or 'Hp': '\(payload)'", source)]
-                )
-            }
+        } else if let first = rest.first, "ABCDEFG".contains(first), let step = diatonicStep(from: first) {
             rest = rest.dropFirst()
 
             // Optional tonic alteration: 'b' = flat, '#' = sharp
@@ -45,6 +38,13 @@ enum KeyFieldParser {
             let (parsedMode, modeLen) = parseMode(from: rest)
             if modeLen > 0 { rest = rest.dropFirst(modeLen) }
             mode = parsedMode
+        } else {
+            // No key at all, only options: `K:clef=bass`, `K:bass` (§4.6 lets a named clef
+            // drop its `clef=`), or an empty `K:` (§3.1.14).  The whole payload is options,
+            // and what key is in force is left to the semantic pass to decide.
+            tonic = nil
+            mode = .none
+            statesKey = false
         }
         rest = Substring(rest.drop(while: { $0.isWhitespace }))
 
@@ -55,6 +55,8 @@ enum KeyFieldParser {
         var modifications: [KeyModification] = []
         var staffLines = 5
         var octave: Int? = nil
+        var statesClef = false
+        var unrecognised = 0
 
         let tokens = String(rest).components(separatedBy: .whitespaces).filter { !$0.isEmpty }
         for tok in tokens {
@@ -62,7 +64,7 @@ enum KeyFieldParser {
                 explicit = true
             } else if tok.hasPrefix("clef=") {
                 let (c, s) = parseClefSpec(String(tok.dropFirst(5)))
-                clef = c; octaveShift = s
+                clef = c; octaveShift = s; statesClef = true
             } else if tok.hasPrefix("stafflines=") {
                 if let n = Int(tok.dropFirst("stafflines=".count)) { staffLines = n }
             } else if tok.hasPrefix("octave=") {
@@ -71,11 +73,23 @@ enum KeyFieldParser {
             } else if tok.hasPrefix("middle=") || tok.hasPrefix("oct=") {
                 // ignored in v0.1
             } else if let (c, s) = tryClefToken(tok) {
-                clef = c; octaveShift = s
+                clef = c; octaveShift = s; statesClef = true
             } else if let mod = parseModification(tok) {
                 modifications.append(mod)
+            } else {
+                // Silently ignored after a key; see below for a `K:` with no key.
+                unrecognised += 1
             }
-            // unknown tokens silently ignored
+        }
+
+        // A payload with no key and nothing else recognisable in it is not options without
+        // a key — it is a key nobody could read, so it is still reported.  It changes nothing:
+        // like any other `K:` without a key, it leaves the semantic pass the key in force.
+        if !statesKey, unrecognised > 0, unrecognised == tokens.count {
+            return (
+                unreadableKey(source: source),
+                [malformed("Key must start with A–G, 'none', 'HP', or 'Hp': '\(payload)'", source)]
+            )
         }
 
         let key = KeySignature(
@@ -87,7 +101,9 @@ enum KeyFieldParser {
             transposition: octave.map { Transposition(semitones: 0, octave: $0, statesOctave: true) }
                 ?? .none,
             staffProperties: StaffProperties(staffLines: staffLines),
-            source: source
+            source: source,
+            statesKey: statesKey,
+            statesClef: statesClef
         )
         return (key, [])
     }
@@ -228,16 +244,18 @@ enum KeyFieldParser {
 
     // MARK: - Factories
 
-    private static func makeKey(tonic: PitchClass?, mode: Mode, source: SourceRange) -> KeySignature {
+    private static func unreadableKey(source: SourceRange) -> KeySignature {
         KeySignature(
-            tonic: tonic,
-            mode: mode,
+            tonic: nil,
+            mode: .none,
             modifications: [],
             explicit: false,
             clef: ClefSpec(clef: .treble, octaveShift: 0),
             transposition: .none,
             staffProperties: StaffProperties(staffLines: 5),
-            source: source
+            source: source,
+            statesKey: false,
+            statesClef: false
         )
     }
 }

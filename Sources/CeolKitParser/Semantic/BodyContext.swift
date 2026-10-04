@@ -288,6 +288,11 @@ struct VoiceState {
     /// whole voice rather than at the point of change.
     var openingKey: KeySignature?
 
+    /// The last `K:` this voice stated, opening or not, as resolved — the key and clef a
+    /// further `K:` that leaves either unsaid carries on with.  `nil` while the tune's key
+    /// and the voice's declared clef stand.
+    var currentKey: KeySignature?
+
     /// The `L:` this voice stated before any of its music, or `nil` while the tune's stands.
     /// Mirrored into `accumulator.openingUnitNoteLength`, which the first measure's beams are
     /// grouped against.  A later `L:` is a change rather than an opening: it lands on the
@@ -375,13 +380,20 @@ struct VoiceState {
     /// Either way the accidental scope is re-seeded here and now, because §4.2 scopes a bar's
     /// written accidentals to the bar and the new key governs every note after this point —
     /// including the rest of a bar whose signature is not drawn until its start.
-    mutating func setKey(_ key: KeySignature, alterations: [DiatonicStep: Alteration]) {
-        if accumulator.hasMusic {
-            accumulator.markKeyChange(key)
-        } else {
+    mutating func setKey(_ key: KeySignature, alterations: [DiatonicStep: Alteration],
+                         changesSignature: Bool = true) {
+        if !accumulator.hasMusic {
             openingKey = key
+        } else if changesSignature {
+            // A `K:` that names no key leaves the signature where it was: nothing to engrave.
+            accumulator.markKeyChange(key)
         }
-        accidentals = AccidentalScope(keyAlterations: alterations)
+        currentKey = key
+        // A `K:` that only changes the clef leaves the signature, and so the bar's
+        // accidentals, exactly as they were.
+        if alterations != accidentals.keyAlterations {
+            accidentals = AccidentalScope(keyAlterations: alterations)
+        }
     }
 
     mutating func setUnitNoteLength(_ length: Fraction) {
@@ -859,13 +871,32 @@ struct BodyContext {
     /// memory; every other voice keeps both, because a `K:` in the body belongs to the voice
     /// that carries it — §7.3 asks for such a field to be repeated in every voice it should
     /// affect, which is only meaningful if one voice's does not reach the rest.
-    mutating func setKey(_ newKey: KeySignature, in voice: VoiceKey, source: SourceRange) {
+    mutating func setKey(_ stated: KeySignature, in voice: VoiceKey, source: SourceRange) {
+        let primary = VoiceKey(voice.base)
+        let inForce = voices[voice]?.currentKey ?? voices[primary]?.currentKey
+        let clefInForce = inForce?.clef ?? declaredClef(of: voice.base)
+        let newKey = stated.resolved(against: inForce ?? key, clef: clefInForce)
         // The octave a `K:` states belongs to the voice that carries it, like the key itself.
         if newKey.transposition.statesOctave {
             voiceOctaves[voice.base] = newKey.transposition.octave
         }
         let alterations = keyAlterations(for: newKey)
-        withVoice(voice, source: source) { $0.setKey(newKey, alterations: alterations) }
+        withVoice(voice, source: source) { state in
+            // Part way through a voice a new clef is an event, at the point it was written; at
+            // the head of one it is what the voice opens in, which `foldingKeyClef` reports.
+            if newKey.clef != clefInForce, state.accumulator.hasMusic {
+                state.emit(.clefChange(newKey.clef))
+            }
+            state.setKey(newKey, alterations: alterations, changesSignature: stated.statesKey)
+        }
+    }
+
+    /// The clef `voice` opens in before any `K:` of its own: its `V:` clef where it states
+    /// one, the tune key's otherwise — the same choice `SemanticPass.foldingKeyClef` makes.
+    private func declaredClef(of voice: String) -> ClefSpec {
+        let treble = ClefSpec(clef: .treble, octaveShift: 0)
+        if let declared = voiceProperties[voice]?.clef, declared != treble { return declared }
+        return key.clef
     }
 
     /// Moves the unit note length for one voice, likewise — at its head as the length the

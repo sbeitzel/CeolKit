@@ -106,6 +106,39 @@ struct BeamGroupStemTests {
         #expect(notes.map(\.isUp) == [false, false, false])
     }
 
+    // Issue #221: an unbeamed note on the middle line is the same tie-break as an even
+    // group — it follows the stem before it in the part, and stems up where there is none.
+
+    @Test("A lone middle-line note follows the stem before it, across bar lines and rests")
+    func middleLineNoteFollowsThePreviousStem() throws {
+        // The issue's tune at L:1/8.  abcm2ps 8.14 (-g): B up in the first bar, down in the
+        // second; the last bar's first B follows the second bar's last, past the rest after
+        // it, and the G turns everything after it back up.
+        let notes = try stemsByNote("G2 B2 G2 B2 | d2 B2 d2 B2 | B z G2 B z B2 |")
+        try #require(notes.count == 12)
+        let expected: [Bool] = [true, true, true, true,
+                                false, false, false, false,
+                                false, true, true, true]
+        #expect(notes.map(\.isUp) == expected)
+        for note in notes {
+            #expect(try isAttached(note.stem, to: note.head, up: note.isUp))
+        }
+    }
+
+    @Test("A lone middle-line note follows a beam group before it")
+    func middleLineNoteFollowsABeamGroup() throws {
+        let notes = try stemsByNote("ce B2 z2 |")
+        try #require(notes.count == 3)
+        #expect(notes.map(\.isUp) == [false, false, false])
+    }
+
+    @Test("A voice's own stem= still decides a middle-line note")
+    func voiceDirectionWinsOnTheMiddleLine() throws {
+        let notes = try stemsByNote("[V:1] d2 B2 |", header: "V:1 stem=up\n")
+        try #require(notes.count == 2)
+        #expect(notes.allSatisfy { $0.isUp })
+    }
+
     @Test("A voice's own stem= still decides every stem of its groups")
     func voiceDirectionWins() throws {
         // GB would stem up by pitch.

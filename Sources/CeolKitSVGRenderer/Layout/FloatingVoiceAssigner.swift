@@ -103,7 +103,7 @@ enum FloatingVoiceAssigner {
     /// between need not read pitch the same way: the split is a pitch, and the clefs are what
     /// turn it into a position on either staff.
     static func diatonic(of pitch: Pitch) -> Int {
-        pitch.octave * 7 + pitch.step.rawValue
+        pitch.diatonicIndex
     }
 
     /// The split for a voice floating between two staves: what it said with `middle=`, or the
@@ -122,36 +122,12 @@ enum FloatingVoiceAssigner {
     /// The gap between the two staves is what makes this a *midpoint* rather than a boundary:
     /// a note in it is equally far from both, and could as well be drawn on either.
     static func defaultSplit(above: ClefSpec, below: ClefSpec) -> Int {
-        let low  = bottomLine(of: above.clef)
-        let high = bottomLine(of: below.clef) + 8   // five lines, two diatonic steps apart
+        // `octaveShift` is not applied: `clef=treble+8` is written where a treble clef is,
+        // and this is a question about where the ink goes.
+        let low  = above.clef.bottomLine
+        let high = below.clef.bottomLine + 8   // five lines, two diatonic steps apart
         // Rounded down, so an odd gap resolves toward the lower staff — the one whose top
         // line is nearer the boundary in that case.
         return (low + high) / 2
-    }
-
-    /// The written pitch on the bottom line of a staff carrying `clef`, as a diatonic index.
-    ///
-    /// `octaveShift` is deliberately not applied: `clef=treble+8` sounds an octave up but is
-    /// *written* exactly where a treble clef is, and this is a question about where the ink
-    /// goes.
-    private static func bottomLine(of clef: Clef) -> Int {
-        // Each staff line is two diatonic steps above the one below it, so a clef is fixed by
-        // the pitch it names and the line it names it on.
-        func line(_ pitch: Int, _ number: Int) -> Int { pitch - 2 * (number - 1) }
-        let g4 = 4 * 7 + 4      // G4, what a G clef names
-        let f3 = 3 * 7 + 3      // F3, what an F clef names
-        let c4 = 4 * 7 + 0      // C4, what a C clef names
-        switch clef {
-        case .treble:                    return line(g4, 2)
-        case .bass:                      return line(f3, 4)
-        case .baritone:                  return line(f3, 3)
-        case .soprano:                   return line(c4, 1)
-        case .mezzoSoprano:              return line(c4, 2)
-        case .alto:                      return line(c4, 3)
-        case .tenor:                     return line(c4, 4)
-        // Neither names a pitch.  A staff that does not say where its notes sit is read the
-        // way an unmarked staff is read, which is as a treble staff.
-        case .percussion, .none:         return line(g4, 2)
-        }
     }
 }

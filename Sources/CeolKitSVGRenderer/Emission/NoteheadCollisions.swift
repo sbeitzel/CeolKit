@@ -20,11 +20,12 @@ struct CollisionHead {
     /// ``SharedStaffMerger`` ask that question before stem directions are known.
     let stemUp: Bool
 
-    /// Which line or space a pitch is drawn on: one per diatonic step, rising, zero on the
-    /// bottom line of a treble staff.  Only differences between two heads on one staff matter
-    /// here, so the origin is arbitrary — but it is the emitter's, so both agree.
+    /// Which line or space a pitch is drawn on, counted as if on a treble staff.  Only
+    /// differences between two heads on one staff matter here, and every voice on a staff
+    /// shares its clef, so the origin is arbitrary: the emitter counts from the clef in force
+    /// (``ClefSpec/staffPosition(of:)``), and the intervals come out the same.
     static func staffPosition(of pitch: Pitch) -> Int {
-        (pitch.octave - 4) * 7 + (pitch.step.rawValue - DiatonicStep.e.rawValue)
+        ClefSpec.treble.staffPosition(of: pitch)
     }
 
     /// Two heads that draw the same ink in the same place, and so need only be drawn once.

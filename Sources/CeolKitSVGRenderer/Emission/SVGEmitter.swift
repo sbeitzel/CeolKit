@@ -81,6 +81,9 @@ struct SVGEmitter: Sendable {
     /// order — carried from ``ResolvedSystem/voiceStemDirections``, so its count is how many
     /// voices share the staff.  Empty on the page-level emitter, which draws nothing itself.
     let voiceStemDirections: [StemDirection]
+    /// The clef of the staff being emitted, which is what places every notehead on it (issue
+    /// #222).  Treble on the page-level emitter, which draws no notes itself.
+    let clef: ClefSpec
     /// The number the first page prints, per `%%ceolkit:pagenumber` (issue #138).  1 for a
     /// document that does not use the directive, which numbers pages from 1 as before.
     let firstPageNumber: Int
@@ -96,12 +99,14 @@ struct SVGEmitter: Sendable {
          stemDirection: StemDirection = .auto,
          systemStemDirection: StemDirection? = nil,
          voiceStemDirections: [StemDirection] = [],
+         clef: ClefSpec = .treble,
          firstPageNumber: Int = 1) {
         self.config = config
         self.metadata = metadata
         self.documentStemDirection = stemDirection
         self.stemDirection = systemStemDirection ?? stemDirection
         self.voiceStemDirections = voiceStemDirections
+        self.clef = clef
         self.firstPageNumber = firstPageNumber
         let accidentalMetrics = AccidentalMetrics(config: config, metadata: metadata)
         self.accidentalMetrics = accidentalMetrics
@@ -242,7 +247,8 @@ struct SVGEmitter: Sendable {
                 || graceSlurs != config.graceSlurs
                 || tuneStem != documentStemDirection
                 || systemStem != stemDirection
-                || system.voiceStemDirections != voiceStemDirections else { return self }
+                || system.voiceStemDirections != voiceStemDirections
+                || system.clef != clef else { return self }
         var systemConfig = config
         systemConfig.staffSize = system.staffSize
         systemConfig.graceNoteSpacing = system.graceNoteSpacing
@@ -251,6 +257,7 @@ struct SVGEmitter: Sendable {
         return SVGEmitter(config: systemConfig, metadata: metadata,
                           stemDirection: tuneStem, systemStemDirection: systemStem,
                           voiceStemDirections: system.voiceStemDirections,
+                          clef: system.clef,
                           firstPageNumber: firstPageNumber)
     }
 
@@ -2032,7 +2039,7 @@ struct SVGEmitter: Sendable {
     // MARK: - Helpers
 
     private func staffPos(for pitch: Pitch) -> Int {
-        CollisionHead.staffPosition(of: pitch)
+        clef.staffPosition(of: pitch)
     }
 
     private func noteY(staffPos: Int, bottomStaffY: Double) -> Double {

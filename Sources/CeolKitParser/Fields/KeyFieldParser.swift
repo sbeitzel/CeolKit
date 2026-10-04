@@ -54,6 +54,7 @@ enum KeyFieldParser {
         var explicit = false
         var modifications: [KeyModification] = []
         var staffLines = 5
+        var octave: Int? = nil
 
         let tokens = String(rest).components(separatedBy: .whitespaces).filter { !$0.isEmpty }
         for tok in tokens {
@@ -64,6 +65,9 @@ enum KeyFieldParser {
                 clef = c; octaveShift = s
             } else if tok.hasPrefix("stafflines=") {
                 if let n = Int(tok.dropFirst("stafflines=".count)) { staffLines = n }
+            } else if tok.hasPrefix("octave=") {
+                // §4.6: shifts the music of the voice the field applies to by whole octaves.
+                if let n = Int(tok.dropFirst("octave=".count)) { octave = n }
             } else if tok.hasPrefix("middle=") || tok.hasPrefix("oct=") {
                 // ignored in v0.1
             } else if let (c, s) = tryClefToken(tok) {
@@ -80,7 +84,8 @@ enum KeyFieldParser {
             modifications: modifications,
             explicit: explicit,
             clef: ClefSpec(clef: clef, octaveShift: octaveShift),
-            transposition: .none,
+            transposition: octave.map { Transposition(semitones: 0, octave: $0, statesOctave: true) }
+                ?? .none,
             staffProperties: StaffProperties(staffLines: staffLines),
             source: source
         )

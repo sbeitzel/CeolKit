@@ -71,9 +71,9 @@
     <path id="libertinusSerif-g19" d="<OUTLINE>"/>
     <path id="bravura-g995" d="<OUTLINE>"/>
     <path id="libertinusSerif-g67" d="<OUTLINE>"/>
-    <path id="bravura-g518" d="<OUTLINE>"/>
+    <path id="bravura-g517" d="<OUTLINE>"/>
   </defs>
-  <!-- ceolkit-meta: {"page": 1, "anchors": [{"abcLine": 36, "y": 83.867}, {"abcLine": 36, "y": 132.587}, {"abcLine": 36, "y": 181.307}, {"abcLine": 46, "y": 238.427}, {"abcLine": 46, "y": 287.147}, {"abcLine": 46, "y": 335.867}, {"abcLine": 56, "y": 397.187}, {"abcLine": 56, "y": 444.334}, {"abcLine": 56, "y": 491.482}]} -->
+  <!-- ceolkit-meta: {"page": 1, "anchors": [{"abcLine": 36, "y": 83.867}, {"abcLine": 36, "y": 132.587}, {"abcLine": 36, "y": 181.307}, {"abcLine": 46, "y": 238.427}, {"abcLine": 46, "y": 287.147}, {"abcLine": 46, "y": 335.867}, {"abcLine": 56, "y": 392.987}, {"abcLine": 56, "y": 440.134}, {"abcLine": 56, "y": 487.282}]} -->
   <use href="#libertinusSerifBold-g36" xlink:href="#libertinusSerifBold-g36" transform="translate(199.074 50) scale(0.0224 -0.0224)"/>
   <use href="#libertinusSerifBold-g66" xlink:href="#libertinusSerifBold-g66" transform="translate(214.888 50) scale(0.0224 -0.0224)"/>
   <use href="#libertinusSerifBold-g79" xlink:href="#libertinusSerifBold-g79" transform="translate(226.222 50) scale(0.0224 -0.0224)"/>
@@ -397,38 +397,38 @@
   <line x1="236.982" y1="181.307" x2="236.982" y2="198.107" stroke="black" stroke-width="0.672"/>
   <use href="#bravura-g994" xlink:href="#bravura-g994" transform="translate(133.238 185.507) scale(0.0168 -0.0168)"/>
   <line x1="347.618" y1="181.307" x2="347.618" y2="198.107" stroke="black" stroke-width="0.672"/>
-  <use href="#bravura-g157" xlink:href="#bravura-g157" transform="translate(241.938 181.307) scale(0.0168 -0.0168)"/>
-  <line x1="242.19" y1="182.012" x2="242.19" y2="196.007" stroke="black" stroke-width="0.504"/>
-  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(276.236 183.407) scale(0.0168 -0.0168)"/>
-  <line x1="276.488" y1="184.112" x2="276.488" y2="198.107" stroke="black" stroke-width="0.504"/>
-  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(318.739 187.607) scale(0.0168 -0.0168)"/>
-  <line x1="318.991" y1="188.312" x2="318.991" y2="202.307" stroke="black" stroke-width="0.504"/>
+  <use href="#bravura-g157" xlink:href="#bravura-g157" transform="translate(241.938 185.507) scale(0.0168 -0.0168)"/>
+  <line x1="242.19" y1="186.212" x2="242.19" y2="200.207" stroke="black" stroke-width="0.504"/>
+  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(276.236 187.607) scale(0.0168 -0.0168)"/>
+  <line x1="276.488" y1="188.312" x2="276.488" y2="202.307" stroke="black" stroke-width="0.504"/>
+  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(318.739 191.807) scale(0.0168 -0.0168)"/>
+  <line x1="323.443" y1="177.107" x2="323.443" y2="191.101" stroke="black" stroke-width="0.504"/>
   <line x1="458.254" y1="181.307" x2="458.254" y2="198.107" stroke="black" stroke-width="0.672"/>
-  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(352.574 185.507) scale(0.0168 -0.0168)"/>
-  <use href="#bravura-g535" xlink:href="#bravura-g535" transform="translate(348.273 185.507) scale(0.0168 -0.0168)"/>
-  <line x1="352.826" y1="186.212" x2="352.826" y2="200.207" stroke="black" stroke-width="0.504"/>
-  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(380.151 185.507) scale(0.0168 -0.0168)"/>
-  <line x1="380.403" y1="186.212" x2="380.403" y2="200.207" stroke="black" stroke-width="0.504"/>
-  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(403.899 187.607) scale(0.0168 -0.0168)"/>
-  <line x1="404.151" y1="188.312" x2="404.151" y2="202.307" stroke="black" stroke-width="0.504"/>
-  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(434.771 181.307) scale(0.0168 -0.0168)"/>
-  <line x1="435.023" y1="182.012" x2="435.023" y2="196.007" stroke="black" stroke-width="0.504"/>
+  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(352.574 189.707) scale(0.0168 -0.0168)"/>
+  <use href="#bravura-g535" xlink:href="#bravura-g535" transform="translate(348.273 189.707) scale(0.0168 -0.0168)"/>
+  <line x1="357.278" y1="175.007" x2="357.278" y2="189.001" stroke="black" stroke-width="0.504"/>
+  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(380.151 189.707) scale(0.0168 -0.0168)"/>
+  <line x1="384.855" y1="175.007" x2="384.855" y2="189.001" stroke="black" stroke-width="0.504"/>
+  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(403.899 191.807) scale(0.0168 -0.0168)"/>
+  <line x1="408.603" y1="177.107" x2="408.603" y2="191.101" stroke="black" stroke-width="0.504"/>
+  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(434.771 185.507) scale(0.0168 -0.0168)"/>
+  <line x1="435.023" y1="186.212" x2="435.023" y2="200.207" stroke="black" stroke-width="0.504"/>
   <line x1="576" y1="181.307" x2="576" y2="198.107" stroke="black" stroke-width="0.672"/>
-  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(463.21 189.707) scale(0.0168 -0.0168)"/>
-  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(481.024 187.607) scale(0.0168 -0.0168)"/>
-  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(491.847 185.507) scale(0.0168 -0.0168)"/>
-  <use href="#bravura-g535" xlink:href="#bravura-g535" transform="translate(487.547 185.507) scale(0.0168 -0.0168)"/>
-  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(510.507 183.407) scale(0.0168 -0.0168)"/>
-  <line x1="463.462" y1="190.412" x2="463.462" y2="204.407" stroke="black" stroke-width="0.504"/>
-  <line x1="481.276" y1="188.312" x2="481.276" y2="204.407" stroke="black" stroke-width="0.504"/>
-  <line x1="492.099" y1="186.212" x2="492.099" y2="204.407" stroke="black" stroke-width="0.504"/>
-  <line x1="510.759" y1="184.112" x2="510.759" y2="204.407" stroke="black" stroke-width="0.504"/>
-  <line x1="463.21" y1="204.407" x2="511.011" y2="204.407" stroke="black" stroke-width="2.1"/>
-  <path d="M 468.166 194.117 C 482.279 197.603 496.393 191.303 510.507 187.817 L 510.507 187.397 C 496.393 190.211 482.279 196.511 468.166 193.697 Z" fill="black" stroke="none"/>
-  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(521.33 181.307) scale(0.0168 -0.0168)"/>
-  <line x1="521.582" y1="182.012" x2="521.582" y2="196.007" stroke="black" stroke-width="0.504"/>
-  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(549.769 181.307) scale(0.0168 -0.0168)"/>
-  <line x1="550.021" y1="182.012" x2="550.021" y2="196.007" stroke="black" stroke-width="0.504"/>
+  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(463.21 193.907) scale(0.0168 -0.0168)"/>
+  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(481.024 191.807) scale(0.0168 -0.0168)"/>
+  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(491.847 189.707) scale(0.0168 -0.0168)"/>
+  <use href="#bravura-g535" xlink:href="#bravura-g535" transform="translate(487.547 189.707) scale(0.0168 -0.0168)"/>
+  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(510.507 187.607) scale(0.0168 -0.0168)"/>
+  <line x1="467.914" y1="172.907" x2="467.914" y2="193.201" stroke="black" stroke-width="0.504"/>
+  <line x1="485.728" y1="172.907" x2="485.728" y2="191.101" stroke="black" stroke-width="0.504"/>
+  <line x1="496.551" y1="172.907" x2="496.551" y2="189.001" stroke="black" stroke-width="0.504"/>
+  <line x1="515.211" y1="172.907" x2="515.211" y2="186.901" stroke="black" stroke-width="0.504"/>
+  <line x1="467.662" y1="172.907" x2="515.463" y2="172.907" stroke="black" stroke-width="2.1"/>
+  <path d="M 468.166 198.317 C 482.279 201.803 496.393 195.503 510.507 192.017 L 510.507 191.597 C 496.393 194.411 482.279 200.711 468.166 197.897 Z" fill="black" stroke="none"/>
+  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(521.33 185.507) scale(0.0168 -0.0168)"/>
+  <line x1="521.582" y1="186.212" x2="521.582" y2="200.207" stroke="black" stroke-width="0.504"/>
+  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(549.769 185.507) scale(0.0168 -0.0168)"/>
+  <line x1="550.021" y1="186.212" x2="550.021" y2="200.207" stroke="black" stroke-width="0.504"/>
   <use href="#libertinusSerif-g52" xlink:href="#libertinusSerif-g52" transform="translate(236.915 206.868) scale(0.0098 -0.0098)"/>
   <use href="#libertinusSerif-g80" xlink:href="#libertinusSerif-g80" transform="translate(241.668 206.868) scale(0.0098 -0.0098)"/>
   <use href="#libertinusSerif-g79" xlink:href="#libertinusSerif-g79" transform="translate(246.607 206.868) scale(0.0098 -0.0098)"/>
@@ -505,10 +505,10 @@
   <line x1="55.597" y1="246.827" x2="576" y2="246.827" stroke="black" stroke-width="0.546"/>
   <line x1="55.597" y1="251.027" x2="576" y2="251.027" stroke="black" stroke-width="0.546"/>
   <line x1="55.597" y1="255.227" x2="576" y2="255.227" stroke="black" stroke-width="0.546"/>
-  <line x1="55.597" y1="238.427" x2="55.597" y2="356.867" stroke="black" stroke-width="0.546"/>
-  <line x1="47.088" y1="238.427" x2="47.088" y2="356.867" stroke="black" stroke-width="2.1"/>
+  <line x1="55.597" y1="238.427" x2="55.597" y2="352.667" stroke="black" stroke-width="0.546"/>
+  <line x1="47.088" y1="238.427" x2="47.088" y2="352.667" stroke="black" stroke-width="2.1"/>
   <use href="#bravura-g18" xlink:href="#bravura-g18" transform="translate(46.038 238.427) scale(0.0168 -0.0168)"/>
-  <use href="#bravura-g19" xlink:href="#bravura-g19" transform="translate(46.038 356.867) scale(0.0168 -0.0168)"/>
+  <use href="#bravura-g19" xlink:href="#bravura-g19" transform="translate(46.038 352.667) scale(0.0168 -0.0168)"/>
   <use href="#libertinusSerif-g34" xlink:href="#libertinusSerif-g34" transform="translate(36 249.59) scale(0.0084 -0.0084)"/>
   <use href="#bravura-g74" xlink:href="#bravura-g74" transform="translate(56.647 251.027) scale(0.0168 -0.0168)"/>
   <use href="#bravura-g535" xlink:href="#bravura-g535" transform="translate(68.97 246.827) scale(0.0168 -0.0168)"/>
@@ -752,20 +752,19 @@
   <use href="#libertinusSerif-g84" xlink:href="#libertinusSerif-g84" transform="translate(469.481 324.468) scale(0.0098 -0.0098)"/>
   <use href="#libertinusSerif-g80" xlink:href="#libertinusSerif-g80" transform="translate(473.303 324.468) scale(0.0098 -0.0098)"/>
   <use href="#libertinusSerif-g15" xlink:href="#libertinusSerif-g15" transform="translate(478.242 324.468) scale(0.0098 -0.0098)"/>
+  <line x1="55.597" y1="335.867" x2="576" y2="335.867" stroke="black" stroke-width="0.546"/>
   <line x1="55.597" y1="340.067" x2="576" y2="340.067" stroke="black" stroke-width="0.546"/>
   <line x1="55.597" y1="344.267" x2="576" y2="344.267" stroke="black" stroke-width="0.546"/>
   <line x1="55.597" y1="348.467" x2="576" y2="348.467" stroke="black" stroke-width="0.546"/>
   <line x1="55.597" y1="352.667" x2="576" y2="352.667" stroke="black" stroke-width="0.546"/>
-  <line x1="55.597" y1="356.867" x2="576" y2="356.867" stroke="black" stroke-width="0.546"/>
-  <use href="#libertinusSerif-g35" xlink:href="#libertinusSerif-g35" transform="translate(36.899 351.23) scale(0.0084 -0.0084)"/>
-  <use href="#bravura-g92" xlink:href="#bravura-g92" transform="translate(56.647 344.267) scale(0.0168 -0.0168)"/>
-  <use href="#bravura-g535" xlink:href="#bravura-g535" transform="translate(69.272 352.667) scale(0.0168 -0.0168)"/>
-  <use href="#bravura-g535" xlink:href="#bravura-g535" transform="translate(73.876 346.367) scale(0.0168 -0.0168)"/>
-  <use href="#bravura-g535" xlink:href="#bravura-g535" transform="translate(78.479 354.767) scale(0.0168 -0.0168)"/>
-  <line x1="204.719" y1="340.067" x2="204.719" y2="356.867" stroke="black" stroke-width="0.672"/>
+  <use href="#libertinusSerif-g35" xlink:href="#libertinusSerif-g35" transform="translate(36.899 347.03) scale(0.0084 -0.0084)"/>
+  <use href="#bravura-g92" xlink:href="#bravura-g92" transform="translate(56.647 340.067) scale(0.0168 -0.0168)"/>
+  <use href="#bravura-g535" xlink:href="#bravura-g535" transform="translate(69.272 348.467) scale(0.0168 -0.0168)"/>
+  <use href="#bravura-g535" xlink:href="#bravura-g535" transform="translate(73.876 342.167) scale(0.0168 -0.0168)"/>
+  <use href="#bravura-g535" xlink:href="#bravura-g535" transform="translate(78.479 350.567) scale(0.0168 -0.0168)"/>
+  <line x1="204.719" y1="335.867" x2="204.719" y2="352.667" stroke="black" stroke-width="0.672"/>
   <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(92.994 335.867) scale(0.0168 -0.0168)"/>
   <line x1="93.246" y1="336.572" x2="93.246" y2="350.567" stroke="black" stroke-width="0.504"/>
-  <line x1="91.314" y1="335.867" x2="99.63" y2="335.867" stroke="black" stroke-width="0.672"/>
   <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(120.388 337.967) scale(0.0168 -0.0168)"/>
   <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(139.759 340.067) scale(0.0168 -0.0168)"/>
   <line x1="120.64" y1="338.672" x2="120.64" y2="354.767" stroke="black" stroke-width="0.504"/>
@@ -774,370 +773,371 @@
   <use href="#bravura-g157" xlink:href="#bravura-g157" transform="translate(159.13 342.167) scale(0.0168 -0.0168)"/>
   <line x1="159.382" y1="342.872" x2="159.382" y2="356.867" stroke="black" stroke-width="0.504"/>
   <path d="M 97.95 331.877 C 118.343 329.063 138.736 335.363 159.13 338.177 L 159.13 337.757 C 138.736 334.271 118.343 327.971 97.95 331.457 Z" fill="black" stroke="none"/>
-  <line x1="330.464" y1="340.067" x2="330.464" y2="356.867" stroke="black" stroke-width="0.672"/>
+  <line x1="330.464" y1="335.867" x2="330.464" y2="352.667" stroke="black" stroke-width="0.672"/>
   <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(209.675 350.567) scale(0.0168 -0.0168)"/>
   <line x1="214.379" y1="335.867" x2="214.379" y2="349.861" stroke="black" stroke-width="0.504"/>
   <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(242.782 344.267) scale(0.0168 -0.0168)"/>
   <use href="#bravura-g535" xlink:href="#bravura-g535" transform="translate(238.481 344.267) scale(0.0168 -0.0168)"/>
-  <line x1="243.034" y1="344.972" x2="243.034" y2="358.967" stroke="black" stroke-width="0.504"/>
+  <line x1="247.486" y1="329.567" x2="247.486" y2="343.561" stroke="black" stroke-width="0.504"/>
   <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(282.216 344.267) scale(0.0168 -0.0168)"/>
-  <line x1="282.468" y1="344.972" x2="282.468" y2="358.967" stroke="black" stroke-width="0.504"/>
+  <line x1="286.92" y1="329.567" x2="286.92" y2="343.561" stroke="black" stroke-width="0.504"/>
   <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(304.845 344.267) scale(0.0168 -0.0168)"/>
-  <line x1="305.097" y1="344.972" x2="305.097" y2="358.967" stroke="black" stroke-width="0.504"/>
-  <line x1="429.632" y1="340.067" x2="429.632" y2="356.867" stroke="black" stroke-width="0.672"/>
+  <line x1="309.549" y1="329.567" x2="309.549" y2="343.561" stroke="black" stroke-width="0.504"/>
+  <line x1="429.632" y1="335.867" x2="429.632" y2="352.667" stroke="black" stroke-width="0.672"/>
   <use href="#bravura-g157" xlink:href="#bravura-g157" transform="translate(335.42 350.567) scale(0.0168 -0.0168)"/>
   <use href="#bravura-g459" xlink:href="#bravura-g459" transform="translate(341.368 350.567) scale(0.0168 -0.0168)"/>
   <line x1="340.124" y1="335.867" x2="340.124" y2="349.861" stroke="black" stroke-width="0.504"/>
   <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(389.628 348.467) scale(0.0168 -0.0168)"/>
   <line x1="394.332" y1="333.767" x2="394.332" y2="347.761" stroke="black" stroke-width="0.504"/>
-  <use href="#bravura-g64" xlink:href="#bravura-g64" transform="translate(513.848 350.567) scale(0.0168 -0.0168)"/>
   <use href="#bravura-g64" xlink:href="#bravura-g64" transform="translate(513.848 346.367) scale(0.0168 -0.0168)"/>
-  <line x1="517.25" y1="340.067" x2="517.25" y2="356.867" stroke="black" stroke-width="2.1"/>
-  <line x1="521.03" y1="340.067" x2="521.03" y2="356.867" stroke="black" stroke-width="2.1"/>
-  <use href="#bravura-g64" xlink:href="#bravura-g64" transform="translate(522.752 350.567) scale(0.0168 -0.0168)"/>
+  <use href="#bravura-g64" xlink:href="#bravura-g64" transform="translate(513.848 342.167) scale(0.0168 -0.0168)"/>
+  <line x1="517.25" y1="335.867" x2="517.25" y2="352.667" stroke="black" stroke-width="2.1"/>
+  <line x1="521.03" y1="335.867" x2="521.03" y2="352.667" stroke="black" stroke-width="2.1"/>
   <use href="#bravura-g64" xlink:href="#bravura-g64" transform="translate(522.752 346.367) scale(0.0168 -0.0168)"/>
+  <use href="#bravura-g64" xlink:href="#bravura-g64" transform="translate(522.752 342.167) scale(0.0168 -0.0168)"/>
   <use href="#bravura-g157" xlink:href="#bravura-g157" transform="translate(434.588 346.367) scale(0.0168 -0.0168)"/>
-  <line x1="434.84" y1="347.072" x2="434.84" y2="361.067" stroke="black" stroke-width="0.504"/>
+  <line x1="439.292" y1="331.667" x2="439.292" y2="345.661" stroke="black" stroke-width="0.504"/>
   <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(472.461 346.367) scale(0.0168 -0.0168)"/>
-  <use href="#bravura-g968" xlink:href="#bravura-g968" transform="translate(469.832 335.867) scale(0.0168 -0.0168)"/>
-  <line x1="472.713" y1="347.072" x2="472.713" y2="361.067" stroke="black" stroke-width="0.504"/>
-  <use href="#bravura-g996" xlink:href="#bravura-g996" transform="translate(490.45 348.467) scale(0.0168 -0.0168)"/>
-  <line x1="576" y1="340.067" x2="576" y2="356.867" stroke="black" stroke-width="0.672"/>
+  <use href="#bravura-g968" xlink:href="#bravura-g968" transform="translate(469.832 331.667) scale(0.0168 -0.0168)"/>
+  <line x1="477.165" y1="331.667" x2="477.165" y2="345.661" stroke="black" stroke-width="0.504"/>
+  <use href="#bravura-g996" xlink:href="#bravura-g996" transform="translate(490.45 344.267) scale(0.0168 -0.0168)"/>
+  <line x1="576" y1="335.867" x2="576" y2="352.667" stroke="black" stroke-width="0.672"/>
   <use href="#bravura-g156" xlink:href="#bravura-g156" transform="translate(529.388 350.567) scale(0.0168 -0.0168)"/>
-  <use href="#libertinusSerif-g87" xlink:href="#libertinusSerif-g87" transform="translate(91.709 365.628) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g74" xlink:href="#libertinusSerif-g74" transform="translate(96.579 365.628) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g14" xlink:href="#libertinusSerif-g14" transform="translate(130.895 365.628) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g14" xlink:href="#libertinusSerif-g14" transform="translate(150.266 365.628) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g14" xlink:href="#libertinusSerif-g14" transform="translate(183.034 365.628) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g84" xlink:href="#libertinusSerif-g84" transform="translate(207.773 365.628) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g80" xlink:href="#libertinusSerif-g80" transform="translate(211.595 365.628) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g80" xlink:href="#libertinusSerif-g80" transform="translate(236.724 365.628) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g79" xlink:href="#libertinusSerif-g79" transform="translate(241.664 365.628) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g69" xlink:href="#libertinusSerif-g69" transform="translate(246.975 365.628) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g8" xlink:href="#libertinusSerif-g8" transform="translate(251.934 365.628) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g74" xlink:href="#libertinusSerif-g74" transform="translate(280.896 365.628) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g80" xlink:href="#libertinusSerif-g80" transform="translate(283.552 365.628) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g85" xlink:href="#libertinusSerif-g85" transform="translate(304.446 365.628) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g74" xlink:href="#libertinusSerif-g74" transform="translate(307.543 365.628) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g14" xlink:href="#libertinusSerif-g14" transform="translate(318.009 365.628) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g78" xlink:href="#libertinusSerif-g78" transform="translate(329.132 365.628) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g66" xlink:href="#libertinusSerif-g66" transform="translate(336.874 365.628) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g79" xlink:href="#libertinusSerif-g79" transform="translate(341.353 365.628) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g14" xlink:href="#libertinusSerif-g14" transform="translate(362.307 365.628) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g72" xlink:href="#libertinusSerif-g72" transform="translate(381.262 365.628) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g80" xlink:href="#libertinusSerif-g80" transform="translate(386.162 365.628) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g86" xlink:href="#libertinusSerif-g86" transform="translate(393.551 365.628) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g68" xlink:href="#libertinusSerif-g68" transform="translate(398.755 365.628) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g14" xlink:href="#libertinusSerif-g14" transform="translate(416.639 365.628) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g68" xlink:href="#libertinusSerif-g68" transform="translate(433.641 365.628) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g74" xlink:href="#libertinusSerif-g74" transform="translate(437.835 365.628) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g14" xlink:href="#libertinusSerif-g14" transform="translate(453.33 365.628) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g84" xlink:href="#libertinusSerif-g84" transform="translate(469.481 365.628) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g80" xlink:href="#libertinusSerif-g80" transform="translate(473.303 365.628) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g15" xlink:href="#libertinusSerif-g15" transform="translate(478.242 365.628) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g37" xlink:href="#libertinusSerif-g37" transform="translate(522.527 365.628) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g70" xlink:href="#libertinusSerif-g70" transform="translate(529.396 365.628) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g73" xlink:href="#libertinusSerif-g73" transform="translate(533.777 365.628) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g13" xlink:href="#libertinusSerif-g13" transform="translate(539.049 365.628) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g71" xlink:href="#libertinusSerif-g71" transform="translate(92.625 377.388) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g74" xlink:href="#libertinusSerif-g74" transform="translate(95.663 377.388) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g14" xlink:href="#libertinusSerif-g14" transform="translate(130.895 377.388) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g14" xlink:href="#libertinusSerif-g14" transform="translate(150.266 377.388) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g14" xlink:href="#libertinusSerif-g14" transform="translate(183.034 377.388) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g84" xlink:href="#libertinusSerif-g84" transform="translate(207.773 377.388) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g80" xlink:href="#libertinusSerif-g80" transform="translate(211.595 377.388) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g85" xlink:href="#libertinusSerif-g85" transform="translate(239.562 377.388) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g86" xlink:href="#libertinusSerif-g86" transform="translate(242.658 377.388) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g85" xlink:href="#libertinusSerif-g85" transform="translate(247.862 377.388) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g14" xlink:href="#libertinusSerif-g14" transform="translate(264.161 377.388) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g85" xlink:href="#libertinusSerif-g85" transform="translate(280.676 377.388) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g80" xlink:href="#libertinusSerif-g80" transform="translate(283.772 377.388) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g83" xlink:href="#libertinusSerif-g83" transform="translate(303.31 377.388) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g70" xlink:href="#libertinusSerif-g70" transform="translate(306.955 377.388) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g14" xlink:href="#libertinusSerif-g14" transform="translate(319.448 377.388) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g84" xlink:href="#libertinusSerif-g84" transform="translate(330.872 377.388) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g85" xlink:href="#libertinusSerif-g85" transform="translate(334.694 377.388) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g66" xlink:href="#libertinusSerif-g66" transform="translate(337.791 377.388) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g74" xlink:href="#libertinusSerif-g74" transform="translate(342.269 377.388) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g68" xlink:href="#libertinusSerif-g68" transform="translate(384.883 377.388) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g80" xlink:href="#libertinusSerif-g80" transform="translate(389.077 377.388) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g79" xlink:href="#libertinusSerif-g79" transform="translate(394.017 377.388) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g14" xlink:href="#libertinusSerif-g14" transform="translate(413.344 377.388) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g82" xlink:href="#libertinusSerif-g82" transform="translate(430.672 377.388) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g86" xlink:href="#libertinusSerif-g86" transform="translate(435.601 377.388) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g74" xlink:href="#libertinusSerif-g74" transform="translate(440.805 377.388) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g14" xlink:href="#libertinusSerif-g14" transform="translate(454.814 377.388) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g84" xlink:href="#libertinusSerif-g84" transform="translate(469.481 377.388) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g80" xlink:href="#libertinusSerif-g80" transform="translate(473.303 377.388) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g15" xlink:href="#libertinusSerif-g15" transform="translate(478.242 377.388) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g87" xlink:href="#libertinusSerif-g87" transform="translate(91.709 361.428) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g74" xlink:href="#libertinusSerif-g74" transform="translate(96.579 361.428) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g14" xlink:href="#libertinusSerif-g14" transform="translate(130.895 361.428) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g14" xlink:href="#libertinusSerif-g14" transform="translate(150.266 361.428) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g14" xlink:href="#libertinusSerif-g14" transform="translate(183.034 361.428) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g84" xlink:href="#libertinusSerif-g84" transform="translate(207.773 361.428) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g80" xlink:href="#libertinusSerif-g80" transform="translate(211.595 361.428) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g80" xlink:href="#libertinusSerif-g80" transform="translate(236.724 361.428) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g79" xlink:href="#libertinusSerif-g79" transform="translate(241.664 361.428) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g69" xlink:href="#libertinusSerif-g69" transform="translate(246.975 361.428) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g8" xlink:href="#libertinusSerif-g8" transform="translate(251.934 361.428) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g74" xlink:href="#libertinusSerif-g74" transform="translate(280.896 361.428) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g80" xlink:href="#libertinusSerif-g80" transform="translate(283.552 361.428) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g85" xlink:href="#libertinusSerif-g85" transform="translate(304.446 361.428) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g74" xlink:href="#libertinusSerif-g74" transform="translate(307.543 361.428) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g14" xlink:href="#libertinusSerif-g14" transform="translate(318.009 361.428) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g78" xlink:href="#libertinusSerif-g78" transform="translate(329.132 361.428) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g66" xlink:href="#libertinusSerif-g66" transform="translate(336.874 361.428) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g79" xlink:href="#libertinusSerif-g79" transform="translate(341.353 361.428) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g14" xlink:href="#libertinusSerif-g14" transform="translate(362.307 361.428) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g72" xlink:href="#libertinusSerif-g72" transform="translate(381.262 361.428) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g80" xlink:href="#libertinusSerif-g80" transform="translate(386.162 361.428) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g86" xlink:href="#libertinusSerif-g86" transform="translate(393.551 361.428) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g68" xlink:href="#libertinusSerif-g68" transform="translate(398.755 361.428) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g14" xlink:href="#libertinusSerif-g14" transform="translate(416.639 361.428) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g68" xlink:href="#libertinusSerif-g68" transform="translate(433.641 361.428) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g74" xlink:href="#libertinusSerif-g74" transform="translate(437.835 361.428) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g14" xlink:href="#libertinusSerif-g14" transform="translate(453.33 361.428) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g84" xlink:href="#libertinusSerif-g84" transform="translate(469.481 361.428) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g80" xlink:href="#libertinusSerif-g80" transform="translate(473.303 361.428) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g15" xlink:href="#libertinusSerif-g15" transform="translate(478.242 361.428) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g37" xlink:href="#libertinusSerif-g37" transform="translate(522.527 361.428) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g70" xlink:href="#libertinusSerif-g70" transform="translate(529.396 361.428) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g73" xlink:href="#libertinusSerif-g73" transform="translate(533.777 361.428) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g13" xlink:href="#libertinusSerif-g13" transform="translate(539.049 361.428) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g71" xlink:href="#libertinusSerif-g71" transform="translate(92.625 373.188) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g74" xlink:href="#libertinusSerif-g74" transform="translate(95.663 373.188) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g14" xlink:href="#libertinusSerif-g14" transform="translate(130.895 373.188) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g14" xlink:href="#libertinusSerif-g14" transform="translate(150.266 373.188) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g14" xlink:href="#libertinusSerif-g14" transform="translate(183.034 373.188) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g84" xlink:href="#libertinusSerif-g84" transform="translate(207.773 373.188) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g80" xlink:href="#libertinusSerif-g80" transform="translate(211.595 373.188) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g85" xlink:href="#libertinusSerif-g85" transform="translate(239.562 373.188) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g86" xlink:href="#libertinusSerif-g86" transform="translate(242.658 373.188) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g85" xlink:href="#libertinusSerif-g85" transform="translate(247.862 373.188) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g14" xlink:href="#libertinusSerif-g14" transform="translate(264.161 373.188) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g85" xlink:href="#libertinusSerif-g85" transform="translate(280.676 373.188) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g80" xlink:href="#libertinusSerif-g80" transform="translate(283.772 373.188) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g83" xlink:href="#libertinusSerif-g83" transform="translate(303.31 373.188) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g70" xlink:href="#libertinusSerif-g70" transform="translate(306.955 373.188) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g14" xlink:href="#libertinusSerif-g14" transform="translate(319.448 373.188) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g84" xlink:href="#libertinusSerif-g84" transform="translate(330.872 373.188) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g85" xlink:href="#libertinusSerif-g85" transform="translate(334.694 373.188) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g66" xlink:href="#libertinusSerif-g66" transform="translate(337.791 373.188) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g74" xlink:href="#libertinusSerif-g74" transform="translate(342.269 373.188) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g68" xlink:href="#libertinusSerif-g68" transform="translate(384.883 373.188) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g80" xlink:href="#libertinusSerif-g80" transform="translate(389.077 373.188) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g79" xlink:href="#libertinusSerif-g79" transform="translate(394.017 373.188) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g14" xlink:href="#libertinusSerif-g14" transform="translate(413.344 373.188) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g82" xlink:href="#libertinusSerif-g82" transform="translate(430.672 373.188) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g86" xlink:href="#libertinusSerif-g86" transform="translate(435.601 373.188) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g74" xlink:href="#libertinusSerif-g74" transform="translate(440.805 373.188) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g14" xlink:href="#libertinusSerif-g14" transform="translate(454.814 373.188) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g84" xlink:href="#libertinusSerif-g84" transform="translate(469.481 373.188) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g80" xlink:href="#libertinusSerif-g80" transform="translate(473.303 373.188) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g15" xlink:href="#libertinusSerif-g15" transform="translate(478.242 373.188) scale(0.0098 -0.0098)"/>
+  <line x1="55.597" y1="403.174" x2="576" y2="403.174" stroke="black" stroke-width="0.546"/>
   <line x1="55.597" y1="407.374" x2="576" y2="407.374" stroke="black" stroke-width="0.546"/>
   <line x1="55.597" y1="411.574" x2="576" y2="411.574" stroke="black" stroke-width="0.546"/>
   <line x1="55.597" y1="415.774" x2="576" y2="415.774" stroke="black" stroke-width="0.546"/>
   <line x1="55.597" y1="419.974" x2="576" y2="419.974" stroke="black" stroke-width="0.546"/>
-  <line x1="55.597" y1="424.174" x2="576" y2="424.174" stroke="black" stroke-width="0.546"/>
-  <line x1="55.597" y1="407.374" x2="55.597" y2="518.47" stroke="black" stroke-width="0.546"/>
-  <line x1="47.088" y1="407.374" x2="47.088" y2="518.47" stroke="black" stroke-width="2.1"/>
-  <use href="#bravura-g18" xlink:href="#bravura-g18" transform="translate(46.038 407.374) scale(0.0168 -0.0168)"/>
-  <use href="#bravura-g19" xlink:href="#bravura-g19" transform="translate(46.038 518.47) scale(0.0168 -0.0168)"/>
-  <line x1="462.297" y1="397.523" x2="519.149" y2="397.523" stroke="black" stroke-width="0.672"/>
-  <line x1="462.633" y1="397.523" x2="462.633" y2="405.61" stroke="black" stroke-width="0.672"/>
-  <line x1="518.813" y1="397.523" x2="518.813" y2="405.61" stroke="black" stroke-width="0.672"/>
-  <use href="#libertinusSerif-g18" xlink:href="#libertinusSerif-g18" transform="translate(463.977 404.56) scale(0.0091 -0.0091)"/>
-  <line x1="519.149" y1="397.523" x2="576" y2="397.523" stroke="black" stroke-width="0.672"/>
-  <line x1="519.485" y1="397.523" x2="519.485" y2="405.61" stroke="black" stroke-width="0.672"/>
-  <use href="#libertinusSerif-g19" xlink:href="#libertinusSerif-g19" transform="translate(520.829 404.56) scale(0.0091 -0.0091)"/>
-  <use href="#libertinusSerif-g34" xlink:href="#libertinusSerif-g34" transform="translate(36 418.538) scale(0.0084 -0.0084)"/>
-  <use href="#bravura-g74" xlink:href="#bravura-g74" transform="translate(56.647 419.974) scale(0.0168 -0.0168)"/>
-  <use href="#bravura-g535" xlink:href="#bravura-g535" transform="translate(68.97 415.774) scale(0.0168 -0.0168)"/>
-  <use href="#bravura-g535" xlink:href="#bravura-g535" transform="translate(73.573 409.474) scale(0.0168 -0.0168)"/>
-  <use href="#bravura-g535" xlink:href="#bravura-g535" transform="translate(78.176 417.874) scale(0.0168 -0.0168)"/>
-  <line x1="197.186" y1="407.374" x2="197.186" y2="424.174" stroke="black" stroke-width="0.672"/>
-  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(92.994 407.374) scale(0.0168 -0.0168)"/>
-  <line x1="93.246" y1="408.08" x2="93.246" y2="422.074" stroke="black" stroke-width="0.504"/>
-  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(126.614 411.574) scale(0.0168 -0.0168)"/>
-  <use href="#bravura-g535" xlink:href="#bravura-g535" transform="translate(122.313 411.574) scale(0.0168 -0.0168)"/>
-  <line x1="126.866" y1="412.28" x2="126.866" y2="426.274" stroke="black" stroke-width="0.504"/>
-  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(153.509 409.474) scale(0.0168 -0.0168)"/>
-  <line x1="153.761" y1="410.18" x2="153.761" y2="424.174" stroke="black" stroke-width="0.504"/>
-  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(176.776 413.674) scale(0.0168 -0.0168)"/>
-  <line x1="177.028" y1="414.38" x2="177.028" y2="428.374" stroke="black" stroke-width="0.504"/>
-  <line x1="270.499" y1="407.374" x2="270.499" y2="424.174" stroke="black" stroke-width="0.672"/>
-  <use href="#bravura-g157" xlink:href="#bravura-g157" transform="translate(202.142 415.774) scale(0.0168 -0.0168)"/>
-  <line x1="206.846" y1="401.074" x2="206.846" y2="415.069" stroke="black" stroke-width="0.504"/>
-  <use href="#bravura-g157" xlink:href="#bravura-g157" transform="translate(237.038 413.674) scale(0.0168 -0.0168)"/>
-  <line x1="237.29" y1="414.38" x2="237.29" y2="428.374" stroke="black" stroke-width="0.504"/>
-  <line x1="379.897" y1="407.374" x2="379.897" y2="424.174" stroke="black" stroke-width="0.672"/>
-  <use href="#bravura-g996" xlink:href="#bravura-g996" transform="translate(275.455 415.774) scale(0.0168 -0.0168)"/>
-  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(291.503 417.874) scale(0.0168 -0.0168)"/>
-  <line x1="296.207" y1="403.174" x2="296.207" y2="417.169" stroke="black" stroke-width="0.504"/>
-  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(323.409 419.974) scale(0.0168 -0.0168)"/>
-  <line x1="328.113" y1="405.274" x2="328.113" y2="419.269" stroke="black" stroke-width="0.504"/>
-  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(359.743 422.074) scale(0.0168 -0.0168)"/>
-  <line x1="364.447" y1="407.374" x2="364.447" y2="421.369" stroke="black" stroke-width="0.504"/>
-  <line x1="462.297" y1="407.374" x2="462.297" y2="424.174" stroke="black" stroke-width="0.672"/>
-  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(384.853 424.174) scale(0.0168 -0.0168)"/>
-  <use href="#bravura-g536" xlink:href="#bravura-g536" transform="translate(381.527 424.174) scale(0.0168 -0.0168)"/>
-  <line x1="389.557" y1="409.474" x2="389.557" y2="423.469" stroke="black" stroke-width="0.504"/>
-  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(409.4 422.074) scale(0.0168 -0.0168)"/>
-  <line x1="414.104" y1="407.374" x2="414.104" y2="421.369" stroke="black" stroke-width="0.504"/>
-  <use href="#bravura-g157" xlink:href="#bravura-g157" transform="translate(435.621 419.974) scale(0.0168 -0.0168)"/>
-  <line x1="440.325" y1="405.274" x2="440.325" y2="419.269" stroke="black" stroke-width="0.504"/>
-  <use href="#bravura-g64" xlink:href="#bravura-g64" transform="translate(513.101 417.874) scale(0.0168 -0.0168)"/>
+  <line x1="55.597" y1="403.174" x2="55.597" y2="514.27" stroke="black" stroke-width="0.546"/>
+  <line x1="47.088" y1="403.174" x2="47.088" y2="514.27" stroke="black" stroke-width="2.1"/>
+  <use href="#bravura-g18" xlink:href="#bravura-g18" transform="translate(46.038 403.174) scale(0.0168 -0.0168)"/>
+  <use href="#bravura-g19" xlink:href="#bravura-g19" transform="translate(46.038 514.27) scale(0.0168 -0.0168)"/>
+  <line x1="462.297" y1="393.323" x2="519.149" y2="393.323" stroke="black" stroke-width="0.672"/>
+  <line x1="462.633" y1="393.323" x2="462.633" y2="401.41" stroke="black" stroke-width="0.672"/>
+  <line x1="518.813" y1="393.323" x2="518.813" y2="401.41" stroke="black" stroke-width="0.672"/>
+  <use href="#libertinusSerif-g18" xlink:href="#libertinusSerif-g18" transform="translate(463.977 400.36) scale(0.0091 -0.0091)"/>
+  <line x1="519.149" y1="393.323" x2="576" y2="393.323" stroke="black" stroke-width="0.672"/>
+  <line x1="519.485" y1="393.323" x2="519.485" y2="401.41" stroke="black" stroke-width="0.672"/>
+  <use href="#libertinusSerif-g19" xlink:href="#libertinusSerif-g19" transform="translate(520.829 400.36) scale(0.0091 -0.0091)"/>
+  <use href="#libertinusSerif-g34" xlink:href="#libertinusSerif-g34" transform="translate(36 414.338) scale(0.0084 -0.0084)"/>
+  <use href="#bravura-g74" xlink:href="#bravura-g74" transform="translate(56.647 415.774) scale(0.0168 -0.0168)"/>
+  <use href="#bravura-g535" xlink:href="#bravura-g535" transform="translate(68.97 411.574) scale(0.0168 -0.0168)"/>
+  <use href="#bravura-g535" xlink:href="#bravura-g535" transform="translate(73.573 405.274) scale(0.0168 -0.0168)"/>
+  <use href="#bravura-g535" xlink:href="#bravura-g535" transform="translate(78.176 413.674) scale(0.0168 -0.0168)"/>
+  <line x1="197.186" y1="403.174" x2="197.186" y2="419.974" stroke="black" stroke-width="0.672"/>
+  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(92.994 403.174) scale(0.0168 -0.0168)"/>
+  <line x1="93.246" y1="403.88" x2="93.246" y2="417.874" stroke="black" stroke-width="0.504"/>
+  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(126.614 407.374) scale(0.0168 -0.0168)"/>
+  <use href="#bravura-g535" xlink:href="#bravura-g535" transform="translate(122.313 407.374) scale(0.0168 -0.0168)"/>
+  <line x1="126.866" y1="408.08" x2="126.866" y2="422.074" stroke="black" stroke-width="0.504"/>
+  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(153.509 405.274) scale(0.0168 -0.0168)"/>
+  <line x1="153.761" y1="405.98" x2="153.761" y2="419.974" stroke="black" stroke-width="0.504"/>
+  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(176.776 409.474) scale(0.0168 -0.0168)"/>
+  <line x1="177.028" y1="410.18" x2="177.028" y2="424.174" stroke="black" stroke-width="0.504"/>
+  <line x1="270.499" y1="403.174" x2="270.499" y2="419.974" stroke="black" stroke-width="0.672"/>
+  <use href="#bravura-g157" xlink:href="#bravura-g157" transform="translate(202.142 411.574) scale(0.0168 -0.0168)"/>
+  <line x1="206.846" y1="396.874" x2="206.846" y2="410.869" stroke="black" stroke-width="0.504"/>
+  <use href="#bravura-g157" xlink:href="#bravura-g157" transform="translate(237.038 409.474) scale(0.0168 -0.0168)"/>
+  <line x1="237.29" y1="410.18" x2="237.29" y2="424.174" stroke="black" stroke-width="0.504"/>
+  <line x1="379.897" y1="403.174" x2="379.897" y2="419.974" stroke="black" stroke-width="0.672"/>
+  <use href="#bravura-g996" xlink:href="#bravura-g996" transform="translate(275.455 411.574) scale(0.0168 -0.0168)"/>
+  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(291.503 413.674) scale(0.0168 -0.0168)"/>
+  <line x1="296.207" y1="398.974" x2="296.207" y2="412.969" stroke="black" stroke-width="0.504"/>
+  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(323.409 415.774) scale(0.0168 -0.0168)"/>
+  <line x1="328.113" y1="401.074" x2="328.113" y2="415.069" stroke="black" stroke-width="0.504"/>
+  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(359.743 417.874) scale(0.0168 -0.0168)"/>
+  <line x1="364.447" y1="403.174" x2="364.447" y2="417.169" stroke="black" stroke-width="0.504"/>
+  <line x1="462.297" y1="403.174" x2="462.297" y2="419.974" stroke="black" stroke-width="0.672"/>
+  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(384.853 419.974) scale(0.0168 -0.0168)"/>
+  <use href="#bravura-g536" xlink:href="#bravura-g536" transform="translate(381.527 419.974) scale(0.0168 -0.0168)"/>
+  <line x1="389.557" y1="405.274" x2="389.557" y2="419.269" stroke="black" stroke-width="0.504"/>
+  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(409.4 417.874) scale(0.0168 -0.0168)"/>
+  <line x1="414.104" y1="403.174" x2="414.104" y2="417.169" stroke="black" stroke-width="0.504"/>
+  <use href="#bravura-g157" xlink:href="#bravura-g157" transform="translate(435.621 415.774) scale(0.0168 -0.0168)"/>
+  <line x1="440.325" y1="401.074" x2="440.325" y2="415.069" stroke="black" stroke-width="0.504"/>
   <use href="#bravura-g64" xlink:href="#bravura-g64" transform="translate(513.101 413.674) scale(0.0168 -0.0168)"/>
-  <line x1="515.789" y1="407.374" x2="515.789" y2="424.174" stroke="black" stroke-width="0.672"/>
-  <line x1="519.149" y1="407.374" x2="519.149" y2="424.174" stroke="black" stroke-width="2.1"/>
-  <use href="#bravura-g157" xlink:href="#bravura-g157" transform="translate(467.253 422.074) scale(0.0168 -0.0168)"/>
-  <line x1="471.957" y1="407.374" x2="471.957" y2="421.369" stroke="black" stroke-width="0.504"/>
-  <use href="#bravura-g995" xlink:href="#bravura-g995" transform="translate(488.352 415.774) scale(0.0168 -0.0168)"/>
-  <line x1="572.64" y1="407.374" x2="572.64" y2="424.174" stroke="black" stroke-width="0.672"/>
-  <line x1="576" y1="407.374" x2="576" y2="424.174" stroke="black" stroke-width="2.1"/>
-  <use href="#bravura-g156" xlink:href="#bravura-g156" transform="translate(524.105 422.074) scale(0.0168 -0.0168)"/>
-  <use href="#libertinusSerif-g69" xlink:href="#libertinusSerif-g69" transform="translate(87.794 432.936) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g74" xlink:href="#libertinusSerif-g74" transform="translate(92.752 432.936) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g78" xlink:href="#libertinusSerif-g78" transform="translate(95.408 432.936) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g14" xlink:href="#libertinusSerif-g14" transform="translate(111.434 432.936) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g78" xlink:href="#libertinusSerif-g78" transform="translate(123.031 432.936) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g70" xlink:href="#libertinusSerif-g70" transform="translate(130.773 432.936) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g14" xlink:href="#libertinusSerif-g14" transform="translate(142.032 432.936) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g77" xlink:href="#libertinusSerif-g77" transform="translate(152.224 432.936) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g80" xlink:href="#libertinusSerif-g80" transform="translate(154.811 432.936) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g67" xlink:href="#libertinusSerif-g67" transform="translate(171.992 432.936) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g70" xlink:href="#libertinusSerif-g70" transform="translate(176.824 432.936) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g79" xlink:href="#libertinusSerif-g79" transform="translate(181.204 432.936) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g78" xlink:href="#libertinusSerif-g78" transform="translate(199.421 432.936) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g74" xlink:href="#libertinusSerif-g74" transform="translate(207.163 432.936) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g14" xlink:href="#libertinusSerif-g14" transform="translate(221.238 432.936) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g80" xlink:href="#libertinusSerif-g80" transform="translate(235.968 432.936) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g13" xlink:href="#libertinusSerif-g13" transform="translate(240.908 432.936) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g68" xlink:href="#libertinusSerif-g68" transform="translate(287.057 432.936) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g73" xlink:href="#libertinusSerif-g73" transform="translate(291.251 432.936) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g70" xlink:href="#libertinusSerif-g70" transform="translate(296.524 432.936) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g82" xlink:href="#libertinusSerif-g82" transform="translate(318.63 432.936) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g86" xlink:href="#libertinusSerif-g86" transform="translate(323.56 432.936) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g70" xlink:href="#libertinusSerif-g70" transform="translate(328.763 432.936) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g14" xlink:href="#libertinusSerif-g14" transform="translate(343.062 432.936) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g84" xlink:href="#libertinusSerif-g84" transform="translate(356.292 432.936) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g85" xlink:href="#libertinusSerif-g85" transform="translate(360.114 432.936) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g80" xlink:href="#libertinusSerif-g80" transform="translate(363.211 432.936) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g84" xlink:href="#libertinusSerif-g84" transform="translate(381.657 432.936) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g80" xlink:href="#libertinusSerif-g80" transform="translate(385.479 432.936) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g77" xlink:href="#libertinusSerif-g77" transform="translate(390.418 432.936) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g69" xlink:href="#libertinusSerif-g69" transform="translate(407.209 432.936) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g70" xlink:href="#libertinusSerif-g70" transform="translate(412.168 432.936) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g14" xlink:href="#libertinusSerif-g14" transform="translate(424.048 432.936) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g84" xlink:href="#libertinusSerif-g84" transform="translate(434.86 432.936) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g74" xlink:href="#libertinusSerif-g74" transform="translate(438.682 432.936) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g14" xlink:href="#libertinusSerif-g14" transform="translate(452.644 432.936) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g80" xlink:href="#libertinusSerif-g80" transform="translate(467.262 432.936) scale(0.0098 -0.0098)"/>
-  <line x1="474.301" y1="432.936" x2="529.061" y2="432.936" stroke="black" stroke-width="0.504"/>
+  <use href="#bravura-g64" xlink:href="#bravura-g64" transform="translate(513.101 409.474) scale(0.0168 -0.0168)"/>
+  <line x1="515.789" y1="403.174" x2="515.789" y2="419.974" stroke="black" stroke-width="0.672"/>
+  <line x1="519.149" y1="403.174" x2="519.149" y2="419.974" stroke="black" stroke-width="2.1"/>
+  <use href="#bravura-g157" xlink:href="#bravura-g157" transform="translate(467.253 417.874) scale(0.0168 -0.0168)"/>
+  <line x1="471.957" y1="403.174" x2="471.957" y2="417.169" stroke="black" stroke-width="0.504"/>
+  <use href="#bravura-g995" xlink:href="#bravura-g995" transform="translate(488.352 411.574) scale(0.0168 -0.0168)"/>
+  <line x1="572.64" y1="403.174" x2="572.64" y2="419.974" stroke="black" stroke-width="0.672"/>
+  <line x1="576" y1="403.174" x2="576" y2="419.974" stroke="black" stroke-width="2.1"/>
+  <use href="#bravura-g156" xlink:href="#bravura-g156" transform="translate(524.105 417.874) scale(0.0168 -0.0168)"/>
+  <use href="#libertinusSerif-g69" xlink:href="#libertinusSerif-g69" transform="translate(87.794 428.736) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g74" xlink:href="#libertinusSerif-g74" transform="translate(92.752 428.736) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g78" xlink:href="#libertinusSerif-g78" transform="translate(95.408 428.736) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g14" xlink:href="#libertinusSerif-g14" transform="translate(111.434 428.736) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g78" xlink:href="#libertinusSerif-g78" transform="translate(123.031 428.736) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g70" xlink:href="#libertinusSerif-g70" transform="translate(130.773 428.736) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g14" xlink:href="#libertinusSerif-g14" transform="translate(142.032 428.736) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g77" xlink:href="#libertinusSerif-g77" transform="translate(152.224 428.736) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g80" xlink:href="#libertinusSerif-g80" transform="translate(154.811 428.736) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g67" xlink:href="#libertinusSerif-g67" transform="translate(171.992 428.736) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g70" xlink:href="#libertinusSerif-g70" transform="translate(176.824 428.736) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g79" xlink:href="#libertinusSerif-g79" transform="translate(181.204 428.736) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g78" xlink:href="#libertinusSerif-g78" transform="translate(199.421 428.736) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g74" xlink:href="#libertinusSerif-g74" transform="translate(207.163 428.736) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g14" xlink:href="#libertinusSerif-g14" transform="translate(221.238 428.736) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g80" xlink:href="#libertinusSerif-g80" transform="translate(235.968 428.736) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g13" xlink:href="#libertinusSerif-g13" transform="translate(240.908 428.736) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g68" xlink:href="#libertinusSerif-g68" transform="translate(287.057 428.736) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g73" xlink:href="#libertinusSerif-g73" transform="translate(291.251 428.736) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g70" xlink:href="#libertinusSerif-g70" transform="translate(296.524 428.736) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g82" xlink:href="#libertinusSerif-g82" transform="translate(318.63 428.736) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g86" xlink:href="#libertinusSerif-g86" transform="translate(323.56 428.736) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g70" xlink:href="#libertinusSerif-g70" transform="translate(328.763 428.736) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g14" xlink:href="#libertinusSerif-g14" transform="translate(343.062 428.736) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g84" xlink:href="#libertinusSerif-g84" transform="translate(356.292 428.736) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g85" xlink:href="#libertinusSerif-g85" transform="translate(360.114 428.736) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g80" xlink:href="#libertinusSerif-g80" transform="translate(363.211 428.736) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g84" xlink:href="#libertinusSerif-g84" transform="translate(381.657 428.736) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g80" xlink:href="#libertinusSerif-g80" transform="translate(385.479 428.736) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g77" xlink:href="#libertinusSerif-g77" transform="translate(390.418 428.736) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g69" xlink:href="#libertinusSerif-g69" transform="translate(407.209 428.736) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g70" xlink:href="#libertinusSerif-g70" transform="translate(412.168 428.736) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g14" xlink:href="#libertinusSerif-g14" transform="translate(424.048 428.736) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g84" xlink:href="#libertinusSerif-g84" transform="translate(434.86 428.736) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g74" xlink:href="#libertinusSerif-g74" transform="translate(438.682 428.736) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g14" xlink:href="#libertinusSerif-g14" transform="translate(452.644 428.736) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g80" xlink:href="#libertinusSerif-g80" transform="translate(467.262 428.736) scale(0.0098 -0.0098)"/>
+  <line x1="474.301" y1="428.736" x2="529.061" y2="428.736" stroke="black" stroke-width="0.504"/>
+  <line x1="55.597" y1="450.322" x2="576" y2="450.322" stroke="black" stroke-width="0.546"/>
   <line x1="55.597" y1="454.522" x2="576" y2="454.522" stroke="black" stroke-width="0.546"/>
   <line x1="55.597" y1="458.722" x2="576" y2="458.722" stroke="black" stroke-width="0.546"/>
   <line x1="55.597" y1="462.922" x2="576" y2="462.922" stroke="black" stroke-width="0.546"/>
   <line x1="55.597" y1="467.122" x2="576" y2="467.122" stroke="black" stroke-width="0.546"/>
-  <line x1="55.597" y1="471.322" x2="576" y2="471.322" stroke="black" stroke-width="0.546"/>
-  <line x1="462.297" y1="444.67" x2="519.149" y2="444.67" stroke="black" stroke-width="0.672"/>
-  <line x1="462.633" y1="444.67" x2="462.633" y2="452.758" stroke="black" stroke-width="0.672"/>
-  <line x1="518.813" y1="444.67" x2="518.813" y2="452.758" stroke="black" stroke-width="0.672"/>
-  <use href="#libertinusSerif-g18" xlink:href="#libertinusSerif-g18" transform="translate(463.977 451.708) scale(0.0091 -0.0091)"/>
-  <line x1="519.149" y1="444.67" x2="576" y2="444.67" stroke="black" stroke-width="0.672"/>
-  <line x1="519.485" y1="444.67" x2="519.485" y2="452.758" stroke="black" stroke-width="0.672"/>
-  <use href="#libertinusSerif-g19" xlink:href="#libertinusSerif-g19" transform="translate(520.829 451.708) scale(0.0091 -0.0091)"/>
-  <use href="#libertinusSerif-g53" xlink:href="#libertinusSerif-g53" transform="translate(36.823 465.686) scale(0.0084 -0.0084)"/>
-  <use href="#bravura-g74" xlink:href="#bravura-g74" transform="translate(56.647 467.122) scale(0.0168 -0.0168)"/>
-  <use href="#bravura-g535" xlink:href="#bravura-g535" transform="translate(68.97 462.922) scale(0.0168 -0.0168)"/>
-  <use href="#bravura-g535" xlink:href="#bravura-g535" transform="translate(73.573 456.622) scale(0.0168 -0.0168)"/>
-  <use href="#bravura-g535" xlink:href="#bravura-g535" transform="translate(78.176 465.022) scale(0.0168 -0.0168)"/>
-  <line x1="197.186" y1="454.522" x2="197.186" y2="471.322" stroke="black" stroke-width="0.672"/>
-  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(92.994 465.022) scale(0.0168 -0.0168)"/>
-  <line x1="97.698" y1="450.322" x2="97.698" y2="464.317" stroke="black" stroke-width="0.504"/>
-  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(126.614 462.922) scale(0.0168 -0.0168)"/>
-  <line x1="131.318" y1="448.222" x2="131.318" y2="462.217" stroke="black" stroke-width="0.504"/>
-  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(153.509 467.122) scale(0.0168 -0.0168)"/>
-  <line x1="158.213" y1="452.422" x2="158.213" y2="466.417" stroke="black" stroke-width="0.504"/>
-  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(176.776 465.022) scale(0.0168 -0.0168)"/>
-  <line x1="181.48" y1="450.322" x2="181.48" y2="464.317" stroke="black" stroke-width="0.504"/>
-  <line x1="270.499" y1="454.522" x2="270.499" y2="471.322" stroke="black" stroke-width="0.672"/>
-  <use href="#bravura-g157" xlink:href="#bravura-g157" transform="translate(202.142 467.122) scale(0.0168 -0.0168)"/>
-  <line x1="206.846" y1="452.422" x2="206.846" y2="466.417" stroke="black" stroke-width="0.504"/>
-  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(227.621 465.022) scale(0.0168 -0.0168)"/>
-  <line x1="232.325" y1="450.322" x2="232.325" y2="464.317" stroke="black" stroke-width="0.504"/>
-  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(250.325 465.022) scale(0.0168 -0.0168)"/>
-  <line x1="255.029" y1="450.322" x2="255.029" y2="464.317" stroke="black" stroke-width="0.504"/>
-  <line x1="379.897" y1="454.522" x2="379.897" y2="471.322" stroke="black" stroke-width="0.672"/>
-  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(275.455 467.122) scale(0.0168 -0.0168)"/>
-  <line x1="280.159" y1="452.422" x2="280.159" y2="466.417" stroke="black" stroke-width="0.504"/>
-  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(309.347 469.222) scale(0.0168 -0.0168)"/>
-  <line x1="314.051" y1="454.522" x2="314.051" y2="468.517" stroke="black" stroke-width="0.504"/>
-  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(334.515 471.322) scale(0.0168 -0.0168)"/>
-  <use href="#bravura-g536" xlink:href="#bravura-g536" transform="translate(331.189 471.322) scale(0.0168 -0.0168)"/>
-  <line x1="339.219" y1="456.622" x2="339.219" y2="470.617" stroke="black" stroke-width="0.504"/>
-  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(357.439 469.222) scale(0.0168 -0.0168)"/>
-  <line x1="362.143" y1="454.522" x2="362.143" y2="468.517" stroke="black" stroke-width="0.504"/>
-  <line x1="462.297" y1="454.522" x2="462.297" y2="471.322" stroke="black" stroke-width="0.672"/>
-  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(384.853 467.122) scale(0.0168 -0.0168)"/>
-  <line x1="389.557" y1="452.422" x2="389.557" y2="466.417" stroke="black" stroke-width="0.504"/>
-  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(399.447 469.222) scale(0.0168 -0.0168)"/>
-  <use href="#bravura-g459" xlink:href="#bravura-g459" transform="translate(405.394 469.222) scale(0.0168 -0.0168)"/>
-  <line x1="404.151" y1="454.522" x2="404.151" y2="468.517" stroke="black" stroke-width="0.504"/>
-  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(417.32 471.322) scale(0.0168 -0.0168)"/>
-  <use href="#bravura-g536" xlink:href="#bravura-g536" transform="translate(413.994 471.322) scale(0.0168 -0.0168)"/>
-  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(433.577 473.422) scale(0.0168 -0.0168)"/>
-  <line x1="422.024" y1="456.622" x2="422.024" y2="470.617" stroke="black" stroke-width="0.504"/>
-  <line x1="438.281" y1="456.622" x2="438.281" y2="472.717" stroke="black" stroke-width="0.504"/>
-  <line x1="421.772" y1="456.622" x2="438.533" y2="456.622" stroke="black" stroke-width="2.1"/>
-  <line x1="421.772" y1="459.772" x2="438.533" y2="459.772" stroke="black" stroke-width="2.1"/>
-  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(444.055 471.322) scale(0.0168 -0.0168)"/>
-  <line x1="448.759" y1="456.622" x2="448.759" y2="470.617" stroke="black" stroke-width="0.504"/>
-  <path d="M 389.809 471.532 C 407.891 475.018 425.973 479.218 444.055 475.732 L 444.055 475.312 C 425.973 478.126 407.891 473.926 389.809 471.112 Z" fill="black" stroke="none"/>
-  <use href="#bravura-g64" xlink:href="#bravura-g64" transform="translate(513.101 465.022) scale(0.0168 -0.0168)"/>
+  <line x1="462.297" y1="440.47" x2="519.149" y2="440.47" stroke="black" stroke-width="0.672"/>
+  <line x1="462.633" y1="440.47" x2="462.633" y2="448.558" stroke="black" stroke-width="0.672"/>
+  <line x1="518.813" y1="440.47" x2="518.813" y2="448.558" stroke="black" stroke-width="0.672"/>
+  <use href="#libertinusSerif-g18" xlink:href="#libertinusSerif-g18" transform="translate(463.977 447.508) scale(0.0091 -0.0091)"/>
+  <line x1="519.149" y1="440.47" x2="576" y2="440.47" stroke="black" stroke-width="0.672"/>
+  <line x1="519.485" y1="440.47" x2="519.485" y2="448.558" stroke="black" stroke-width="0.672"/>
+  <use href="#libertinusSerif-g19" xlink:href="#libertinusSerif-g19" transform="translate(520.829 447.508) scale(0.0091 -0.0091)"/>
+  <use href="#libertinusSerif-g53" xlink:href="#libertinusSerif-g53" transform="translate(36.823 461.486) scale(0.0084 -0.0084)"/>
+  <use href="#bravura-g74" xlink:href="#bravura-g74" transform="translate(56.647 462.922) scale(0.0168 -0.0168)"/>
+  <use href="#bravura-g535" xlink:href="#bravura-g535" transform="translate(68.97 458.722) scale(0.0168 -0.0168)"/>
+  <use href="#bravura-g535" xlink:href="#bravura-g535" transform="translate(73.573 452.422) scale(0.0168 -0.0168)"/>
+  <use href="#bravura-g535" xlink:href="#bravura-g535" transform="translate(78.176 460.822) scale(0.0168 -0.0168)"/>
+  <line x1="197.186" y1="450.322" x2="197.186" y2="467.122" stroke="black" stroke-width="0.672"/>
+  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(92.994 460.822) scale(0.0168 -0.0168)"/>
+  <line x1="97.698" y1="446.122" x2="97.698" y2="460.117" stroke="black" stroke-width="0.504"/>
+  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(126.614 458.722) scale(0.0168 -0.0168)"/>
+  <line x1="131.318" y1="444.022" x2="131.318" y2="458.017" stroke="black" stroke-width="0.504"/>
+  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(153.509 462.922) scale(0.0168 -0.0168)"/>
+  <line x1="158.213" y1="448.222" x2="158.213" y2="462.217" stroke="black" stroke-width="0.504"/>
+  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(176.776 460.822) scale(0.0168 -0.0168)"/>
+  <line x1="181.48" y1="446.122" x2="181.48" y2="460.117" stroke="black" stroke-width="0.504"/>
+  <line x1="270.499" y1="450.322" x2="270.499" y2="467.122" stroke="black" stroke-width="0.672"/>
+  <use href="#bravura-g157" xlink:href="#bravura-g157" transform="translate(202.142 462.922) scale(0.0168 -0.0168)"/>
+  <line x1="206.846" y1="448.222" x2="206.846" y2="462.217" stroke="black" stroke-width="0.504"/>
+  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(227.621 460.822) scale(0.0168 -0.0168)"/>
+  <line x1="232.325" y1="446.122" x2="232.325" y2="460.117" stroke="black" stroke-width="0.504"/>
+  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(250.325 460.822) scale(0.0168 -0.0168)"/>
+  <line x1="255.029" y1="446.122" x2="255.029" y2="460.117" stroke="black" stroke-width="0.504"/>
+  <line x1="379.897" y1="450.322" x2="379.897" y2="467.122" stroke="black" stroke-width="0.672"/>
+  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(275.455 462.922) scale(0.0168 -0.0168)"/>
+  <line x1="280.159" y1="448.222" x2="280.159" y2="462.217" stroke="black" stroke-width="0.504"/>
+  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(309.347 465.022) scale(0.0168 -0.0168)"/>
+  <line x1="314.051" y1="450.322" x2="314.051" y2="464.317" stroke="black" stroke-width="0.504"/>
+  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(334.515 467.122) scale(0.0168 -0.0168)"/>
+  <use href="#bravura-g536" xlink:href="#bravura-g536" transform="translate(331.189 467.122) scale(0.0168 -0.0168)"/>
+  <line x1="339.219" y1="452.422" x2="339.219" y2="466.417" stroke="black" stroke-width="0.504"/>
+  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(357.439 465.022) scale(0.0168 -0.0168)"/>
+  <line x1="362.143" y1="450.322" x2="362.143" y2="464.317" stroke="black" stroke-width="0.504"/>
+  <line x1="462.297" y1="450.322" x2="462.297" y2="467.122" stroke="black" stroke-width="0.672"/>
+  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(384.853 462.922) scale(0.0168 -0.0168)"/>
+  <line x1="389.557" y1="448.222" x2="389.557" y2="462.217" stroke="black" stroke-width="0.504"/>
+  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(399.447 465.022) scale(0.0168 -0.0168)"/>
+  <use href="#bravura-g459" xlink:href="#bravura-g459" transform="translate(405.394 465.022) scale(0.0168 -0.0168)"/>
+  <line x1="404.151" y1="450.322" x2="404.151" y2="464.317" stroke="black" stroke-width="0.504"/>
+  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(417.32 467.122) scale(0.0168 -0.0168)"/>
+  <use href="#bravura-g536" xlink:href="#bravura-g536" transform="translate(413.994 467.122) scale(0.0168 -0.0168)"/>
+  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(433.577 469.222) scale(0.0168 -0.0168)"/>
+  <line x1="422.024" y1="452.422" x2="422.024" y2="466.417" stroke="black" stroke-width="0.504"/>
+  <line x1="438.281" y1="452.422" x2="438.281" y2="468.517" stroke="black" stroke-width="0.504"/>
+  <line x1="421.772" y1="452.422" x2="438.533" y2="452.422" stroke="black" stroke-width="2.1"/>
+  <line x1="421.772" y1="455.572" x2="438.533" y2="455.572" stroke="black" stroke-width="2.1"/>
+  <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(444.055 467.122) scale(0.0168 -0.0168)"/>
+  <line x1="448.759" y1="452.422" x2="448.759" y2="466.417" stroke="black" stroke-width="0.504"/>
+  <path d="M 389.809 467.332 C 407.891 470.818 425.973 475.018 444.055 471.532 L 444.055 471.112 C 425.973 473.926 407.891 469.726 389.809 466.912 Z" fill="black" stroke="none"/>
   <use href="#bravura-g64" xlink:href="#bravura-g64" transform="translate(513.101 460.822) scale(0.0168 -0.0168)"/>
-  <line x1="515.789" y1="454.522" x2="515.789" y2="471.322" stroke="black" stroke-width="0.672"/>
-  <line x1="519.149" y1="454.522" x2="519.149" y2="471.322" stroke="black" stroke-width="2.1"/>
-  <use href="#bravura-g157" xlink:href="#bravura-g157" transform="translate(467.253 469.222) scale(0.0168 -0.0168)"/>
-  <line x1="471.957" y1="454.522" x2="471.957" y2="468.517" stroke="black" stroke-width="0.504"/>
-  <use href="#bravura-g995" xlink:href="#bravura-g995" transform="translate(488.352 462.922) scale(0.0168 -0.0168)"/>
-  <line x1="572.64" y1="454.522" x2="572.64" y2="471.322" stroke="black" stroke-width="0.672"/>
-  <line x1="576" y1="454.522" x2="576" y2="471.322" stroke="black" stroke-width="2.1"/>
-  <use href="#bravura-g156" xlink:href="#bravura-g156" transform="translate(524.105 469.222) scale(0.0168 -0.0168)"/>
-  <use href="#libertinusSerif-g69" xlink:href="#libertinusSerif-g69" transform="translate(87.794 480.083) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g74" xlink:href="#libertinusSerif-g74" transform="translate(92.752 480.083) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g78" xlink:href="#libertinusSerif-g78" transform="translate(95.408 480.083) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g14" xlink:href="#libertinusSerif-g14" transform="translate(111.434 480.083) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g78" xlink:href="#libertinusSerif-g78" transform="translate(123.031 480.083) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g70" xlink:href="#libertinusSerif-g70" transform="translate(130.773 480.083) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g14" xlink:href="#libertinusSerif-g14" transform="translate(142.032 480.083) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g77" xlink:href="#libertinusSerif-g77" transform="translate(152.224 480.083) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g80" xlink:href="#libertinusSerif-g80" transform="translate(154.811 480.083) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g67" xlink:href="#libertinusSerif-g67" transform="translate(171.992 480.083) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g70" xlink:href="#libertinusSerif-g70" transform="translate(176.824 480.083) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g79" xlink:href="#libertinusSerif-g79" transform="translate(181.204 480.083) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g78" xlink:href="#libertinusSerif-g78" transform="translate(199.421 480.083) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g74" xlink:href="#libertinusSerif-g74" transform="translate(207.163 480.083) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g14" xlink:href="#libertinusSerif-g14" transform="translate(216.529 480.083) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g80" xlink:href="#libertinusSerif-g80" transform="translate(226.551 480.083) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g13" xlink:href="#libertinusSerif-g13" transform="translate(231.49 480.083) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g68" xlink:href="#libertinusSerif-g68" transform="translate(245.879 480.083) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g73" xlink:href="#libertinusSerif-g73" transform="translate(250.073 480.083) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g70" xlink:href="#libertinusSerif-g70" transform="translate(255.346 480.083) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g82" xlink:href="#libertinusSerif-g82" transform="translate(270.676 480.083) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g86" xlink:href="#libertinusSerif-g86" transform="translate(275.605 480.083) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g70" xlink:href="#libertinusSerif-g70" transform="translate(280.809 480.083) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g14" xlink:href="#libertinusSerif-g14" transform="translate(293.886 480.083) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g84" xlink:href="#libertinusSerif-g84" transform="translate(305.896 480.083) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g85" xlink:href="#libertinusSerif-g85" transform="translate(309.718 480.083) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g80" xlink:href="#libertinusSerif-g80" transform="translate(312.814 480.083) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g84" xlink:href="#libertinusSerif-g84" transform="translate(331.319 480.083) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g80" xlink:href="#libertinusSerif-g80" transform="translate(335.141 480.083) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g77" xlink:href="#libertinusSerif-g77" transform="translate(340.08 480.083) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g69" xlink:href="#libertinusSerif-g69" transform="translate(355.248 480.083) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g70" xlink:href="#libertinusSerif-g70" transform="translate(360.207 480.083) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g14" xlink:href="#libertinusSerif-g14" transform="translate(372.684 480.083) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g84" xlink:href="#libertinusSerif-g84" transform="translate(384.092 480.083) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g74" xlink:href="#libertinusSerif-g74" transform="translate(387.914 480.083) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g14" xlink:href="#libertinusSerif-g14" transform="translate(409.205 480.083) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g14" xlink:href="#libertinusSerif-g14" transform="translate(426.27 480.083) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g14" xlink:href="#libertinusSerif-g14" transform="translate(439.638 480.083) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g14" xlink:href="#libertinusSerif-g14" transform="translate(455.241 480.083) scale(0.0098 -0.0098)"/>
-  <use href="#libertinusSerif-g80" xlink:href="#libertinusSerif-g80" transform="translate(467.262 480.083) scale(0.0098 -0.0098)"/>
-  <line x1="474.301" y1="480.083" x2="529.061" y2="480.083" stroke="black" stroke-width="0.504"/>
+  <use href="#bravura-g64" xlink:href="#bravura-g64" transform="translate(513.101 456.622) scale(0.0168 -0.0168)"/>
+  <line x1="515.789" y1="450.322" x2="515.789" y2="467.122" stroke="black" stroke-width="0.672"/>
+  <line x1="519.149" y1="450.322" x2="519.149" y2="467.122" stroke="black" stroke-width="2.1"/>
+  <use href="#bravura-g157" xlink:href="#bravura-g157" transform="translate(467.253 465.022) scale(0.0168 -0.0168)"/>
+  <line x1="471.957" y1="450.322" x2="471.957" y2="464.317" stroke="black" stroke-width="0.504"/>
+  <use href="#bravura-g995" xlink:href="#bravura-g995" transform="translate(488.352 458.722) scale(0.0168 -0.0168)"/>
+  <line x1="572.64" y1="450.322" x2="572.64" y2="467.122" stroke="black" stroke-width="0.672"/>
+  <line x1="576" y1="450.322" x2="576" y2="467.122" stroke="black" stroke-width="2.1"/>
+  <use href="#bravura-g156" xlink:href="#bravura-g156" transform="translate(524.105 465.022) scale(0.0168 -0.0168)"/>
+  <use href="#libertinusSerif-g69" xlink:href="#libertinusSerif-g69" transform="translate(87.794 475.883) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g74" xlink:href="#libertinusSerif-g74" transform="translate(92.752 475.883) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g78" xlink:href="#libertinusSerif-g78" transform="translate(95.408 475.883) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g14" xlink:href="#libertinusSerif-g14" transform="translate(111.434 475.883) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g78" xlink:href="#libertinusSerif-g78" transform="translate(123.031 475.883) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g70" xlink:href="#libertinusSerif-g70" transform="translate(130.773 475.883) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g14" xlink:href="#libertinusSerif-g14" transform="translate(142.032 475.883) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g77" xlink:href="#libertinusSerif-g77" transform="translate(152.224 475.883) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g80" xlink:href="#libertinusSerif-g80" transform="translate(154.811 475.883) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g67" xlink:href="#libertinusSerif-g67" transform="translate(171.992 475.883) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g70" xlink:href="#libertinusSerif-g70" transform="translate(176.824 475.883) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g79" xlink:href="#libertinusSerif-g79" transform="translate(181.204 475.883) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g78" xlink:href="#libertinusSerif-g78" transform="translate(199.421 475.883) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g74" xlink:href="#libertinusSerif-g74" transform="translate(207.163 475.883) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g14" xlink:href="#libertinusSerif-g14" transform="translate(216.529 475.883) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g80" xlink:href="#libertinusSerif-g80" transform="translate(226.551 475.883) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g13" xlink:href="#libertinusSerif-g13" transform="translate(231.49 475.883) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g68" xlink:href="#libertinusSerif-g68" transform="translate(245.879 475.883) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g73" xlink:href="#libertinusSerif-g73" transform="translate(250.073 475.883) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g70" xlink:href="#libertinusSerif-g70" transform="translate(255.346 475.883) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g82" xlink:href="#libertinusSerif-g82" transform="translate(270.676 475.883) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g86" xlink:href="#libertinusSerif-g86" transform="translate(275.605 475.883) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g70" xlink:href="#libertinusSerif-g70" transform="translate(280.809 475.883) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g14" xlink:href="#libertinusSerif-g14" transform="translate(293.886 475.883) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g84" xlink:href="#libertinusSerif-g84" transform="translate(305.896 475.883) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g85" xlink:href="#libertinusSerif-g85" transform="translate(309.718 475.883) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g80" xlink:href="#libertinusSerif-g80" transform="translate(312.814 475.883) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g84" xlink:href="#libertinusSerif-g84" transform="translate(331.319 475.883) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g80" xlink:href="#libertinusSerif-g80" transform="translate(335.141 475.883) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g77" xlink:href="#libertinusSerif-g77" transform="translate(340.08 475.883) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g69" xlink:href="#libertinusSerif-g69" transform="translate(355.248 475.883) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g70" xlink:href="#libertinusSerif-g70" transform="translate(360.207 475.883) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g14" xlink:href="#libertinusSerif-g14" transform="translate(372.684 475.883) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g84" xlink:href="#libertinusSerif-g84" transform="translate(384.092 475.883) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g74" xlink:href="#libertinusSerif-g74" transform="translate(387.914 475.883) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g14" xlink:href="#libertinusSerif-g14" transform="translate(409.205 475.883) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g14" xlink:href="#libertinusSerif-g14" transform="translate(426.27 475.883) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g14" xlink:href="#libertinusSerif-g14" transform="translate(439.638 475.883) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g14" xlink:href="#libertinusSerif-g14" transform="translate(455.241 475.883) scale(0.0098 -0.0098)"/>
+  <use href="#libertinusSerif-g80" xlink:href="#libertinusSerif-g80" transform="translate(467.262 475.883) scale(0.0098 -0.0098)"/>
+  <line x1="474.301" y1="475.883" x2="529.061" y2="475.883" stroke="black" stroke-width="0.504"/>
+  <line x1="55.597" y1="497.47" x2="576" y2="497.47" stroke="black" stroke-width="0.546"/>
   <line x1="55.597" y1="501.67" x2="576" y2="501.67" stroke="black" stroke-width="0.546"/>
   <line x1="55.597" y1="505.87" x2="576" y2="505.87" stroke="black" stroke-width="0.546"/>
   <line x1="55.597" y1="510.07" x2="576" y2="510.07" stroke="black" stroke-width="0.546"/>
   <line x1="55.597" y1="514.27" x2="576" y2="514.27" stroke="black" stroke-width="0.546"/>
-  <line x1="55.597" y1="518.47" x2="576" y2="518.47" stroke="black" stroke-width="0.546"/>
-  <line x1="462.297" y1="491.818" x2="519.149" y2="491.818" stroke="black" stroke-width="0.672"/>
-  <line x1="462.633" y1="491.818" x2="462.633" y2="499.906" stroke="black" stroke-width="0.672"/>
-  <line x1="518.813" y1="491.818" x2="518.813" y2="499.906" stroke="black" stroke-width="0.672"/>
-  <use href="#libertinusSerif-g18" xlink:href="#libertinusSerif-g18" transform="translate(463.977 498.856) scale(0.0091 -0.0091)"/>
-  <line x1="519.149" y1="491.818" x2="576" y2="491.818" stroke="black" stroke-width="0.672"/>
-  <line x1="519.485" y1="491.818" x2="519.485" y2="499.906" stroke="black" stroke-width="0.672"/>
-  <use href="#libertinusSerif-g19" xlink:href="#libertinusSerif-g19" transform="translate(520.829 498.856) scale(0.0091 -0.0091)"/>
-  <use href="#libertinusSerif-g35" xlink:href="#libertinusSerif-g35" transform="translate(36.899 512.834) scale(0.0084 -0.0084)"/>
-  <use href="#bravura-g92" xlink:href="#bravura-g92" transform="translate(56.647 505.87) scale(0.0168 -0.0168)"/>
-  <use href="#bravura-g535" xlink:href="#bravura-g535" transform="translate(69.272 514.27) scale(0.0168 -0.0168)"/>
-  <use href="#bravura-g535" xlink:href="#bravura-g535" transform="translate(73.876 507.97) scale(0.0168 -0.0168)"/>
-  <use href="#bravura-g535" xlink:href="#bravura-g535" transform="translate(78.479 516.37) scale(0.0168 -0.0168)"/>
-  <line x1="197.186" y1="501.67" x2="197.186" y2="518.47" stroke="black" stroke-width="0.672"/>
+  <line x1="462.297" y1="487.618" x2="519.149" y2="487.618" stroke="black" stroke-width="0.672"/>
+  <line x1="462.633" y1="487.618" x2="462.633" y2="495.706" stroke="black" stroke-width="0.672"/>
+  <line x1="518.813" y1="487.618" x2="518.813" y2="495.706" stroke="black" stroke-width="0.672"/>
+  <use href="#libertinusSerif-g18" xlink:href="#libertinusSerif-g18" transform="translate(463.977 494.656) scale(0.0091 -0.0091)"/>
+  <line x1="519.149" y1="487.618" x2="576" y2="487.618" stroke="black" stroke-width="0.672"/>
+  <line x1="519.485" y1="487.618" x2="519.485" y2="495.706" stroke="black" stroke-width="0.672"/>
+  <use href="#libertinusSerif-g19" xlink:href="#libertinusSerif-g19" transform="translate(520.829 494.656) scale(0.0091 -0.0091)"/>
+  <use href="#libertinusSerif-g35" xlink:href="#libertinusSerif-g35" transform="translate(36.899 508.634) scale(0.0084 -0.0084)"/>
+  <use href="#bravura-g92" xlink:href="#bravura-g92" transform="translate(56.647 501.67) scale(0.0168 -0.0168)"/>
+  <use href="#bravura-g535" xlink:href="#bravura-g535" transform="translate(69.272 510.07) scale(0.0168 -0.0168)"/>
+  <use href="#bravura-g535" xlink:href="#bravura-g535" transform="translate(73.876 503.77) scale(0.0168 -0.0168)"/>
+  <use href="#bravura-g535" xlink:href="#bravura-g535" transform="translate(78.479 512.17) scale(0.0168 -0.0168)"/>
+  <line x1="197.186" y1="497.47" x2="197.186" y2="514.27" stroke="black" stroke-width="0.672"/>
   <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(92.994 505.87) scale(0.0168 -0.0168)"/>
   <use href="#bravura-g535" xlink:href="#bravura-g535" transform="translate(88.693 505.87) scale(0.0168 -0.0168)"/>
-  <line x1="93.246" y1="506.576" x2="93.246" y2="520.57" stroke="black" stroke-width="0.504"/>
+  <line x1="97.698" y1="491.17" x2="97.698" y2="505.164" stroke="black" stroke-width="0.504"/>
   <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(126.614 510.07) scale(0.0168 -0.0168)"/>
   <line x1="131.318" y1="495.37" x2="131.318" y2="509.364" stroke="black" stroke-width="0.504"/>
   <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(153.509 507.97) scale(0.0168 -0.0168)"/>
   <use href="#bravura-g459" xlink:href="#bravura-g459" transform="translate(159.456 507.97) scale(0.0168 -0.0168)"/>
-  <line x1="153.761" y1="508.676" x2="153.761" y2="522.67" stroke="black" stroke-width="0.504"/>
+  <line x1="158.213" y1="493.27" x2="158.213" y2="507.264" stroke="black" stroke-width="0.504"/>
   <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(176.776 505.87) scale(0.0168 -0.0168)"/>
-  <line x1="177.028" y1="506.576" x2="177.028" y2="520.57" stroke="black" stroke-width="0.504"/>
-  <use href="#bravura-g518" xlink:href="#bravura-g518" transform="translate(176.776 521.124) scale(0.0168 -0.0168)"/>
-  <line x1="270.499" y1="501.67" x2="270.499" y2="518.47" stroke="black" stroke-width="0.672"/>
+  <line x1="181.48" y1="491.17" x2="181.48" y2="505.164" stroke="black" stroke-width="0.504"/>
+  <use href="#bravura-g517" xlink:href="#bravura-g517" transform="translate(181.228 491.002) scale(0.0168 -0.0168)"/>
+  <line x1="270.499" y1="497.47" x2="270.499" y2="514.27" stroke="black" stroke-width="0.672"/>
   <use href="#bravura-g157" xlink:href="#bravura-g157" transform="translate(202.142 503.77) scale(0.0168 -0.0168)"/>
   <line x1="202.394" y1="504.476" x2="202.394" y2="518.47" stroke="black" stroke-width="0.504"/>
   <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(227.621 512.17) scale(0.0168 -0.0168)"/>
   <line x1="232.325" y1="497.47" x2="232.325" y2="511.464" stroke="black" stroke-width="0.504"/>
   <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(250.325 516.37) scale(0.0168 -0.0168)"/>
   <line x1="255.029" y1="501.67" x2="255.029" y2="515.664" stroke="black" stroke-width="0.504"/>
-  <line x1="379.897" y1="501.67" x2="379.897" y2="518.47" stroke="black" stroke-width="0.672"/>
+  <line x1="379.897" y1="497.47" x2="379.897" y2="514.27" stroke="black" stroke-width="0.672"/>
   <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(275.455 518.47) scale(0.0168 -0.0168)"/>
   <use href="#bravura-g536" xlink:href="#bravura-g536" transform="translate(272.128 518.47) scale(0.0168 -0.0168)"/>
   <line x1="280.159" y1="503.77" x2="280.159" y2="517.764" stroke="black" stroke-width="0.504"/>
+  <line x1="273.775" y1="518.47" x2="282.091" y2="518.47" stroke="black" stroke-width="0.672"/>
   <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(308.121 516.37) scale(0.0168 -0.0168)"/>
   <line x1="312.825" y1="501.67" x2="312.825" y2="515.664" stroke="black" stroke-width="0.504"/>
   <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(332.379 507.97) scale(0.0168 -0.0168)"/>
-  <line x1="332.631" y1="508.676" x2="332.631" y2="522.67" stroke="black" stroke-width="0.504"/>
+  <line x1="337.083" y1="493.27" x2="337.083" y2="507.264" stroke="black" stroke-width="0.504"/>
   <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(354.475 505.87) scale(0.0168 -0.0168)"/>
   <use href="#bravura-g535" xlink:href="#bravura-g535" transform="translate(350.174 505.87) scale(0.0168 -0.0168)"/>
-  <line x1="354.727" y1="506.576" x2="354.727" y2="520.57" stroke="black" stroke-width="0.504"/>
-  <line x1="462.297" y1="501.67" x2="462.297" y2="518.47" stroke="black" stroke-width="0.672"/>
+  <line x1="359.179" y1="491.17" x2="359.179" y2="505.164" stroke="black" stroke-width="0.504"/>
+  <line x1="462.297" y1="497.47" x2="462.297" y2="514.27" stroke="black" stroke-width="0.672"/>
   <use href="#bravura-g156" xlink:href="#bravura-g156" transform="translate(384.853 507.97) scale(0.0168 -0.0168)"/>
-  <use href="#bravura-g64" xlink:href="#bravura-g64" transform="translate(513.101 512.17) scale(0.0168 -0.0168)"/>
   <use href="#bravura-g64" xlink:href="#bravura-g64" transform="translate(513.101 507.97) scale(0.0168 -0.0168)"/>
-  <line x1="515.789" y1="501.67" x2="515.789" y2="518.47" stroke="black" stroke-width="0.672"/>
-  <line x1="519.149" y1="501.67" x2="519.149" y2="518.47" stroke="black" stroke-width="2.1"/>
+  <use href="#bravura-g64" xlink:href="#bravura-g64" transform="translate(513.101 503.77) scale(0.0168 -0.0168)"/>
+  <line x1="515.789" y1="497.47" x2="515.789" y2="514.27" stroke="black" stroke-width="0.672"/>
+  <line x1="519.149" y1="497.47" x2="519.149" y2="514.27" stroke="black" stroke-width="2.1"/>
   <use href="#bravura-g157" xlink:href="#bravura-g157" transform="translate(467.253 516.37) scale(0.0168 -0.0168)"/>
   <line x1="471.957" y1="501.67" x2="471.957" y2="515.664" stroke="black" stroke-width="0.504"/>
-  <use href="#bravura-g995" xlink:href="#bravura-g995" transform="translate(488.352 510.07) scale(0.0168 -0.0168)"/>
-  <line x1="572.64" y1="501.67" x2="572.64" y2="518.47" stroke="black" stroke-width="0.672"/>
-  <line x1="576" y1="501.67" x2="576" y2="518.47" stroke="black" stroke-width="2.1"/>
+  <use href="#bravura-g995" xlink:href="#bravura-g995" transform="translate(488.352 505.87) scale(0.0168 -0.0168)"/>
+  <line x1="572.64" y1="497.47" x2="572.64" y2="514.27" stroke="black" stroke-width="0.672"/>
+  <line x1="576" y1="497.47" x2="576" y2="514.27" stroke="black" stroke-width="2.1"/>
   <use href="#bravura-g156" xlink:href="#bravura-g156" transform="translate(524.105 516.37) scale(0.0168 -0.0168)"/>
   <use href="#libertinusSerif-g69" xlink:href="#libertinusSerif-g69" transform="translate(87.794 527.231) scale(0.0098 -0.0098)"/>
   <use href="#libertinusSerif-g74" xlink:href="#libertinusSerif-g74" transform="translate(92.752 527.231) scale(0.0098 -0.0098)"/>

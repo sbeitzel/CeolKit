@@ -48,6 +48,15 @@ public struct SizedMeasure: Sendable {
     /// clear of whatever is drawn before it: the bar it follows, or the head of the staff.
     /// Zero for a bar the measure does not own.  See ``ColumnMetrics/openingBarLead(for:ownsOpeningBar:atSystemStart:)``.
     public let openingBarLead: Double
+    /// The clef the staff is in at this measure's first note: the one a `K:` against the
+    /// bar line before it moved it to, if any (issue #223).  `nil` for a measure sized on
+    /// its own, which then reads the clef of the system it lands on.
+    public let clef: ClefSpec?
+    /// The clef a `K:` against this measure's closing bar moves the staff to, drawn small
+    /// just before that bar — where abcm2ps draws it, and so at the end of the line, as the
+    /// courtesy clef, when the change opens the next system.  Its room is already in
+    /// ``naturalWidth``.
+    public let trailingClef: ClefSpec?
 
     public init(
         measure: Measure,
@@ -60,9 +69,13 @@ public struct SizedMeasure: Sendable {
         musicOffsets: [Double]? = nil,
         musicWidth: Double? = nil,
         ownsOpeningBar: Bool = false,
-        openingBarLead: Double = 0
+        openingBarLead: Double = 0,
+        clef: ClefSpec? = nil,
+        trailingClef: ClefSpec? = nil
     ) {
         self.measure = measure
+        self.clef = clef
+        self.trailingClef = trailingClef
         self.ownsOpeningBar = ownsOpeningBar
         self.openingBarLead = openingBarLead
         self.naturalWidth = naturalWidth
@@ -76,6 +89,19 @@ public struct SizedMeasure: Sendable {
         // single-voice answer rather than an array the rest of the pipeline has to test.
         self.eventVoiceIndices = eventVoiceIndices
             ?? Array(repeating: 0, count: eventOffsets.count)
+    }
+
+    /// This measure placed on a staff: the clef it opens in, and a clef change drawn before
+    /// its closing bar, for which `trailingWidth` more room is made at its end.
+    func placed(clef: ClefSpec, trailingClef: ClefSpec?, trailingWidth: Double) -> SizedMeasure {
+        let extra = trailingClef == nil ? 0 : trailingWidth
+        return SizedMeasure(
+            measure: measure, naturalWidth: naturalWidth + extra, eventOffsets: eventOffsets,
+            unitNoteLength: unitNoteLength, graceEventIndices: graceEventIndices,
+            eventVoiceIndices: eventVoiceIndices, keyChange: keyChange,
+            musicOffsets: musicOffsets, musicWidth: musicWidth + extra,
+            ownsOpeningBar: ownsOpeningBar, openingBarLead: openingBarLead,
+            clef: clef, trailingClef: trailingClef)
     }
 }
 
@@ -441,6 +467,10 @@ public struct JustifiedMeasure: Sendable {
     /// The key change the sizer resolved for this bar, carried through unchanged:
     /// justification moves x positions, never what a bar is written in.
     public var keyChange: KeyChange? { source.keyChange }
+
+    /// Carried through from ``SizedMeasure/clef`` and ``SizedMeasure/trailingClef``.
+    public var clef: ClefSpec? { source.clef }
+    public var trailingClef: ClefSpec? { source.trailingClef }
 }
 
 // MARK: - Pass 4 output
@@ -896,6 +926,9 @@ public struct ResolvedMeasure: Sendable {
     /// cancelling naturals and the new signature at `origin.x`, ahead of any time signature
     /// changing in the same bar, in the space ``ColumnMetrics`` reserved for them.
     public let keyChange: KeyChange?
+    /// Non-nil when the staff changes clef at this measure's closing bar: the emitter draws
+    /// the new clef small, just before the bar.  See ``SizedMeasure/trailingClef``.
+    public let trailingClef: ClefSpec?
 
     public init(
         origin: Point,
@@ -905,11 +938,13 @@ public struct ResolvedMeasure: Sendable {
         closingBar: ResolvedBarLine,
         unitNoteLength: Fraction = Fraction(numerator: 1, denominator: 8),
         meter: Meter? = nil,
-        keyChange: KeyChange? = nil
+        keyChange: KeyChange? = nil,
+        trailingClef: ClefSpec? = nil
     ) {
         self.origin = origin
         self.width = width
         self.events = events
+        self.trailingClef = trailingClef
         self.openingBar = openingBar
         self.closingBar = closingBar
         self.unitNoteLength = unitNoteLength
@@ -937,11 +972,16 @@ public struct ResolvedEvent: Sendable {
     /// ``SizedMeasure/eventVoiceIndices``: its position within the staff it is drawn on.
     /// With one voice per staff every event is `0`; a shared staff is where they differ.
     public let voiceIndex: Int
+    /// The clef in force where this event stands, which is what places its noteheads on
+    /// the staff (issues #222, #223).  A `.clefChange` event carries the clef it changes to.
+    public let clef: ClefSpec
 
-    public init(origin: Point, kind: ResolvedEventKind, voiceIndex: Int = 0) {
+    public init(origin: Point, kind: ResolvedEventKind, voiceIndex: Int = 0,
+                clef: ClefSpec = ClefSpec(clef: .treble, octaveShift: 0)) {
         self.origin = origin
         self.kind = kind
         self.voiceIndex = voiceIndex
+        self.clef = clef
     }
 }
 
@@ -954,6 +994,7 @@ public enum ResolvedEventKind: Sendable {
     case spacer(Spacer)
     case directiveAnchor(CeolKitDirective)
     case tempoChange(Tempo)
+    case clefChange(ClefSpec)
 
     init(from event: Event) {
         switch event {
@@ -965,6 +1006,15 @@ public enum ResolvedEventKind: Sendable {
         case .spacer(let s):          self = .spacer(s)
         case .directiveAnchor(let d): self = .directiveAnchor(d)
         case .tempoChange(let t):     self = .tempoChange(t)
+        case .clefChange(let c):      self = .clefChange(c)
+        }
+    }
+
+    /// See ``isMusic(_:)``.
+    var isMusic: Bool {
+        switch self {
+        case .note, .rest, .chord, .grace, .tuplet:                       return true
+        case .spacer, .directiveAnchor, .tempoChange, .clefChange:        return false
         }
     }
 }

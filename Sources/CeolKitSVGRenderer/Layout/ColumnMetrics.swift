@@ -101,6 +101,9 @@ struct ColumnMetrics: Sendable {
 
         case .tempoChange:
             return s * 6
+
+        case .clefChange(let clef):
+            return clefChangeWidth(for: clef, metadata: metadata, staffSize: s)
         }
     }
 

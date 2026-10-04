@@ -23,6 +23,7 @@ func eventSourceRange(_ event: Event) -> SourceRange? {
     case .spacer(let s): return s.source
     case .directiveAnchor: return nil
     case .tempoChange: return nil
+    case .clefChange: return nil
     }
 }
 

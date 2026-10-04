@@ -46,6 +46,51 @@ func clefHeaderWidth(for spec: ClefSpec, metadata: BravuraMetadata, staffSize: D
     return glyphWidth + 0.5 * staffSize
 }
 
+/// How much smaller than the staff-head clef a clef change part way through a staff is
+/// drawn — abcm2ps's proportion (its `sbclef` is drawn at 0.037 against the head's 0.045).
+let clefChangeScale = 0.8
+
+/// Horizontal space a clef change part way through a staff takes: the small clef and the
+/// gap after it (issue #223).
+func clefChangeWidth(for spec: ClefSpec, metadata: BravuraMetadata, staffSize: Double) -> Double {
+    guard let glyph = clefGlyph(for: spec) else { return 0 }
+    let glyphWidth = metadata.glyphBBoxes[glyph.rawValue].map { $0.width * staffSize }
+        ?? (2.8 * staffSize)
+    return glyphWidth * clefChangeScale + 0.8 * staffSize
+}
+
+/// The clef a `K:` written before any of the bar's music moved the staff to — the change
+/// abcm2ps draws before the bar line rather than after it, so it belongs to the end of the
+/// bar before (issue #223).  `nil` where the bar opens with no such change.
+func leadingClefChange(of measure: Measure) -> ClefSpec? {
+    var clef: ClefSpec? = nil
+    for event in measure.events {
+        switch event {
+        case .clefChange(let c):                                clef = c
+        case .spacer, .directiveAnchor, .tempoChange:           continue
+        case .note, .rest, .chord, .grace, .tuplet:             return clef
+        }
+    }
+    return clef
+}
+
+/// Whether `event` is music a clef change can come after, rather than furniture it can
+/// stand before.  What decides that a change is ``leadingClefChange(of:)``.
+func isMusic(_ event: Event) -> Bool {
+    switch event {
+    case .note, .rest, .chord, .grace, .tuplet:                       return true
+    case .spacer, .directiveAnchor, .tempoChange, .clefChange:        return false
+    }
+}
+
+/// The clef the staff is in after `measure`, given the one it entered in.
+func clefLeaving(_ measure: Measure, entering clef: ClefSpec) -> ClefSpec {
+    measure.events.reduce(clef) { clef, event in
+        if case .clefChange(let c) = event { return c }
+        return clef
+    }
+}
+
 /// Total horizontal space reserved before the first measure of a system.
 ///
 /// Mirrors the `startWidth` calculation in `VerticalLayoutEngine` so that the

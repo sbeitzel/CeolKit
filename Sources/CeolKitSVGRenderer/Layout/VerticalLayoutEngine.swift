@@ -2,7 +2,7 @@ import CeolKitModel
 
 /// Pass 4: assigns absolute page coordinates to every system, measure, and event.
 ///
-/// Vertical extent is derived by scanning note pitches (treble-clef staff position),
+/// Vertical extent is derived by scanning note pitches (staff positions under each system's clef),
 /// chord symbols, annotations, and lyrics across each system's measures.
 /// Systems fill pages top-to-bottom; a new page opens when the next system would exceed
 /// the bottom margin.
@@ -80,6 +80,7 @@ public struct VerticalLayoutEngine: Sendable {
             let startWidth = systemStartWidth(for: jsystem, staffSize: config.staffSize)
             let measures = resolveMeasures(
                 jsystem.measures,
+                clef: jsystem.clef,
                 systemOrigin: systemOrigin,
                 extraAbove: extraAbove,
                 systemStartWidth: startWidth
@@ -439,6 +440,7 @@ public struct VerticalLayoutEngine: Sendable {
             let systemOrigin = Point(x: staffLeftX, y: topY + staffTopOffset - extraAbove)
             let measures = resolveMeasures(
                 staff.measures,
+                clef: staff.clef,
                 systemOrigin: systemOrigin,
                 extraAbove: extraAbove,
                 systemStartWidth: metrics.startWidth
@@ -560,10 +562,14 @@ public struct VerticalLayoutEngine: Sendable {
         var verses = 0
         var hasGraceGroups = false
 
+        var clef = system.clef
         for jm in system.measures {
+            clef = jm.clef ?? clef
             for event in jm.source.measure.events {
+                if case .clefChange(let change) = event { clef = change }
                 scan(
                     event,
+                    clef: clef,
                     maxLedgerAbove: &maxLedgerAbove,
                     maxLedgerBelow: &maxLedgerBelow,
                     verses: &verses,
@@ -602,6 +608,7 @@ public struct VerticalLayoutEngine: Sendable {
 
     private func scan(
         _ event: Event,
+        clef: ClefSpec,
         maxLedgerAbove: inout Int,
         maxLedgerBelow: inout Int,
         verses: inout Int,
@@ -609,14 +616,15 @@ public struct VerticalLayoutEngine: Sendable {
     ) {
         switch event {
         case .note(let n):
-            accumulate(pitch: n.pitch, above: &maxLedgerAbove, below: &maxLedgerBelow)
+            accumulate(pitch: n.pitch, clef: clef, above: &maxLedgerAbove, below: &maxLedgerBelow)
             verses = max(verses, n.lyrics.count)
         case .chord(let c):
-            for n in c.notes { accumulate(pitch: n.pitch, above: &maxLedgerAbove, below: &maxLedgerBelow) }
+            for n in c.notes { accumulate(pitch: n.pitch, clef: clef, above: &maxLedgerAbove, below: &maxLedgerBelow) }
             verses = max(verses, c.lyrics.count)
         case .tuplet(let t):
             for e in t.events {
                 scan(e,
+                     clef: clef,
                      maxLedgerAbove: &maxLedgerAbove,
                      maxLedgerBelow: &maxLedgerBelow,
                      verses: &verses,
@@ -624,24 +632,25 @@ public struct VerticalLayoutEngine: Sendable {
             }
         case .grace(let g):
             hasGraceGroups = true
-            for n in g.notes { accumulate(pitch: n.pitch, above: &maxLedgerAbove, below: &maxLedgerBelow) }
+            for n in g.notes { accumulate(pitch: n.pitch, clef: clef, above: &maxLedgerAbove, below: &maxLedgerBelow) }
         default:
             break
         }
     }
 
-    private func accumulate(pitch: Pitch, above: inout Int, below: inout Int) {
-        let (a, b) = ledgerLines(for: pitch)
+    private func accumulate(pitch: Pitch, clef: ClefSpec, above: inout Int, below: inout Int) {
+        let (a, b) = ledgerLines(for: pitch, clef: clef)
         above = max(above, a)
         below = max(below, b)
     }
 
-    /// Returns the number of ledger lines required above and below the treble staff.
+    /// Returns the number of ledger lines required above and below a staff carrying `clef`.
     ///
-    /// Treble clef: bottom staff line = E4 (staff position 0), top staff line = F5 (position 8).
-    /// A note on position 10 (A5) sits on the first ledger line above the staff.
-    private func ledgerLines(for pitch: Pitch) -> (above: Int, below: Int) {
-        let staffPos = (pitch.octave - 4) * 7 + (pitch.step.rawValue - DiatonicStep.e.rawValue)
+    /// The bottom staff line is position 0 and the top line position 8, whatever the clef;
+    /// the clef says which pitch each names.  On a treble staff a note on position 10 (A5)
+    /// sits on the first ledger line above, and on a bass staff the same is true of C4.
+    private func ledgerLines(for pitch: Pitch, clef: ClefSpec) -> (above: Int, below: Int) {
+        let staffPos = clef.staffPosition(of: pitch)
         let above = max(0, (staffPos - 8) / 2)
         let below = max(0, (-staffPos) / 2)
         return (above, below)
@@ -649,14 +658,20 @@ public struct VerticalLayoutEngine: Sendable {
 
     // MARK: - Horizontal layout
 
+    /// - Parameter clef: the clef the staff head draws, which the system's first measure is
+    ///   in unless a clef change says otherwise.
     private func resolveMeasures(
         _ measures: [JustifiedMeasure],
+        clef systemClef: ClefSpec,
         systemOrigin: Point,
         extraAbove: Double,
         systemStartWidth: Double
     ) -> [ResolvedMeasure] {
         var resolved: [ResolvedMeasure] = []
         var x = systemOrigin.x
+        // The clef in force, event by event, so every notehead is placed on the clef it was
+        // written against (issue #223).
+        var clef = systemClef
 
         for (i, jm) in measures.enumerated() {
             let measureX = i == 0 ? x + systemStartWidth : x
@@ -664,15 +679,18 @@ public struct VerticalLayoutEngine: Sendable {
             let eventBaseY = systemOrigin.y + extraAbove
 
             let voices = jm.eventVoiceIndices
+            clef = jm.clef ?? clef
             let events: [ResolvedEvent] = zip(jm.eventOffsets, jm.source.measure.events)
                 .enumerated().map { i, pair in
                     let (offset, event) = pair
+                    if case .clefChange(let change) = event { clef = change }
                     return ResolvedEvent(
                         origin: Point(x: measureOrigin.x + offset, y: eventBaseY),
                         kind: ResolvedEventKind(from: event),
                         // Parallel by construction, but a hand-built `SizedMeasure` in a test
                         // can be short; fall back to the staff's own voice rather than trap.
-                        voiceIndex: i < voices.count ? voices[i] : 0
+                        voiceIndex: i < voices.count ? voices[i] : 0,
+                        clef: clef
                     )
                 }
 
@@ -742,7 +760,8 @@ public struct VerticalLayoutEngine: Sendable {
                 closingBar: closingBar,
                 unitNoteLength: jm.source.unitNoteLength,
                 meter: jm.source.measure.meter,
-                keyChange: jm.keyChange
+                keyChange: jm.keyChange,
+                trailingClef: jm.trailingClef
             ))
 
             x = measureOrigin.x + jm.finalWidth

@@ -154,6 +154,10 @@ struct SVGEmitter: Sendable {
         // break (#27) are resolved with dangling arcs instead of being silently dropped.
         var pendingTies:  [TieAnchor]  = []
         var pendingSlurs: [SlurAnchor] = []
+        // Likewise threaded: the way each part's last stem went, which settles a beam group
+        // that sits evenly about the middle line (#218) even where the stem before it was
+        // in the previous bar, system or page.
+        var lastStemUp: [PartKey: Bool] = [:]
         var documents: [String] = []
         documents.reserveCapacity(layout.pages.count)
         for (pageIndex, page) in layout.pages.enumerated() {
@@ -163,7 +167,8 @@ struct SVGEmitter: Sendable {
             let document = emitPage(page, pageNumber: page.pageNumber ?? firstPageNumber + pageIndex,
                                      layout: layout,
                                      embeddedFaces: embeddedFaces, fonts: fonts,
-                                     pendingTies: &pendingTies, pendingSlurs: &pendingSlurs)
+                                     pendingTies: &pendingTies, pendingSlurs: &pendingSlurs,
+                                     lastStemUp: &lastStemUp)
             documents.append(document)
         }
         return documents
@@ -173,7 +178,8 @@ struct SVGEmitter: Sendable {
 
     private func emitPage(_ page: ResolvedPage, pageNumber: Int, layout: ResolvedLayout,
                            embeddedFaces: EmbeddedFaces?, fonts: FontProvider?,
-                           pendingTies: inout [TieAnchor], pendingSlurs: inout [SlurAnchor]) -> String {
+                           pendingTies: inout [TieAnchor], pendingSlurs: inout [SlurAnchor],
+                           lastStemUp: inout [PartKey: Bool]) -> String {
         var builder = SVGBuilder(textRendering: config.textRendering, fonts: fonts)
         emitScrollSyncMetadata(for: page, pageNumber: pageNumber, builder: &builder)
         emitTitleBlock(page.titleRows, builder: &builder)
@@ -183,6 +189,7 @@ struct SVGEmitter: Sendable {
             // that system.
             configured(for: system)
                 .emitSystem(system, pendingTies: &pendingTies, pendingSlurs: &pendingSlurs,
+                            lastStemUp: &lastStemUp,
                             builder: &builder)
         }
         emitFooterBlock(page.footerRows, builder: &builder)
@@ -463,6 +470,7 @@ struct SVGEmitter: Sendable {
 
     private func emitSystem(_ system: ResolvedSystem,
                              pendingTies: inout [TieAnchor], pendingSlurs: inout [SlurAnchor],
+                             lastStemUp: inout [PartKey: Bool],
                              builder: inout SVGBuilder) {
         emitStaffLines(system, builder: &builder)
         emitStaffGroupConnector(system, builder: &builder)
@@ -497,7 +505,7 @@ struct SVGEmitter: Sendable {
         for measure in system.measures {
             emitMeasure(measure, system: system, staffIndex: staffIndex,
                         pendingTies: &pendingTies, pendingSlurs: &pendingSlurs,
-                        builder: &builder)
+                        lastStemUp: &lastStemUp, builder: &builder)
         }
         emitLyrics(system, builder: &builder)
         emitAnnotations(system, builder: &builder)
@@ -1167,6 +1175,7 @@ struct SVGEmitter: Sendable {
 
     private func emitMeasure(_ measure: ResolvedMeasure, system: ResolvedSystem, staffIndex: Int,
                               pendingTies: inout [TieAnchor], pendingSlurs: inout [SlurAnchor],
+                              lastStemUp: inout [PartKey: Bool],
                               builder: inout SVGBuilder) {
         let topY    = system.origin.y + system.staffOrigin
         let bottomY = topY + system.staffHeight
@@ -1223,6 +1232,11 @@ struct SVGEmitter: Sendable {
             emitBeamGroup(g, builder: &builder)
         }
 
+        // One stem direction for every note of a beam group, decided before any of its stems
+        // is placed (#218): each stem's side of the notehead depends on it.
+        let beamStems = beamGroupStemDirections(in: measure, staffIndex: staffIndex,
+                                                lastStemUp: &lastStemUp)
+
         for (index, event) in measure.events.enumerated() {
             let voice = event.voiceIndex
             let part = PartKey(staff: staffIndex, voice: voice)
@@ -1242,6 +1256,7 @@ struct SVGEmitter: Sendable {
                                      separateRests: separateRests,
                                      precedingGraceBeamY: lastGraceBeamY[voice],
                                      placements: eventPlacements,
+                                     stemOverride: beamStems[index],
                                      builder: &builder)
             lastGraceBeamY[voice] = nil
             if let info = stemInfo, let note = noteFrom(event) {
@@ -1323,6 +1338,70 @@ struct SVGEmitter: Sendable {
     private func noteFrom(_ event: ResolvedEvent) -> Note? {
         if case .note(let n) = event.kind { return n }
         return nil
+    }
+
+    /// The stem direction for each beamed note of `measure`, keyed by event index, for the
+    /// voices whose direction is left to the notes (`.auto`).  A voice with a direction of
+    /// its own — `V:` `stem=`, the document's, a shared staff's opposition — gets nothing
+    /// here: every one of its stems already goes that way.
+    ///
+    /// As abcm2ps decides it (#218): a group stems down when its highest note is farther
+    /// above the middle line than its lowest is below it, and up in the opposite case.  A
+    /// group as far above as below follows the stem before it in the same part, beamed or
+    /// not — `lastStemUp`, which this updates and which runs on from bar to bar — and stems
+    /// up where there is none.
+    private func beamGroupStemDirections(in measure: ResolvedMeasure, staffIndex: Int,
+                                         lastStemUp: inout [PartKey: Bool]) -> [Int: StemDirection] {
+        // The groups, as event indices: the beam states are per voice, and a shared staff
+        // interleaves its voices, so each voice's open group is tracked on its own.  A group
+        // left open by malformed input still counts — `flushBeam` draws it.
+        var open: [Int: [Int]] = [:]
+        var groups: [[Int]] = []
+        for (index, event) in measure.events.enumerated() {
+            guard let note = noteFrom(event) else { continue }
+            let voice = event.voiceIndex
+            switch note.beam {
+            case .start:
+                if let g = open.removeValue(forKey: voice) { groups.append(g) }
+                open[voice] = [index]
+            case .middle:
+                open[voice]?.append(index)
+            case .end:
+                if var g = open.removeValue(forKey: voice) {
+                    g.append(index)
+                    groups.append(g)
+                }
+            case .single:
+                break
+            }
+        }
+        groups += open.values
+        let groupAt = Dictionary(groups.map { ($0[0], $0) }, uniquingKeysWith: { a, _ in a })
+
+        let middleLine = 4
+        var result: [Int: StemDirection] = [:]
+        for (index, event) in measure.events.enumerated() {
+            guard let note = noteFrom(event) else { continue }
+            let direction = resolvedStemDirection(forVoice: event.voiceIndex)
+            let part = PartKey(staff: staffIndex, voice: event.voiceIndex)
+            if let group = groupAt[index] {
+                let positions = group.compactMap { noteFrom(measure.events[$0]) }
+                    .map { staffPos(for: $0.pitch) }
+                let up: Bool
+                switch direction {
+                case .up:   up = true
+                case .down: up = false
+                case .auto:
+                    let balance = positions.min()! + positions.max()! - 2 * middleLine
+                    up = balance == 0 ? (lastStemUp[part] ?? true) : balance < 0
+                    for member in group { result[member] = up ? .up : .down }
+                }
+                lastStemUp[part] = up
+            } else if note.beam == .single {
+                lastStemUp[part] = stemsUp(direction, staffPos: staffPos(for: note.pitch))
+            }
+        }
+        return result
     }
 
     private func requiredBeamCount(_ absDur: Double) -> Int {
@@ -1526,12 +1605,14 @@ struct SVGEmitter: Sendable {
                            unitNoteLength: Fraction, separateRests: Bool = false,
                            precedingGraceBeamY: Double? = nil,
                            placements: [HeadPlacement] = [],
+                           stemOverride: StemDirection? = nil,
                            builder: inout SVGBuilder) -> StemInfo? {
         // Which voice of the staff wrote this decides which way it stems and where its
         // rests sit — the two things a shared staff has to draw differently from a staff of
         // its own (issue #77).  On every other staff `voiceIndex` is 0 and both resolve to
         // exactly what they always did.
-        let stem = resolvedStemDirection(forVoice: event.voiceIndex)
+        // A beamed note takes its group's direction instead (#218).
+        let stem = stemOverride ?? resolvedStemDirection(forVoice: event.voiceIndex)
         switch event.kind {
         case .note(let n):
             return emitNote(n, x: event.origin.x, topStaffY: topStaffY, bottomStaffY: bottomStaffY,

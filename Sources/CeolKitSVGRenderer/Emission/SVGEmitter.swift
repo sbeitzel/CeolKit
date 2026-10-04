@@ -1347,8 +1347,9 @@ struct SVGEmitter: Sendable {
         return nil
     }
 
-    /// The stem direction for each beamed note of `measure`, keyed by event index, for the
-    /// voices whose direction is left to the notes (`.auto`).  A voice with a direction of
+    /// The stem direction for each beamed note of `measure`, and each unbeamed note on the
+    /// middle line, keyed by event index, for the voices whose direction is left to the
+    /// notes (`.auto`).  A voice with a direction of
     /// its own — `V:` `stem=`, the document's, a shared staff's opposition — gets nothing
     /// here: every one of its stems already goes that way.
     ///
@@ -1356,7 +1357,8 @@ struct SVGEmitter: Sendable {
     /// above the middle line than its lowest is below it, and up in the opposite case.  A
     /// group as far above as below follows the stem before it in the same part, beamed or
     /// not — `lastStemUp`, which this updates and which runs on from bar to bar — and stems
-    /// up where there is none.
+    /// up where there is none.  An unbeamed note on the middle line is decided the same way
+    /// (#221); rests leave the previous stem standing.
     private func beamGroupStemDirections(in measure: ResolvedMeasure, staffIndex: Int,
                                          lastStemUp: inout [PartKey: Bool]) -> [Int: StemDirection] {
         // The groups, as event indices: the beam states are per voice, and a shared staff
@@ -1405,7 +1407,16 @@ struct SVGEmitter: Sendable {
                 }
                 lastStemUp[part] = up
             } else if note.beam == .single {
-                lastStemUp[part] = stemsUp(direction, staffPos: staffPos(for: note.pitch))
+                let position = staffPos(for: note.pitch)
+                let up: Bool
+                if direction == .auto && position == middleLine {
+                    // The middle line is the same tie-break for a lone note (#221).
+                    up = lastStemUp[part] ?? true
+                    result[index] = up ? .up : .down
+                } else {
+                    up = stemsUp(direction, staffPos: position)
+                }
+                lastStemUp[part] = up
             }
         }
         return result

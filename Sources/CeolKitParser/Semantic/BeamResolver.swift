@@ -1,39 +1,14 @@
 import CeolKitModel
 
-/// Assigns BeamState to notes and chords in an event array based on meter and unit note length.
+/// Assigns BeamState to notes and chords in an event array based on unit note length.
 ///
-/// Beaming rules (ABC v2.2 §4.5):
-/// - A note is beamable if its duration is strictly less than the beat unit.
-///   Simple meter: beat unit = 1/d. Compound meter (n%3==0, n≥6): beat unit = 3/d.
+/// Beaming rules (ABC v2.2 §4.7):
+/// - A note is beamable if it would carry a flag: its length is strictly less than a quarter
+///   note, whatever the meter.  "If L:1/8 then ABC2DE is equivalent to AB C2 DE."
 /// - Consecutive beamable notes with no intervening space are beamed together.
 /// - Grace notes are always beamable (rendered beamed regardless of duration).
 struct BeamResolver {
-    let meter: Meter
     let unitNoteLength: Fraction
-
-    // The beat unit as a whole-note fraction (numerator, denominator).
-    private var beatUnit: Fraction {
-        switch meter {
-        case .fraction(let n, let d):
-            if n >= 6 && n % 3 == 0 {
-                return Fraction(numerator: 3, denominator: d)
-            }
-            return Fraction(numerator: 1, denominator: d)
-        case .commonTime:
-            return Fraction(numerator: 1, denominator: 4)  // 4/4
-        case .cutTime:
-            return Fraction(numerator: 1, denominator: 2)  // 2/2
-        case .complex(let parts, let d):
-            // Use the first group's beat unit
-            let n = parts.first ?? 2
-            if n >= 6 && n % 3 == 0 {
-                return Fraction(numerator: 3, denominator: d)
-            }
-            return Fraction(numerator: 1, denominator: d)
-        case .free:
-            return unitNoteLength
-        }
-    }
 
     /// Resolves beam states for a flat event list. Returns a new list with BeamState set on
     /// Note and Chord events. Space elements in the input break beam groups.
@@ -97,13 +72,10 @@ struct BeamResolver {
     }
 
     private func isBeamableDuration(_ dur: Fraction) -> Bool {
-        // dur is in UNL units; beatUnit is a whole-note fraction.
-        // Beamable iff dur * unitNoteLength < beatUnit
-        // ↔ dur.num * unitLen.num * bu.den < bu.num * dur.den * unitLen.den
-        let bu = beatUnit
+        // dur is in UNL units.  Beamable iff dur * unitNoteLength < 1/4
+        // ↔ 4 * dur.num * unitLen.num < dur.den * unitLen.den
         let ul = unitNoteLength
-        return dur.numerator * ul.numerator * bu.denominator
-             < bu.numerator * dur.denominator * ul.denominator
+        return 4 * dur.numerator * ul.numerator < dur.denominator * ul.denominator
     }
 
     private func withBeam(_ beam: BeamState, _ event: Event) -> Event {

@@ -214,9 +214,7 @@ struct NoteRhythmTests {
 
     @Test("cdeg (no whitespace) forms a beam group")
     func beamGroup() {
-        // With L:1/8, notes shorter than L (L/2 = 1/16) can't be beamed...
-        // Actually notes equal to L (=1/8) ARE shorter than the beat (1/4 in 4/4),
-        // so they are beamable.
+        // With L:1/8 each note is an eighth: short enough to carry a flag, so beamable.
         let result = parse(rhythmTune("cdeg|"))
         let notes = result.score.firstTune?.singleVoiceMeasures.first?.noteEvents ?? []
         guard notes.count == 4 else { Issue.record("Parser prerequisite not met"); return }
@@ -237,11 +235,37 @@ struct NoteRhythmTests {
 
     @Test("Quarter note C4 is not beamable (beam = .single)")
     func quarterNoteNotBeamed() {
-        // L:1/8 so C4 = 4/8 = 1/2 note. Not shorter than L, so not beamable.
+        // L:1/8 so C4 = 4/8 = 1/2 note. No flag, so not beamable.
         let result = parse(rhythmTune("C4D4|"))
         let notes = result.score.firstTune?.singleVoiceMeasures.first?.noteEvents ?? []
         guard notes.count == 2 else { Issue.record("Parser prerequisite not met"); return }
         #expect(notes[0].beam == .single)
         #expect(notes[1].beam == .single)
+    }
+
+    // §4.7: "if L:1/8 then ABC2DE is equivalent to AB C2 DE" — a note too long to carry a
+    // flag is never beamed, whatever the meter's beat (#217).
+    @Test("ABC2DE beams as AB C2 DE", arguments: ["4/4", "6/8", "2/2", "3/2", "9/8"])
+    func quarterBreaksBeamInAnyMeter(meter: String) {
+        let result = parse("X:1\nT:Test\nM:\(meter)\nL:1/8\nK:C\nABC2DE|")
+        let notes = result.score.firstTune?.singleVoiceMeasures.first?.noteEvents ?? []
+        guard notes.count == 5 else { Issue.record("Parser prerequisite not met"); return }
+        #expect(notes.map(\.beam) == [.start, .end, .single, .start, .end])
+    }
+
+    @Test("A quarter between eighths in 6/8 is not beamed (G2d)")
+    func compoundMeterQuarterNotBeamed() {
+        let result = parse("X:1\nT:Test\nM:6/8\nL:1/8\nK:C\nB2A G2d|")
+        let notes = result.score.firstTune?.singleVoiceMeasures.first?.noteEvents ?? []
+        guard notes.count == 4 else { Issue.record("Parser prerequisite not met"); return }
+        #expect(notes.map(\.beam) == [.single, .single, .single, .single])
+    }
+
+    @Test("A dotted eighth and sixteenth are still beamed")
+    func dottedEighthBeamed() {
+        let result = parse(rhythmTune("c>d|"))
+        let notes = result.score.firstTune?.singleVoiceMeasures.first?.noteEvents ?? []
+        guard notes.count == 2 else { Issue.record("Parser prerequisite not met"); return }
+        #expect(notes.map(\.beam) == [.start, .end])
     }
 }

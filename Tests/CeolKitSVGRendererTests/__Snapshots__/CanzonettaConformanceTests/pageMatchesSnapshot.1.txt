@@ -419,11 +419,11 @@
   <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(491.847 185.507) scale(0.0168 -0.0168)"/>
   <use href="#bravura-g535" xlink:href="#bravura-g535" transform="translate(487.547 185.507) scale(0.0168 -0.0168)"/>
   <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(510.507 183.407) scale(0.0168 -0.0168)"/>
-  <line x1="467.914" y1="175.007" x2="467.914" y2="189.001" stroke="black" stroke-width="0.504"/>
-  <line x1="481.276" y1="175.007" x2="481.276" y2="188.312" stroke="black" stroke-width="0.504"/>
-  <line x1="492.099" y1="175.007" x2="492.099" y2="186.212" stroke="black" stroke-width="0.504"/>
-  <line x1="510.759" y1="175.007" x2="510.759" y2="184.112" stroke="black" stroke-width="0.504"/>
-  <line x1="467.662" y1="175.007" x2="511.011" y2="175.007" stroke="black" stroke-width="2.1"/>
+  <line x1="463.462" y1="190.412" x2="463.462" y2="204.407" stroke="black" stroke-width="0.504"/>
+  <line x1="481.276" y1="188.312" x2="481.276" y2="204.407" stroke="black" stroke-width="0.504"/>
+  <line x1="492.099" y1="186.212" x2="492.099" y2="204.407" stroke="black" stroke-width="0.504"/>
+  <line x1="510.759" y1="184.112" x2="510.759" y2="204.407" stroke="black" stroke-width="0.504"/>
+  <line x1="463.21" y1="204.407" x2="511.011" y2="204.407" stroke="black" stroke-width="2.1"/>
   <path d="M 468.166 194.117 C 482.279 197.603 496.393 191.303 510.507 187.817 L 510.507 187.397 C 496.393 190.211 482.279 196.511 468.166 193.697 Z" fill="black" stroke="none"/>
   <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(521.33 181.307) scale(0.0168 -0.0168)"/>
   <line x1="521.582" y1="182.012" x2="521.582" y2="196.007" stroke="black" stroke-width="0.504"/>

@@ -562,11 +562,26 @@ public struct VerticalLayoutEngine: Sendable {
         var verses = 0
         var hasGraceGroups = false
 
+        var tupletAbove = 0.0
+        var tupletBelow = 0.0
+
         var clef = system.clef
         for jm in system.measures {
             clef = jm.clef ?? clef
-            for event in jm.source.measure.events {
+            var tupletOf: [Int: Int] = [:]
+            for (t, tuplet) in jm.source.tuplets.enumerated() {
+                for index in tuplet.eventIndices { tupletOf[index] = t }
+            }
+            var tupletPositions = [[Int]](repeating: [], count: jm.source.tuplets.count)
+            for (index, event) in jm.source.measure.events.enumerated() {
                 if case .clefChange(let change) = event { clef = change }
+                if let t = tupletOf[index] {
+                    switch event {
+                    case .note(let n):  tupletPositions[t].append(clef.staffPosition(of: n.pitch))
+                    case .chord(let c): tupletPositions[t] += c.notes.map { clef.staffPosition(of: $0.pitch) }
+                    default:            break
+                    }
+                }
                 scan(
                     event,
                     clef: clef,
@@ -576,6 +591,11 @@ public struct VerticalLayoutEngine: Sendable {
                     hasGraceGroups: &hasGraceGroups
                 )
             }
+            for positions in tupletPositions {
+                let reach = tupletNumberReach(positions, staffSize: staffSize)
+                tupletAbove = max(tupletAbove, reach.above)
+                tupletBelow = max(tupletBelow, reach.below)
+            }
         }
         let lines = AnnotationBand.lineCounts(of: system.measures.flatMap(\.source.measure.events))
 
@@ -584,8 +604,12 @@ public struct VerticalLayoutEngine: Sendable {
         // notehead. Reserve that height so stems never intrude into the title block zone.
         let graceOvershoot = hasGraceGroups ? 3.5 * s * 0.6 : 0
         let floor = AnnotationBand.floorRatio * s
-        let floorAbove = Double(maxLedgerAbove) * s + graceOvershoot + (lines.above > 0 ? floor : 0)
-        let floorBelow = Double(maxLedgerBelow) * s + (lines.below > 0 ? floor : 0)
+        // A tuplet's number stands beyond the ledger lines and stems of its own notes, which
+        // is as far as anything on its side reaches; the annotations stack beyond it (#231).
+        let floorAbove = max(Double(maxLedgerAbove) * s + graceOvershoot, tupletAbove)
+            + (lines.above > 0 ? floor : 0)
+        let floorBelow = max(Double(maxLedgerBelow) * s, tupletBelow)
+            + (lines.below > 0 ? floor : 0)
         let baseAbove = floorAbove + AnnotationBand.height(
             lines: lines.above, metrics: AnnotationBand.aboveMetrics(styles), staffSize: s)
         let hasTempoChanges = system.measures.contains { jm in
@@ -604,6 +628,26 @@ public struct VerticalLayoutEngine: Sendable {
                                     staffSize: s)
             + LyricBand.height(verses: verses, style: styles.vocal)
         return (extraAbove, extraBelow, AnnotationFloors(above: floorAbove, below: floorBelow))
+    }
+
+    /// How far beyond the staff a tuplet's number reaches, on the side the emitter sets it:
+    /// the side its stems go, decided as an unforced beam group decides it, and beyond a
+    /// stem of full length (3½ spaces) from the outermost note.  Notes without a pitch — a
+    /// tuplet of rests — keep the number just clear of the staff, above it.
+    private func tupletNumberReach(_ positions: [Int],
+                                   staffSize s: Double) -> (above: Double, below: Double) {
+        let number = 0.5 * s + 1.3 * s
+        guard let low = positions.min(), let high = positions.max() else {
+            return (number, 0)
+        }
+        let middleLine = 4
+        if low + high - 2 * middleLine <= 0 {
+            let tip = Double(high + 7 - 8) / 2 * s
+            return (max(0, tip) + number, 0)
+        } else {
+            let tip = Double(-(low - 7)) / 2 * s
+            return (0, max(0, tip) + number)
+        }
     }
 
     private func scan(
@@ -680,13 +724,21 @@ public struct VerticalLayoutEngine: Sendable {
 
             let voices = jm.eventVoiceIndices
             clef = jm.clef ?? clef
+            // A tuplet's notes were spaced for how long they sound; from here on their
+            // durations only choose noteheads, flags and beams, which show what was written.
+            var tupletOf: [Int: TupletSpan] = [:]
+            for tuplet in jm.source.tuplets {
+                for index in tuplet.eventIndices { tupletOf[index] = tuplet }
+            }
             let events: [ResolvedEvent] = zip(jm.eventOffsets, jm.source.measure.events)
                 .enumerated().map { i, pair in
                     let (offset, event) = pair
                     if case .clefChange(let change) = event { clef = change }
                     return ResolvedEvent(
                         origin: Point(x: measureOrigin.x + offset, y: eventBaseY),
-                        kind: ResolvedEventKind(from: event),
+                        kind: ResolvedEventKind(from: tupletOf[i].map {
+                            TupletExpansion.written(event, in: $0)
+                        } ?? event),
                         // Parallel by construction, but a hand-built `SizedMeasure` in a test
                         // can be short; fall back to the staff's own voice rather than trap.
                         voiceIndex: i < voices.count ? voices[i] : 0,
@@ -761,7 +813,8 @@ public struct VerticalLayoutEngine: Sendable {
                 unitNoteLength: jm.source.unitNoteLength,
                 meter: jm.source.measure.meter,
                 keyChange: jm.keyChange,
-                trailingClef: jm.trailingClef
+                trailingClef: jm.trailingClef,
+                tuplets: jm.source.tuplets
             ))
 
             x = measureOrigin.x + jm.finalWidth

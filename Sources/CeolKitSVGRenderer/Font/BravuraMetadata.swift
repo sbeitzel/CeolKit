@@ -26,6 +26,8 @@ public struct BravuraMetadata: Sendable {
         public let slurMidpointThickness: Double
         public let tieEndpointThickness: Double
         public let tieMidpointThickness: Double
+        /// Thickness of the rule and hooks of a tuplet bracket.
+        public let tupletBracketThickness: Double
     }
 
     public struct BoundingBox: Sendable {
@@ -83,7 +85,7 @@ private struct RawBBox: Decodable {
 /// The keys Bravura supplies that are deliberately *not* read describe notation this
 /// renderer does not yet draw: `dashedBarlineDashLength`, `dashedBarlineGapLength`,
 /// `dashedBarlineThickness`, `hairpinThickness`, `octaveLineThickness`, `pedalLineThickness`,
-/// `textEnclosureThickness`, `tupletBracketThickness`,
+/// `textEnclosureThickness`,
 /// `lyricLineThickness`, `arrowShaftThickness`, `hBarThickness`, `textFontFamily`.
 /// Each becomes worth decoding when the corresponding mark starts being emitted, not
 /// before — an unused property is a value nothing can hold the renderer to.
@@ -105,6 +107,7 @@ private struct RawEngravingDefaults: Decodable {
     let slurMidpointThickness: Double?
     let tieEndpointThickness: Double?
     let tieMidpointThickness: Double?
+    let tupletBracketThickness: Double?
 }
 
 private struct RawMetadata: Decodable {
@@ -142,7 +145,10 @@ private extension BravuraMetadata {
             slurEndpointThickness: ed.slurEndpointThickness ?? 0.1,
             slurMidpointThickness: ed.slurMidpointThickness ?? 0.22,
             tieEndpointThickness:  ed.tieEndpointThickness  ?? 0.1,
-            tieMidpointThickness:  ed.tieMidpointThickness  ?? 0.22
+            tieMidpointThickness:  ed.tieMidpointThickness  ?? 0.22,
+            // A bracket of thickness zero leaves the number with nothing to say which notes
+            // it counts.
+            tupletBracketThickness: ed.tupletBracketThickness ?? 0.16
         )
         glyphBBoxes = raw.glyphBBoxes.compactMapValues { box in
             guard box.bBoxNE.count == 2, box.bBoxSW.count == 2 else { return nil }

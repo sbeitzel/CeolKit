@@ -57,6 +57,9 @@ public struct SizedMeasure: Sendable {
     /// courtesy clef, when the change opens the next system.  Its room is already in
     /// ``naturalWidth``.
     public let trailingClef: ClefSpec?
+    /// The tuplets the sizer opened out into ``measure``'s events (#231): `measure` holds no
+    /// ``Event/tuplet(_:)`` of its own once sized.
+    public let tuplets: [TupletSpan]
 
     public init(
         measure: Measure,
@@ -71,11 +74,13 @@ public struct SizedMeasure: Sendable {
         ownsOpeningBar: Bool = false,
         openingBarLead: Double = 0,
         clef: ClefSpec? = nil,
-        trailingClef: ClefSpec? = nil
+        trailingClef: ClefSpec? = nil,
+        tuplets: [TupletSpan] = []
     ) {
         self.measure = measure
         self.clef = clef
         self.trailingClef = trailingClef
+        self.tuplets = tuplets
         self.ownsOpeningBar = ownsOpeningBar
         self.openingBarLead = openingBarLead
         self.naturalWidth = naturalWidth
@@ -101,7 +106,7 @@ public struct SizedMeasure: Sendable {
             eventVoiceIndices: eventVoiceIndices, keyChange: keyChange,
             musicOffsets: musicOffsets, musicWidth: musicWidth + extra,
             ownsOpeningBar: ownsOpeningBar, openingBarLead: openingBarLead,
-            clef: clef, trailingClef: trailingClef)
+            clef: clef, trailingClef: trailingClef, tuplets: tuplets)
     }
 }
 
@@ -929,6 +934,9 @@ public struct ResolvedMeasure: Sendable {
     /// Non-nil when the staff changes clef at this measure's closing bar: the emitter draws
     /// the new clef small, just before the bar.  See ``SizedMeasure/trailingClef``.
     public let trailingClef: ClefSpec?
+    /// The tuplets among ``events``, carried through from ``SizedMeasure/tuplets``.  The
+    /// emitter draws each one's number over its notes.
+    public let tuplets: [TupletSpan]
 
     public init(
         origin: Point,
@@ -939,12 +947,14 @@ public struct ResolvedMeasure: Sendable {
         unitNoteLength: Fraction = Fraction(numerator: 1, denominator: 8),
         meter: Meter? = nil,
         keyChange: KeyChange? = nil,
-        trailingClef: ClefSpec? = nil
+        trailingClef: ClefSpec? = nil,
+        tuplets: [TupletSpan] = []
     ) {
         self.origin = origin
         self.width = width
         self.events = events
         self.trailingClef = trailingClef
+        self.tuplets = tuplets
         self.openingBar = openingBar
         self.closingBar = closingBar
         self.unitNoteLength = unitNoteLength

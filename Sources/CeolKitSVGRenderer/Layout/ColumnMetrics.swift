@@ -355,9 +355,9 @@ struct ColumnMetrics: Sendable {
         Double(fraction.numerator) / Double(fraction.denominator)
     }
 
-    /// A tuplet's sounding duration in unit note lengths: the written total scaled by `q/p`.
+    /// A tuplet's sounding duration in unit note lengths: the sum of its events', which the
+    /// parser has already scaled by `q/p` (#231).
     func tupletDuration(_ tuplet: Tuplet) -> Double {
-        let written = tuplet.events.reduce(0.0) { $0 + rawDuration($1) }
-        return written * Double(tuplet.q) / Double(tuplet.p)
+        tuplet.events.reduce(0.0) { $0 + rawDuration($1) }
     }
 }

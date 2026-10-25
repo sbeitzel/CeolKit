@@ -348,6 +348,9 @@ struct VoiceState {
             return
         }
         if tuplet != nil {
+            // "Spaces that appear between the tuplet specifier and the following notes are to
+            // be ignored" (§4.13): `(3 abc` is `(3abc`, and its notes beam (#231).
+            if tuplet!.events.isEmpty, case .spacer(let s) = event, s.width == 0 { return }
             tuplet!.events.append(event)
             if tuplet!.musicalEventCount >= tuplet!.r {
                 flushTuplet()
@@ -1201,6 +1204,14 @@ private func applyTupletFactor(q: Int, p: Int, to event: Event) -> Event {
             lyrics: c.lyrics,
             source: c.source
         ))
+    case .rest(let r):
+        // A rest is one of the tuplet's notes as much as any other: `(3zab` (#231).
+        let dur = reducedFraction(
+            numerator: r.duration.numerator * q,
+            denominator: r.duration.denominator * p
+        )
+        return .rest(Rest(kind: r.kind, duration: dur, decorations: r.decorations,
+                          source: r.source))
     default:
         return event
     }

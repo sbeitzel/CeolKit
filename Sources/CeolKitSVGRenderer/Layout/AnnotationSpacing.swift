@@ -126,7 +126,8 @@ struct AnnotationSpacing: Sendable {
                             keyChange: sized.keyChange,
                             musicOffsets: sized.musicOffsets, musicWidth: sized.musicWidth,
                             ownsOpeningBar: sized.ownsOpeningBar,
-                            openingBarLead: sized.openingBarLead)
+                            openingBarLead: sized.openingBarLead,
+                            tuplets: sized.tuplets)
     }
 
     // MARK: - Measuring

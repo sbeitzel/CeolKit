@@ -1220,13 +1220,14 @@ struct SemanticPass {
         reducedFraction(numerator: dur.numerator, denominator: dur.denominator)
     }
 
-    // Default q for tuplet (number of normal-note beats in the time of p tuplet notes)
+    /// The `q` of a tuplet written without one: the §4.13 table (issue #232).  `(5`, `(7` and
+    /// `(9` go into the time of three notes in a compound meter and of two in any other.
     private func defaultQ(p: Int, meter: Meter?) -> Int {
-        switch meter {
-        case .fraction(let n, _) where n >= 6 && n % 3 == 0:
-            // compound: default q = next smaller power-of-two × 3 ÷ 2
-            return p % 3 == 0 ? (p / 3) * 2 : 2
+        switch p {
+        case 2, 4, 8: return 3
+        case 3, 6:    return 2
         default:
+            if case .fraction(let n, _) = meter, n >= 6, n % 3 == 0 { return 3 }
             return 2
         }
     }

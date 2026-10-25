@@ -230,10 +230,10 @@ enum FloatingVoiceSplitter {
         case .rest(let r):  return r.duration
         case .chord(let c): return c.duration
         case .tuplet(let t):
-            let written = t.events.reduce(Fraction(numerator: 0, denominator: 1)) { total, inner in
+            // The parser has already scaled the events by `q/p` (#231).
+            return t.events.reduce(Fraction(numerator: 0, denominator: 1)) { total, inner in
                 sounding(inner).map { plus(total, $0) } ?? total
             }
-            return times(written, Fraction(numerator: t.q, denominator: t.p))
         default:
             return nil
         }
@@ -242,10 +242,6 @@ enum FloatingVoiceSplitter {
     private static func plus(_ lhs: Fraction, _ rhs: Fraction) -> Fraction {
         reduced(lhs.numerator * rhs.denominator + rhs.numerator * lhs.denominator,
                 lhs.denominator * rhs.denominator)
-    }
-
-    private static func times(_ lhs: Fraction, _ rhs: Fraction) -> Fraction {
-        reduced(lhs.numerator * rhs.numerator, lhs.denominator * rhs.denominator)
     }
 
     private static func reduced(_ numerator: Int, _ denominator: Int) -> Fraction {

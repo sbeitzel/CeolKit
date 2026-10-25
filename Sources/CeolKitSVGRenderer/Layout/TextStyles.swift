@@ -24,6 +24,26 @@ struct TextFace: Sendable {
     var bundledFace: CeolKitFonts.Face? {
         CeolKitFonts.Face.allCases.first { OutlineFontSet.FaceKey($0) == key }
     }
+
+    /// Bravura, which sets every SMuFL character in a run of text (issue #230): no text
+    /// face has the music font's Private Use Area glyphs.  `nil` where the bundled
+    /// resource could not be read.
+    static let smufl: TextFace? = {
+        guard let font = try? OutlineFontSet.font(for: .bravura) else { return nil }
+        let bravura = CeolKitFonts.Face.bravura
+        let resolution = FontResolution(
+            requested: FontRequest(family: bravura.familyName, style: .upright),
+            postScriptName: bravura.rawValue, family: bravura.familyName, weight: .regular,
+            style: .upright, origin: .bundled, refusedForEmbedding: [],
+            searchedSystemFonts: false)
+        return TextFace(FontProvider.Resolved(key: .bravura, font: font, resolution: resolution))
+    }()
+
+    /// Whether `scalar` is a SMuFL codepoint: the BMP Private Use Area, which SMuFL fills
+    /// with its recommended (U+E000–U+F3FF) and optional (U+F400–U+F8FF) glyphs.
+    static func isSMuFL(_ scalar: Unicode.Scalar) -> Bool {
+        (0xE000...0xF8FF).contains(scalar.value)
+    }
 }
 
 /// How one kind of text is set: its size, and the face a font directive chose for it.
@@ -58,11 +78,35 @@ struct TextStyle: Sendable {
         return TextStyle(face: slotFace, size: slot.size, switches: switches)
     }
 
-    /// `text` split at its font switches (§11.4.2), each run with the style it is set in.
-    /// Text with no switch is one run in this style, exactly as written.
+    /// `text` split at its font switches (§11.4.2), each run with the style it is set in,
+    /// and around any SMuFL characters, which are set in Bravura at the run's size (issue
+    /// #230).  Text with neither is one run in this style, exactly as written.
     func runs(of text: String) -> [(text: String, style: TextStyle)] {
-        guard text.contains("$") else { return [(text, self)] }
-        return FontSwitch.runs(in: text).runs.map { ($0.text, switched(to: $0.font)) }
+        let switched: [(text: String, style: TextStyle)] = text.contains("$")
+            ? FontSwitch.runs(in: text).runs.map { ($0.text, switched(to: $0.font)) }
+            : [(text, self)]
+        guard text.unicodeScalars.contains(where: TextFace.isSMuFL) else { return switched }
+        return switched.flatMap { $0.style.smuflRuns(of: $0.text) }
+    }
+
+    /// `run` split where it moves into or out of SMuFL characters, those set in Bravura.
+    private func smuflRuns(of run: String) -> [(text: String, style: TextStyle)] {
+        guard let bravura = TextFace.smufl else { return [(run, self)] }
+        let music = TextStyle(face: bravura, size: size, switches: switches)
+        var runs: [(text: String, style: TextStyle)] = []
+        var current = String.UnicodeScalarView()
+        var inMusic = false
+        for scalar in run.unicodeScalars {
+            let isMusic = TextFace.isSMuFL(scalar)
+            if isMusic != inMusic, !current.isEmpty {
+                runs.append((String(current), inMusic ? music : self))
+                current = String.UnicodeScalarView()
+            }
+            inMusic = isMusic
+            current.append(scalar)
+        }
+        if !current.isEmpty { runs.append((String(current), inMusic ? music : self)) }
+        return runs
     }
 
     /// The face the text is set in: the directive's, or the Libertinus Serif face the

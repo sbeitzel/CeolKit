@@ -36,7 +36,7 @@
     <path id="libertinusSerif-g34" d="<OUTLINE>"/>
     <path id="libertinusSerif-g78" d="<OUTLINE>"/>
     <path id="libertinusSerif-g84" d="<OUTLINE>"/>
-    <path id="libertinusSerif-g2261" d="<OUTLINE>"/>
+    <path id="bravura-g2509" d="<OUTLINE>"/>
     <path id="libertinusSerif-g30" d="<OUTLINE>"/>
     <path id="libertinusSerif-g17" d="<OUTLINE>"/>
     <path id="bravura-g18" d="<OUTLINE>"/>
@@ -132,11 +132,11 @@
   <use href="#libertinusSerif-g84" xlink:href="#libertinusSerif-g84" transform="translate(89.014 76.75) scale(0.0105 -0.0105)"/>
   <use href="#libertinusSerif-g84" xlink:href="#libertinusSerif-g84" transform="translate(93.109 76.75) scale(0.0105 -0.0105)"/>
   <use href="#libertinusSerif-g80" xlink:href="#libertinusSerif-g80" transform="translate(97.204 76.75) scale(0.0105 -0.0105)"/>
-  <use href="#libertinusSerif-g2261" xlink:href="#libertinusSerif-g2261" transform="translate(105.121 76.75) scale(0.0105 -0.0105)"/>
-  <use href="#libertinusSerif-g30" xlink:href="#libertinusSerif-g30" transform="translate(111.947 76.75) scale(0.0105 -0.0105)"/>
-  <use href="#libertinusSerif-g18" xlink:href="#libertinusSerif-g18" transform="translate(120.347 76.75) scale(0.0105 -0.0105)"/>
-  <use href="#libertinusSerif-g18" xlink:href="#libertinusSerif-g18" transform="translate(125.229 76.75) scale(0.0105 -0.0105)"/>
-  <use href="#libertinusSerif-g17" xlink:href="#libertinusSerif-g17" transform="translate(130.112 76.75) scale(0.0105 -0.0105)"/>
+  <use href="#bravura-g2509" xlink:href="#bravura-g2509" transform="translate(105.121 76.75) scale(0.0105 -0.0105)"/>
+  <use href="#libertinusSerif-g30" xlink:href="#libertinusSerif-g30" transform="translate(111.232 76.75) scale(0.0105 -0.0105)"/>
+  <use href="#libertinusSerif-g18" xlink:href="#libertinusSerif-g18" transform="translate(119.632 76.75) scale(0.0105 -0.0105)"/>
+  <use href="#libertinusSerif-g18" xlink:href="#libertinusSerif-g18" transform="translate(124.515 76.75) scale(0.0105 -0.0105)"/>
+  <use href="#libertinusSerif-g17" xlink:href="#libertinusSerif-g17" transform="translate(129.397 76.75) scale(0.0105 -0.0105)"/>
   <line x1="78.176" y1="83.867" x2="576" y2="83.867" stroke="black" stroke-width="0.546"/>
   <line x1="78.176" y1="88.067" x2="576" y2="88.067" stroke="black" stroke-width="0.546"/>
   <line x1="78.176" y1="92.267" x2="576" y2="92.267" stroke="black" stroke-width="0.546"/>

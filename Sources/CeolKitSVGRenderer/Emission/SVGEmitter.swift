@@ -91,6 +91,9 @@ struct SVGEmitter: Sendable {
     /// How a `Q:` written in the music is set on the system being emitted (issue #186);
     /// `nil` for the default.
     var tempoChangeStyle: TextStyle? = nil
+    /// How far above the top staff line the system being emitted sets its tempo changes,
+    /// clear of the chord symbols and annotations under them (#234); `nil` for the default.
+    var tempoChangeBaseline: Double? = nil
 
     init(config: SVGRenderConfig, metadata: BravuraMetadata,
          stemDirection: StemDirection = .auto,
@@ -235,6 +238,7 @@ struct SVGEmitter: Sendable {
     private func configured(for system: ResolvedSystem) -> SVGEmitter {
         var emitter = configuredForMusic(system)
         emitter.tempoChangeStyle = system.textStyles?.tempoChange
+        emitter.tempoChangeBaseline = system.annotationFloors?.tempoBaseline
         return emitter
     }
 
@@ -1806,8 +1810,8 @@ struct SVGEmitter: Sendable {
             if !text.isEmpty {
                 let style = tempoChangeStyle
                     ?? TextStyles.standard(staffSize: config.staffSize).tempoChange
-                builder.text(text, x: event.origin.x, y: topStaffY - config.staffSize * 1.5,
-                             style: style)
+                let baseline = tempoChangeBaseline ?? config.staffSize * 1.5
+                builder.text(text, x: event.origin.x, y: topStaffY - baseline, style: style)
             }
         }
         return nil

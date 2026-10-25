@@ -615,10 +615,13 @@ public struct VerticalLayoutEngine: Sendable {
         let hasTempoChanges = system.measures.contains { jm in
             jm.source.measure.events.contains { if case .tempoChange = $0 { return true }; return false }
         }
-        // A tempo change stands 1.5 staff spaces above the staff and rises a full em of its
-        // own size above that.
-        let tempoReach = s * 1.5 + styles.tempoChange.size
-        var extraAbove = hasTempoChanges ? max(baseAbove, tempoReach) : baseAbove
+        // A tempo change stands over the note after it, so it clears everything that note
+        // reaches up to: beyond the chord symbols and annotations where the staff has any,
+        // otherwise beyond the floor they would stand on (#234).
+        let tempoFloor = lines.above > 0 ? baseAbove : floorAbove + floor
+        let tempoBaseline = tempoFloor + AnnotationBand.padRatio * s + styles.tempoChange.descent
+        var extraAbove = hasTempoChanges
+            ? max(baseAbove, tempoBaseline + styles.tempoChange.ascent) : baseAbove
         if hasEndingBracket { extraAbove += EndingBracketBand.height(staffSize: s) }
         // The verses hang below the ledger lines and the annotations, so the three are added
         // rather than maxed: a low note and what is written under it need the space each of
@@ -627,7 +630,9 @@ public struct VerticalLayoutEngine: Sendable {
             + AnnotationBand.height(lines: lines.below, metrics: AnnotationBand.belowMetrics(styles),
                                     staffSize: s)
             + LyricBand.height(verses: verses, style: styles.vocal)
-        return (extraAbove, extraBelow, AnnotationFloors(above: floorAbove, below: floorBelow))
+        return (extraAbove, extraBelow,
+                AnnotationFloors(above: floorAbove, below: floorBelow,
+                                 tempoBaseline: hasTempoChanges ? tempoBaseline : nil))
     }
 
     /// How far beyond the staff a tuplet's number reaches, on the side the emitter sets it:

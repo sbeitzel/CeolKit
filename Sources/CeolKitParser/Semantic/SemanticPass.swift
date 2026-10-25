@@ -1980,10 +1980,26 @@ struct SemanticPass {
         var measures = acc.closedMeasures
         var diagnostics: [Diagnostic] = []
 
+        // A tempo change written after the voice's last note was carried over its final bar
+        // line to wait for music that never came (#234).  It goes back on the last bar, where
+        // it was written, rather than opening a bar of nothing after it.
+        if let last = measures.last,
+           !acc.currentEvents.contains(where: VoiceAccumulator.isMeasureContent) {
+            let tempos = acc.currentEvents.filter(VoiceAccumulator.isTempoChange)
+            if !tempos.isEmpty {
+                measures[measures.count - 1] = Measure(
+                    openingBar: last.openingBar, events: last.events + tempos,
+                    closingBar: last.closingBar, endingNumber: last.endingNumber,
+                    endingStartIndex: last.endingStartIndex, source: last.source,
+                    meter: last.meter, key: last.key, unitNoteLength: last.unitNoteLength)
+            }
+        }
+
         // Close the final open measure if it holds music.  Spacer-only content is not music
         // and not a measure — `closeWith` says the same at every bar line, and the leading
         // whitespace of an `&` continuation line would otherwise close a bar of nothing.
-        if acc.hasOpenMeasure {
+        if acc.hasOpenMeasure,
+           measures.isEmpty || acc.currentEvents.contains(where: VoiceAccumulator.isMeasureContent) {
             let finalBar = BarLine(
                 kind: .final,
                 source: acc.currentEvents.reversed().lazy

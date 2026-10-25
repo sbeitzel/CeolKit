@@ -776,10 +776,14 @@ public struct AnnotationFloors: Sendable, Equatable {
     public let above: Double
     /// Distance down from the bottom staff line.
     public let below: Double
+    /// Distance up from the top staff line to the baseline of the staff's tempo changes,
+    /// which stand beyond its chord symbols and annotations (#234); `nil` where it has none.
+    public let tempoBaseline: Double?
 
-    public init(above: Double, below: Double) {
+    public init(above: Double, below: Double, tempoBaseline: Double? = nil) {
         self.above = above
         self.below = below
+        self.tempoBaseline = tempoBaseline
     }
 }
 

@@ -86,7 +86,7 @@ struct VoiceScopeTests {
         guard let twoFirst = measures(result, "2").first else {
             Issue.record("Parser prerequisite not met"); return
         }
-        #expect(twoFirst.endingNumber == nil)
+        #expect(twoFirst.endings.isEmpty)
     }
 
     // MARK: Post-note decoration lookbehind

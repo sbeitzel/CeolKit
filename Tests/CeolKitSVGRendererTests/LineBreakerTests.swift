@@ -12,7 +12,6 @@ private func sizedMeasure(width: Double) -> SizedMeasure {
         openingBar: nil,
         events: [],
         closingBar: dummyBar,
-        endingNumber: nil,
         source: dummyRange,
         unitNoteLength: Fraction(numerator: 1, denominator: 8)
     )

@@ -11,8 +11,7 @@ private let config     = SVGRenderConfig()
 private let metadata   = try! BravuraMetadata.load()
 
 private func emptyMeasure(line: Int = 0) -> Measure {
-    Measure(openingBar: nil, events: [], closingBar: dummyBar, endingNumber: nil,
-            source: SourceRange(file: nil, byteOffset: 0, length: 0, line: line, column: 0),
+    Measure(openingBar: nil, events: [], closingBar: dummyBar, source: SourceRange(file: nil, byteOffset: 0, length: 0, line: line, column: 0),
             unitNoteLength: Fraction(numerator: 1, denominator: 8))
 }
 

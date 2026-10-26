@@ -1973,7 +1973,6 @@ struct SemanticPass {
         return Measure(openingBar: previous?.closingBar,
                        events: [],
                        closingBar: BarLine(kind: .single, source: src),
-                       endingNumber: nil,
                        source: src,
                        meter: nil,
                        unitNoteLength: unitNoteLength)
@@ -1998,8 +1997,7 @@ struct SemanticPass {
             if !tempos.isEmpty {
                 measures[measures.count - 1] = Measure(
                     openingBar: last.openingBar, events: last.events + tempos,
-                    closingBar: last.closingBar, endingNumber: last.endingNumber,
-                    endingStartIndex: last.endingStartIndex, source: last.source,
+                    closingBar: last.closingBar, endings: last.endings, source: last.source,
                     meter: last.meter, key: last.key, unitNoteLength: last.unitNoteLength)
             }
         }
@@ -2036,7 +2034,6 @@ struct SemanticPass {
                 openingBar: acc.lastBarLine,
                 events: acc.currentEvents,
                 closingBar: finalBar,
-                endingNumber: nil,
                 source: src,
                 meter: acc.pendingMeter,
                 key: finalKey,
@@ -2082,8 +2079,7 @@ struct SemanticPass {
                 openingBar: m.openingBar,
                 events: resolvedEvents,
                 closingBar: m.closingBar,
-                endingNumber: m.endingNumber,
-                endingStartIndex: m.endingStartIndex,
+                endings: m.endings,
                 source: m.source,
                 meter: m.meter,
                 key: m.key,
@@ -2108,8 +2104,7 @@ struct SemanticPass {
                 openingBar: m.openingBar,
                 events: resolver.resolve(m.events),
                 closingBar: m.closingBar,
-                endingNumber: m.endingNumber,
-                endingStartIndex: m.endingStartIndex,
+                endings: m.endings,
                 source: m.source,
                 meter: m.meter,
                 key: m.key,

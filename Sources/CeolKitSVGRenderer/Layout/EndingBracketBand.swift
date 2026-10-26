@@ -88,9 +88,13 @@ enum EndingBracketBand {
         let firstMeasure: Int
         let lastMeasure: Int
         /// Where in `firstMeasure`'s events the bracket begins, or `nil` where it begins at
-        /// the measure's left edge: ``Measure/endingStartIndex`` for an ending that opens
+        /// the measure's left edge: ``VariantEnding/startIndex`` for an ending that opens
         /// part way through a bar (#172), and `nil` on every continuation.
         let startEvent: Int?
+        /// Where in `lastMeasure`'s events the bracket stops, or `nil` where it runs to the
+        /// measure's right edge: the start of the next ending, where that opens part way
+        /// through the bar this one ends in — `| ab [1 cd [2 ef |`.
+        let endEvent: Int?
         /// Whether the rule turns down at its left end.  False exactly where the ending was
         /// carried over a system break.
         let hasStartHook: Bool
@@ -147,18 +151,26 @@ enum EndingBracketBand {
             open = Open(numbers: continuing, first: 0, startEvent: nil, startHook: false)
         }
 
-        func close(_ o: Open, at last: Int, endHook: Bool) -> Run {
+        func close(_ o: Open, at last: Int, endEvent: Int? = nil, endHook: Bool) -> Run {
             Run(label: o.startHook ? label(for: o.numbers) : nil,
                 firstMeasure: o.first, lastMeasure: last, startEvent: o.startEvent,
-                hasStartHook: o.startHook, hasEndHook: endHook)
+                endEvent: endEvent, hasStartHook: o.startHook, hasEndHook: endHook)
         }
 
         for (i, measure) in measures.enumerated() {
-            if let numbers = measure.endingNumber {
-                // The next ending begins.  Anything still open ends at the measure before it,
-                // unhooked: the music runs straight on into the new ending.
-                if let o = open, i > o.first { runs.append(close(o, at: i - 1, endHook: false)) }
-                open = Open(numbers: numbers, first: i, startEvent: measure.endingStartIndex,
+            for ending in measure.endings {
+                // The next ending begins.  Anything still open ends where it does, unhooked:
+                // the music runs straight on into the new ending.  That is the measure
+                // before this one where the new ending opens at the bar line, and part way
+                // through this one where it opens after some music.
+                if let o = open {
+                    if let start = ending.startIndex {
+                        runs.append(close(o, at: i, endEvent: start, endHook: false))
+                    } else if i > o.first {
+                        runs.append(close(o, at: i - 1, endHook: false))
+                    }
+                }
+                open = Open(numbers: ending.numbers, first: i, startEvent: ending.startIndex,
                             startHook: true)
             }
             guard let o = open else { continue }
@@ -204,10 +216,15 @@ enum EndingBracketBand {
             let startX = run.startEvent.flatMap {
                 self.startX(at: $0, in: first, staffSize: staffSize, metadata: metadata)
             } ?? first.origin.x
+            // An ending that gives way to another part way through a bar stops where that
+            // one's bracket starts, so the two meet as abcm2ps draws them.
+            let endX = run.endEvent.flatMap {
+                self.startX(at: $0, in: last, staffSize: staffSize, metadata: metadata)
+            } ?? last.origin.x + last.width
             return EndingBracket(
                 label: run.label,
                 startX: startX,
-                endX: last.origin.x + last.width,
+                endX: endX,
                 ruleY: ruleY,
                 hasStartHook: run.hasStartHook,
                 hasEndHook: run.hasEndHook)
@@ -253,5 +270,16 @@ enum EndingBracketBand {
             x = max(x, (previous.origin.x + noteheadWidth + left) / 2)
         }
         return max(measure.origin.x, x)
+    }
+}
+
+extension Measure {
+    /// `endings` with each start index carried through `moved` — old event index to new —
+    /// for a pass that rebuilds the measure's events.  An ending whose event `moved` has no
+    /// entry for starts at the bar line instead.
+    func endings(movedBy moved: [Int: Int]) -> [VariantEnding] {
+        endings.map {
+            VariantEnding(numbers: $0.numbers, startIndex: $0.startIndex.flatMap { moved[$0] })
+        }
     }
 }

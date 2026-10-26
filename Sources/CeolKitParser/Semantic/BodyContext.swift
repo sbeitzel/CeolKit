@@ -136,7 +136,6 @@ struct VoiceAccumulator {
             openingBar: lastBarLine,
             events: [],
             closingBar: BarLine(kind: .single, source: source),
-            endingNumber: nil,
             source: source,
             meter: nil,
             unitNoteLength: effectiveUnitNoteLength
@@ -174,7 +173,7 @@ struct VoiceAccumulator {
         }
     }
 
-    mutating func closeWith(barLine: BarLine, endingNumber: [Int]?, endingStartIndex: Int? = nil) {
+    mutating func closeWith(barLine: BarLine, endings: [VariantEnding] = []) {
         // A tempo change after the bar's last note governs the music of the next bar and is
         // drawn over its first note, so it is carried over the bar line rather than closing
         // a bar of its own or standing against this one's end (#234).
@@ -191,7 +190,7 @@ struct VoiceAccumulator {
             if case .spacer = $0 { return false }
             return true
         }
-        guard hasMusicalContent || endingNumber != nil else {
+        guard hasMusicalContent || !endings.isEmpty else {
             currentEvents = []
             lastBarLine = barLine
             // Nothing was written, so nothing can have followed the change: it still belongs
@@ -229,8 +228,7 @@ struct VoiceAccumulator {
             openingBar: lastBarLine,
             events: currentEvents,
             closingBar: barLine,
-            endingNumber: endingNumber,
-            endingStartIndex: endingStartIndex,
+            endings: endings,
             source: src,
             meter: meterTag,
             key: keyTag,
@@ -328,10 +326,8 @@ struct VoiceState {
     var pendingDecorations: [Decoration] = []
     var pendingAnnotations: [Annotation] = []
     var pendingChordSymbol: ChordSymbol? = nil
-    var pendingEndingNumber: [Int]? = nil
-    /// Where in the open measure's events `pendingEndingNumber` was met, or `nil` where it
-    /// was met before any music in the bar — see `Measure.endingStartIndex`.
-    var pendingEndingStartIndex: Int? = nil
+    /// The variant endings opened in the bar being written — see `Measure.endings`.
+    var pendingEndings: [VariantEnding] = []
 
     // Slur state
     var openSlurs: Int = 0
@@ -436,10 +432,8 @@ struct VoiceState {
     }
 
     mutating func closeMeasure(barLine: BarLine, currentMeter: Meter, generation: Int) {
-        accumulator.closeWith(barLine: barLine, endingNumber: pendingEndingNumber,
-                              endingStartIndex: pendingEndingStartIndex)
-        pendingEndingNumber = nil
-        pendingEndingStartIndex = nil
+        accumulator.closeWith(barLine: barLine, endings: pendingEndings)
+        pendingEndings = []
         // Tag the measure *after* this bar line, matching where a tune-wide [M:] takes effect.
         if generation != lastTaggedMeterGeneration {
             accumulator.pendingMeter = currentMeter
@@ -452,14 +446,22 @@ struct VoiceState {
     /// An ending met before any music in the bar begins at its opening bar line; one met
     /// after some begins at the next event, which lands at the current end of the open
     /// measure (#172).  Spacers do not count as music, so `| [1` and `|[1` are the same.
+    ///
+    /// A bar may open several, one after another: `| ab [1 cd [2 ef |`.  Two with no music
+    /// between them would give the first nothing to cover, so the later one replaces it.
     mutating func setPendingEndingNumber(_ numbers: [Int]) {
-        pendingEndingNumber = numbers
         let events = accumulator.currentEvents
-        let hasMusic = events.contains {
-            if case .spacer = $0 { return false }
-            return true
+        func hasMusic(_ slice: ArraySlice<Event>) -> Bool {
+            slice.contains {
+                if case .spacer = $0 { return false }
+                return true
+            }
         }
-        pendingEndingStartIndex = hasMusic ? events.count : nil
+        if let last = pendingEndings.last, !hasMusic(events[(last.startIndex ?? 0)...]) {
+            pendingEndings.removeLast()
+        }
+        let startIndex = hasMusic(events[...]) ? events.count : nil
+        pendingEndings.append(VariantEnding(numbers: numbers, startIndex: startIndex))
     }
 
     // MARK: Grace groups
@@ -539,8 +541,7 @@ struct VoiceState {
                 openingBar: m.openingBar,
                 events: newEvents,
                 closingBar: m.closingBar,
-                endingNumber: m.endingNumber,
-                endingStartIndex: m.endingStartIndex,
+                endings: m.endings,
                 source: m.source,
                 meter: m.meter,
                 key: m.key,

@@ -3,7 +3,7 @@
 //  CeolKitSVGRendererTests
 //
 //  Issue #108: the bracket over a variant ending — `|1`, `|2`, `[1,2`, `|1-3` — which was
-//  parsed onto `Measure.endingNumber` and drawn by nothing.
+//  parsed onto the measure and drawn by nothing.
 //
 
 import Testing
@@ -257,6 +257,42 @@ struct EndingBracketTests {
         #expect(runs.count == 2)
         #expect(runs.first?.startEvent == 2)
         #expect(runs.last?.startEvent == nil)
+    }
+
+    /// A bar whose variants differ only in its second half, as pipe settings write it: the
+    /// `1` bracket stops where the `2` starts, part way through the same bar.
+    @Test("Two endings in one bar each get a bracket, meeting where the second starts")
+    func twoEndingsInOneBar() throws {
+        let (svg, staves) = try render(tune("|{gcd}c2{g}B<{d}A [1 {g}B2{g}c<e [2 {g}B>e{g}A>B |"))
+        let staff = try #require(staves.first)
+        let drawn = brackets(in: svg, above: staff)
+        #expect(drawn.map(\.label) == ["1", "2"])
+        guard drawn.count == 2 else { return }
+        // Whether the `1` turns down at its right end cannot be read off the page: the `2`'s
+        // start hook stands at that very x.  `runEndsAtTheNextEndingInTheBar` checks the run.
+        #expect(drawn[0].hasStartHook)
+        #expect(drawn[1].hasStartHook)
+        #expect(drawn[1].left == drawn[0].right)
+        // Both stand inside the one bar: neither starts at its opening bar line.
+        #expect(drawn[0].left > staff.barlineXs[0] + staff.staffLineGap)
+        #expect(drawn[1].right <= staff.right + 0.5)
+    }
+
+    @Test("A second ending in the same bar ends the first one there")
+    func runEndsAtTheNextEndingInTheBar() {
+        let bars = measures("|CD [1 EF [2 GA|]")
+        let (runs, trailing) = EndingBracketBand.runs(in: bars, continuing: nil)
+        #expect(runs.count == 2)
+        guard runs.count == 2 else { return }
+        #expect(runs[0].label == "1")
+        #expect(runs[0].firstMeasure == 0 && runs[0].lastMeasure == 0)
+        #expect(runs[0].startEvent != nil)
+        #expect(runs[0].endEvent == bars[0].endings[1].startIndex)
+        #expect(!runs[0].hasEndHook)
+        #expect(runs[1].label == "2")
+        #expect(runs[1].startEvent == bars[0].endings[1].startIndex)
+        #expect(runs[1].endEvent == nil)
+        #expect(trailing == nil)
     }
 
     // MARK: - Runs, worked out from the measures

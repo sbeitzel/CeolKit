@@ -242,8 +242,8 @@ struct CanzonettaTests {
         guard let tune = score.firstTune else { Issue.record("Parser prerequisite not met"); return }
         for voice in tune.voices {
             let measures = voice.allMeasures
-            let ending1 = measures.first(where: { $0.endingNumber?.contains(1) == true })
-            let ending2 = measures.first(where: { $0.endingNumber?.contains(2) == true })
+            let ending1 = measures.first(where: { m in m.endings.contains { $0.numbers.contains(1) } })
+            let ending2 = measures.first(where: { m in m.endings.contains { $0.numbers.contains(2) } })
             #expect(ending1 != nil, "Voice \(voice.id) missing ending 1")
             #expect(ending2 != nil, "Voice \(voice.id) missing ending 2")
         }

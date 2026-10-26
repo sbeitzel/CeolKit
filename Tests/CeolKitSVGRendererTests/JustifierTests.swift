@@ -13,7 +13,6 @@ private func sizedMeasure(width: Double, offsets: [Double] = [],
         openingBar: nil,
         events: [],
         closingBar: dummyBar,
-        endingNumber: nil,
         source: dummyRange,
         unitNoteLength: Fraction(numerator: 1, denominator: 8)
     )
@@ -328,7 +327,7 @@ private let usableWidth: Double = 300
         )
         let m = Measure(openingBar: nil,
                         events: [.grace(grace), .note(principal)],
-                        closingBar: dummyBar, endingNumber: nil, source: dummyRange,
+                        closingBar: dummyBar, source: dummyRange,
                         unitNoteLength: Fraction(numerator: 1, denominator: 8))
         let sized = sizer.size(m)
 

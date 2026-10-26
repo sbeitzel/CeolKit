@@ -137,7 +137,6 @@ struct TitleBlockIntegrationTests {
                     kind: .single,
                     source: SourceRange(file: nil, byteOffset: 0, length: 0, line: 1, column: 1)
                 ),
-                endingNumber: nil,
                 source: SourceRange(file: nil, byteOffset: 0, length: 0, line: 1, column: 1),
                 unitNoteLength: Fraction(numerator: 1, denominator: 8)
             ),

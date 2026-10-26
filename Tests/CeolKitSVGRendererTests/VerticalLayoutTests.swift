@@ -10,8 +10,7 @@ private let dummyFraction = Fraction(numerator: 1, denominator: 4)
 
 private func emptyMeasure(line: Int = 0) -> Measure {
     let source = SourceRange(file: nil, byteOffset: 0, length: 0, line: line, column: 0)
-    return Measure(openingBar: nil, events: [], closingBar: dummyBar, endingNumber: nil,
-                   source: source, unitNoteLength: Fraction(numerator: 1, denominator: 8))
+    return Measure(openingBar: nil, events: [], closingBar: dummyBar, source: source, unitNoteLength: Fraction(numerator: 1, denominator: 8))
 }
 
 /// Distinct source range per bar, so two `BarLine`s compare unequal unless they
@@ -22,12 +21,11 @@ private func barSource(byteOffset: Int) -> SourceRange {
 
 private func measure(opening: BarLine?, closing: BarLine) -> Measure {
     Measure(openingBar: opening, events: [], closingBar: closing,
-            endingNumber: nil, source: dummyRange, unitNoteLength: Fraction(numerator: 1, denominator: 8))
+            source: dummyRange, unitNoteLength: Fraction(numerator: 1, denominator: 8))
 }
 
 private func measureWith(events: [Event]) -> Measure {
-    Measure(openingBar: nil, events: events, closingBar: dummyBar, endingNumber: nil,
-            source: dummyRange, unitNoteLength: Fraction(numerator: 1, denominator: 8))
+    Measure(openingBar: nil, events: events, closingBar: dummyBar, source: dummyRange, unitNoteLength: Fraction(numerator: 1, denominator: 8))
 }
 
 private func justifiedSystem(measures: [Measure] = [], isLast: Bool = false) -> JustifiedSystem {

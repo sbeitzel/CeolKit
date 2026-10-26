@@ -1182,6 +1182,15 @@ struct SemanticPass {
                 duration: DurationToken(numerator: dur.numerator * mNum, denominator: dur.denominator * mDen),
                 source: src
             )
+        case .chord(let notes, let src):
+            // The parser has already folded a chord's own length (`[Bd]2`) into each of its
+            // notes, so every note takes the multiplier (#238).
+            return .chord(notes.map { tok in
+                guard case .note(let scaled) = applyDurationMultiplier(multiplier, to: .note(tok)) else {
+                    return tok
+                }
+                return scaled
+            }, source: src)
         default:
             return element
         }

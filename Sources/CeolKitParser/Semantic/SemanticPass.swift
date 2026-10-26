@@ -716,7 +716,18 @@ struct SemanticPass {
 
         case .rest(let kind, let dur, let src):
             let duration = resolveDuration(dur)
-            let decorations = ctx.flushDecorations(in: voice, source: src)
+            var decorations = ctx.flushDecorations(in: voice, source: src)
+            // A beam break only means something on a note; abcm2ps reports one on a rest
+            // and ignores it (#243).
+            decorations.removeAll { decoration in
+                guard case .beamBreak(let n) = decoration else { return false }
+                diagnostics.append(Diagnostic(
+                    severity: .warning, code: .misplacedBeamBreak,
+                    message: "!beambr\(n)! must be written on a note; it is ignored on a rest",
+                    source: src
+                ))
+                return true
+            }
             let rest = Rest(kind: kind, duration: duration, decorations: decorations, source: src)
             ctx.emit(.rest(rest), in: voice)
 
@@ -742,8 +753,10 @@ struct SemanticPass {
         case .decoration(let tok, let src):
             let decoration = expandDecoration(tok, userSymbols: ctx.userSymbols)
             // Post-note decoration: if preceded by a space and there's a note in currentEvents,
-            // apply retroactively to the preceding note.
-            if prevWasSpace && ctx.applyDecorationToLastNote(decoration, in: voice) {
+            // apply retroactively to the preceding note.  Not a beam break, which says where
+            // the beam stops before the symbol it is written on, as abcm2ps reads it (#243).
+            let isBeamBreak = if case .beamBreak = decoration { true } else { false }
+            if prevWasSpace && !isBeamBreak && ctx.applyDecorationToLastNote(decoration, in: voice) {
                 // Applied retroactively
             } else {
                 ctx.addPendingDecoration(decoration, in: voice, source: src)

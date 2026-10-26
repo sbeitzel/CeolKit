@@ -23,6 +23,9 @@ public struct Chord: Sendable {
     /// The first verse's syllable; see ``Note/lyric``.
     public var lyric: LyricSyllable? { lyrics.first ?? nil }
 
+    /// How many beams run through a beam break written on this chord; see ``Note/beamBreak``.
+    public var beamBreak: Int? { Decoration.beamBreak(in: decorations) }
+
     public init(
         notes: [Note],
         duration: Fraction,

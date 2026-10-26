@@ -75,6 +75,20 @@ public enum Decoration: Hashable, Sendable {
     case breath                 // !breath!
     case caesura                // !caesura!
 
+    // Beaming (abcm2ps extensions; not drawn as a sign)
+    /// `!beambr1!` / `!beambr2!` on a note: the beam group's beams below the first `n` stop
+    /// before this note and start again on it, while the first `n` run through.  Only
+    /// valid on a note or chord; see ``Note/beamBreak``.
+    case beamBreak(Int)         // !beambr1! / !beambr2!
+
     // Forward compatibility — any !name! not in this table, preserved verbatim
     case unknown(String)
+}
+
+extension Decoration {
+    /// The beams a list of decorations lets run through a beam break: the fewest any
+    /// `.beamBreak` in it names, since `!beambr1!` breaks everything `!beambr2!` does.
+    static func beamBreak(in decorations: [Decoration]) -> Int? {
+        decorations.compactMap { if case .beamBreak(let n) = $0 { n } else { nil } }.min()
+    }
 }

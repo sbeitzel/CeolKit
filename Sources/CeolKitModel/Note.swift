@@ -32,6 +32,11 @@ public struct Note: Sendable {
     /// which carry at most one `w:` line per music line.
     public var lyric: LyricSyllable? { lyrics.first ?? nil }
 
+    /// How many beams run through a `!beambr1!` (1) or `!beambr2!` (2) break written on this
+    /// note, or `nil` where none was.  Every beam of the group below that many stops before
+    /// this note and starts again on it.
+    public var beamBreak: Int? { Decoration.beamBreak(in: decorations) }
+
     public init(
         pitch: Pitch,
         writtenAccidental: Alteration?,

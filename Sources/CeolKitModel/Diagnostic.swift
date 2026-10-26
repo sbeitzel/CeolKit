@@ -64,6 +64,10 @@ public enum DiagnosticCode: String, Codable, Sendable {
     /// An information field written where ABC v2.2 does not allow it — a `U:` between
     /// tunes, which §2.2.2 does not count as the file header.  It is ignored.
     case misplacedField
+    /// A `!beambr1!` or `!beambr2!` written on something other than a note or chord — a
+    /// rest, say — where there is no beam for it to break.  It is dropped, as abcm2ps
+    /// drops it.
+    case misplacedBeamBreak
     // Fields
     case unknownField
     case malformedFieldPayload

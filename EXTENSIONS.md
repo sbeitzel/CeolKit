@@ -9,6 +9,69 @@ CeolKit makes where the standard asks for an outcome but names no rule for reach
 
 ---
 
+## `%%ceolkit:closevariants`
+
+**Syntax:** `%%ceolkit:closevariants <true|false>`
+
+**Type:** boolean (`true`/`1` or `false`/`0`; case-insensitive)
+
+**Default:** `false`
+
+**Scope:** global (file preamble or tune header); tune-wide, never per-voice
+
+### Description
+
+Controls whether every variant-ending bracket (`|1`, `|2`, `[1,2`, …) is closed with a
+vertical line at its right end.
+
+By default an ending is closed only where it ends at a repeat bar (`:|`, `::`), which
+sends the player back. An ending that runs on into the next ending, or ends at a final
+or double bar line, is left open at the right. This is the usual engraving practice, and
+it is what abcm2ps draws. abcm2ps has no format parameter for this, which is why it is a
+`%%ceolkit:` extension.
+
+With `%%ceolkit:closevariants true`, every ending is closed where it ends, so the second
+and later endings are closed the same way as the first. An ending that is carried over
+a line break is still left open at the break, because it has not ended there. Its
+continuation on the next system is closed where the ending ends.
+
+### Scoping
+
+A value in the file preamble governs every tune in the file. A value in a tune header
+applies to that tune only and overrides the file setting for it. Written in the tune
+body, it applies to the whole tune.
+
+### Examples
+
+#### Close every ending in a tune book
+
+```abc
+%%ceolkit:closevariants true
+
+X:1
+T:Three Times Through
+M:4/4
+L:1/4
+K:G
+|:GABc|1dcBA:|2dcBA:|3G4|]
+```
+
+#### Keep the usual drawing for one tune
+
+```abc
+%%ceolkit:closevariants true
+
+X:2
+T:Engraved the Usual Way
+M:4/4
+L:1/4
+%%ceolkit:closevariants false
+K:D
+|:DEFG|1ABcd:|2ABcd|]
+```
+
+---
+
 ## `%%ceolkit:fontlist`
 
 **Syntax:** `%%ceolkit:fontlist [resolved|available]`

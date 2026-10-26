@@ -49,6 +49,10 @@ public struct SVGRenderConfig: Sendable {
     public var stretchStaff: Bool
     public var straightFlags: Bool
     public var graceSlurs: Bool
+    /// Whether every variant-ending bracket is closed with a hook at its end, rather than
+    /// only the one that closes at a repeat bar (issue #237).  A `%%ceolkit:closevariants`
+    /// in the document overrides it.
+    public var closeVariants: Bool
     /// Step between adjacent grace noteheads within one grace group, as a multiple of the
     /// grace notehead width.
     ///
@@ -98,6 +102,7 @@ public struct SVGRenderConfig: Sendable {
         stretchStaff: Bool = true,
         straightFlags: Bool = false,
         graceSlurs: Bool = true,
+        closeVariants: Bool = false,
         graceNoteSpacing: Double = 1.05,
         textRendering: TextRendering = .outlines,
         lineOverflowTolerance: Double = 0.02,
@@ -118,6 +123,7 @@ public struct SVGRenderConfig: Sendable {
         self.stretchStaff = stretchStaff
         self.straightFlags = straightFlags
         self.graceSlurs = graceSlurs
+        self.closeVariants = closeVariants
         self.graceNoteSpacing = graceNoteSpacing
         self.textRendering = textRendering
         self.lineOverflowTolerance = lineOverflowTolerance

@@ -482,6 +482,7 @@ public struct SVGRenderer: CeolKitRenderer {
                                         stemDirection: layout.stemDirection,
                                         straightFlags: layout.straightFlags,
                                         graceSlurs: layout.graceSlurs,
+                                        closeVariants: layout.closeVariants,
                                         pageBreaks: Self.forcedPageBreaks(
                                             tune.pageBreaks, staveOfGroup: staveOfGroup,
                                             portrait: config.pageSize),

@@ -59,10 +59,12 @@ struct ColumnMetrics: Sendable {
             // Very short notes (at the minimum floor) get a dot-gap equivalent of extra space
             // so consecutive beamed notes aren't visually pressed against each other.
             let breathingRoom = rawCol < minCol ? noteheadWidth() * 0.2 : 0
-            // Dotted notes need enough column to clear the augmentation dot before the next note.
-            // Minimum = notehead + dotGap + dotWidth + clearance = noteheadWidth × 1.4 + dotWidth.
-            if isDottedDuration(n.duration) {
-                col = max(col, noteheadWidth() * 1.4 + augmentationDotWidth())
+            // Dotted notes need enough column to clear the augmentation dots before the next note.
+            // Minimum = notehead + (dotGap + dotWidth) per dot + clearance
+            //         = noteheadWidth × 1.2 + dots × augmentationDotStep.
+            let dots = augmentationDots(n.duration)
+            if dots > 0 {
+                col = max(col, noteheadWidth() * 1.2 + Double(dots) * augmentationDotStep())
             }
             // A syllable under this note may be wider than the music asks for; the column
             // is then spaced to hold the text instead (§4.18).  Notes no `w:` line reaches
@@ -316,13 +318,37 @@ struct ColumnMetrics: Sendable {
             ?? config.staffSize * 0.4
     }
 
-    func isDottedDuration(_ dur: Fraction) -> Bool {
-        let n = dur.numerator
-        let d = dur.denominator
-        guard n > 0, d > 0, (d & (d - 1)) == 0 else { return false }
+    /// Distance from one augmentation dot to the next: a dot's width and the gap the first dot
+    /// keeps from its notehead.
+    func augmentationDotStep() -> Double {
+        augmentationDotWidth() + noteheadWidth() * 0.2
+    }
+
+    /// How many augmentation dots `dur` is written with — `0` for a plain value.
+    func augmentationDots(_ dur: Fraction) -> Int {
+        Self.augmentationDots(dur)
+    }
+
+    /// How many augmentation dots `dur` is written with: a value of (2ⁿ⁺¹ − 1) / 2ᵏ takes
+    /// n of them, so 3/8 one, 7/16 two (`B2<<A2` under `L:1/8`), 15/32 three.  Anything
+    /// else — a plain value, or one no dots can write, such as 5/8 — takes none.  Up to three
+    /// dots, as abcm2ps draws (`identify_note`).
+    static func augmentationDots(_ dur: Fraction) -> Int {
+        guard dur.numerator > 0, dur.denominator > 0 else { return 0 }
+        // Reduced first: `Fraction` is not, and 9/6 is the dotted 3/2.
+        var (a, b) = (dur.numerator, dur.denominator)
+        while b != 0 { (a, b) = (b, a % b) }
+        let n = dur.numerator / a
+        let d = dur.denominator / a
+        guard (d & (d - 1)) == 0 else { return 0 }
         var m = n
         while m % 2 == 0 { m /= 2 }
-        return m == 3
+        switch m {
+        case 3:  return 1
+        case 7:  return 2
+        case 15: return 3
+        default: return 0
+        }
     }
 
     func durationFactor(_ durationUnits: Double, quarterInUnits: Double) -> Double {

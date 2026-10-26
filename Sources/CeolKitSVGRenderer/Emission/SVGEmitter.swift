@@ -358,7 +358,7 @@ struct SVGEmitter: Sendable {
             let absDur = absoluteDuration(note.duration, unitNoteLength: unitNoteLength)
             return CollisionHead(voiceIndex: event.voiceIndex, staffPos: staffPos,
                                  glyph: .notehead(absoluteDuration: absDur),
-                                 isDotted: isDotted(absDur),
+                                 dots: augmentationDots(note.duration, unitNoteLength: unitNoteLength),
                                  accidental: note.displayedAccidental,
                                  stemUp: stemsUp(direction, staffPos: staffPos))
         }
@@ -869,10 +869,11 @@ struct SVGEmitter: Sendable {
                 }
 
                 let right = AnnotationBand.texts(in: annotations, at: .right)
-                let dotted = notes.contains {
-                    isDotted(absoluteDuration($0.duration, unitNoteLength: measure.unitNoteLength))
-                }
-                let rightX = x + noteheadWidth() + gap + (dotted ? s : 0)
+                let dots = notes.map {
+                    augmentationDots($0.duration, unitNoteLength: measure.unitNoteLength)
+                }.max() ?? 0
+                let dotAllowance = dots > 0 ? s + Double(dots - 1) * augmentationDotStep() : 0
+                let rightX = x + noteheadWidth() + gap + dotAllowance
                 for (i, text) in right.enumerated() {
                     draw(text, style: annotationStyle, x: rightX, y: sideY(i, of: right.count))
                 }
@@ -1849,10 +1850,11 @@ struct SVGEmitter: Sendable {
                                builder: &builder)
             }
 
-            if isDotted(absDur) {
-                emitAugmentationDot(x: headX, noteheadY: y, staffPos: staffPos, fontSize: fontSize,
-                                    dotX: placement.dotDX.map { x + $0 }, dotDY: placement.dotDY ?? 0,
-                                    builder: &builder)
+            let dots = augmentationDots(note.duration, unitNoteLength: unitNoteLength)
+            if dots > 0 {
+                emitAugmentationDots(dots, x: headX, noteheadY: y, staffPos: staffPos, fontSize: fontSize,
+                                     dotX: placement.dotDX.map { x + $0 }, dotDY: placement.dotDY ?? 0,
+                                     builder: &builder)
             }
         }
 
@@ -1872,37 +1874,38 @@ struct SVGEmitter: Sendable {
         return stemInfo
     }
 
+    /// Draws `count` augmentation dots in a row, the first beside the notehead.
+    ///
     /// - Parameters:
-    ///   - dotX: where the dot goes when its column moved it out of its default place beside
-    ///     the notehead — the dots of a shared staff's column are drawn in one strip.
-    ///   - dotDY: how far the dot moves from where the notehead alone would put it, positive
+    ///   - dotX: where the first dot goes when its column moved it out of its default place
+    ///     beside the notehead — the dots of a shared staff's column are drawn in one strip.
+    ///   - dotDY: how far the dots move from where the notehead alone would put them, positive
     ///     downward, where another voice's dot has taken that spot.
-    private func emitAugmentationDot(x: Double, noteheadY: Double, staffPos: Int,
+    private func emitAugmentationDots(_ count: Int, x: Double, noteheadY: Double, staffPos: Int,
                                       fontSize: Double, dotX: Double? = nil, dotDY: Double = 0,
                                       builder: inout SVGBuilder) {
         let noteW   = noteheadWidth()
         let dotGap  = noteW * 0.2
+        let step    = augmentationDotStep()
 
         // If the notehead sits on a line (even staffPos), shift dot up half a space to a space.
         let dotY = staffPos.isMultiple(of: 2)
             ? noteheadY - config.staffSize / 2.0
             : noteheadY
-        builder.text(String(SMuFLGlyph.augmentationDot.character),
-                     x: dotX ?? (x + noteW + dotGap), y: dotY + dotDY,
-                     fontFamily: "Bravura", fontSize: fontSize)
+        let firstX = dotX ?? (x + noteW + dotGap)
+        for i in 0..<count {
+            builder.text(String(SMuFLGlyph.augmentationDot.character),
+                         x: firstX + Double(i) * step, y: dotY + dotDY,
+                         fontFamily: "Bravura", fontSize: fontSize)
+        }
     }
 
-    private func isDotted(_ absDur: Double) -> Bool {
-        // A dotted value has the form (2^n - 1) / 2^(n-1).  In practice: 3/4, 3/8, 3/16 …
-        // Equivalently, when rounded to the nearest power of two, the "plain" duration differs.
-        // Simple check: absDur * 4 is an integer of the form 4k+2 (i.e. odd when halved).
-        // Handles 3/4 (dotted half), 3/8 (dotted quarter), 3/16 (dotted eighth), 3/32 (dotted 16th).
-        let scaled = absDur * 64.0
-        let rounded = Int(scaled.rounded())
-        // A dotted note: numerator = 3 * 2^k for some k ≥ 0  →  rounded % 3 == 0 but not a plain 2^n.
-        guard rounded > 0 else { return false }
-        if (rounded & (rounded - 1)) == 0 { return false }  // plain power of two → not dotted
-        return rounded % 3 == 0
+    /// How many augmentation dots `duration` is drawn with, judged on its absolute value so
+    /// that any `L:` gives the same answer.
+    private func augmentationDots(_ duration: Fraction, unitNoteLength: Fraction) -> Int {
+        ColumnMetrics.augmentationDots(Fraction(
+            numerator: duration.numerator * unitNoteLength.numerator,
+            denominator: duration.denominator * unitNoteLength.denominator))
     }
 
     /// - Parameter direction: The direction resolved for this note's voice — its own
@@ -2387,5 +2390,11 @@ struct SVGEmitter: Sendable {
     private func noteheadWidth() -> Double {
         metadata.glyphBBoxes["noteheadBlack"].map { $0.width * config.staffSize }
             ?? config.staffSize * 1.2
+    }
+
+    /// Matches ``ColumnMetrics/augmentationDotStep()``, which reserves the room.
+    private func augmentationDotStep() -> Double {
+        (metadata.glyphBBoxes["augmentationDot"].map { $0.width * config.staffSize }
+            ?? config.staffSize * 0.4) + noteheadWidth() * 0.2
     }
 }

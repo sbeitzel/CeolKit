@@ -329,7 +329,7 @@ struct SharedStaffMerger: Sendable {
                     voiceIndex: voice.part.voiceIndex,
                     staffPos: CollisionHead.staffPosition(of: note.pitch),
                     glyph: .notehead(absoluteDuration: duration),
-                    isDotted: metrics.isDottedDuration(note.duration),
+                    dots: metrics.augmentationDots(note.duration),
                     accidental: note.displayedAccidental,
                     stemUp: voice.part.voiceIndex == 0)
             }

@@ -107,6 +107,17 @@ struct SemanticPass {
 
         let fileSource = file.tunes.first?.source ?? .emptySourceRange
 
+        // `U:` written outside any tune defines its symbol for every tune after it, as abcm2ps
+        // reads it (#254); a tune's own `U:` then overrides it for that tune alone.
+        let outsideUserSymbols = file.filePreamble.compactMap {
+            line -> (line: Int, symbol: Character, decoration: Decoration)? in
+            guard case .informationField(let code, let payload, let src) = line, code == "U",
+                  case .userSymbol(let ch, let decoration, _) =
+                    parseField(code: code, payload: payload, source: src).0
+            else { return nil }
+            return (src.line, ch, decoration)
+        }
+
         // The footer the *file header* states: the last one written before any tune began.
         // A file with no tunes has nothing but a file header, so every one of them counts.
         let fileFooter = outsideFooters.last { $0.line < firstTuneLine }?.template
@@ -130,7 +141,12 @@ struct SemanticPass {
             let ownedBreaks = preambleBreaks.filter {
                 $0.source.line > previousTuneLine && $0.source.line < tuneLine
             }
-            let (tune, tuneDiags, tuneOrientations) = buildTune(abcTune, dialect: dialect)
+            var fileUserSymbols: [Character: Decoration] = [:]
+            for definition in outsideUserSymbols where definition.line < tuneLine {
+                fileUserSymbols[definition.symbol] = definition.decoration
+            }
+            let (tune, tuneDiags, tuneOrientations) = buildTune(abcTune, dialect: dialect,
+                                                                userSymbols: fileUserSymbols)
             diagnostics += tuneDiags
             // Every `%%landscape` this tune can be asked to honour, in source order: the ones
             // written in the gap in front of it — which break before its first stave, exactly
@@ -320,10 +336,13 @@ struct SemanticPass {
 
     // MARK: - Tune builder
 
-    private func buildTune(_ abcTune: ABCTune, dialect: Dialect)
+    /// - Parameter userSymbols: The `U:` definitions written outside any tune ahead of this one.
+    private func buildTune(_ abcTune: ABCTune, dialect: Dialect,
+                           userSymbols: [Character: Decoration] = [:])
     -> (Tune, [Diagnostic], [OrientationRequest]) {
         var diagnostics: [Diagnostic] = []
         var ctx = TuneContext()
+        ctx.userSymbols = userSymbols
 
         for field in abcTune.headerFields {
             applyHeaderField(field, to: &ctx, diagnostics: &diagnostics)
@@ -702,9 +721,6 @@ struct SemanticPass {
         ctx: inout BodyContext,
         diagnostics: inout [Diagnostic]
     ) {
-        let prevWasSpace = ctx.lastElementWasSpace(in: voice)
-        ctx.setLastElementWasSpace(false, in: voice)
-
         switch elem {
         case .note(let tok):
             let event = buildNoteEvent(tok, voice: voice, ctx: &ctx)
@@ -740,14 +756,19 @@ struct SemanticPass {
             ctx.flushGrace(source: src, in: voice)
 
         case .decoration(let tok, let src):
-            let decoration = expandDecoration(tok, userSymbols: ctx.userSymbols)
-            // Post-note decoration: if preceded by a space and there's a note in currentEvents,
-            // apply retroactively to the preceding note.
-            if prevWasSpace && ctx.applyDecorationToLastNote(decoration, in: voice) {
-                // Applied retroactively
-            } else {
-                ctx.addPendingDecoration(decoration, in: voice, source: src)
+            guard let decoration = expandDecoration(tok, userSymbols: ctx.userSymbols) else {
+                // A symbol no `U:` defines: abcm2ps reports it as a bad character and ignores
+                // it, which is what a stray character gets here too.
+                if case .shortForm(let ch) = tok {
+                    handleUnknownCharacter(ch, source: src, voice: voice, ctx: &ctx,
+                                           diagnostics: &diagnostics,
+                                           message: "'\(ch)' is not a defined decoration symbol (U:); it is ignored")
+                }
+                break
             }
+            // A decoration belongs to the symbol after it (§4.14), space or no space, as
+            // abcm2ps reads it: `C TD` trills the D (#254).
+            ctx.addPendingDecoration(decoration, in: voice, source: src)
 
         case .annotation(let pos, let text, let src):
             ctx.addPendingAnnotation(Annotation(
@@ -801,7 +822,6 @@ struct SemanticPass {
 
         case .space(let src):
             ctx.emitSpaceBreak(source: src, in: voice)
-            ctx.setLastElementWasSpace(true, in: voice)
 
         case .voiceOverlay:
             break  // read as a run by `walkLine`, which never hands one down here
@@ -810,16 +830,31 @@ struct SemanticPass {
             break  // already handled in resolveBrokenRhythms pre-pass
 
         case .unknown(let ch, let src):
-            if ctx.linebreakChars.contains(ch) {
-                ctx.splitStave(in: voice.primary)
-            } else {
-                let severity: Diagnostic.Severity = options.strictRecovery ? .error : .warning
-                diagnostics.append(Diagnostic(
-                    severity: severity, code: .reservedCharacter,
-                    message: "Unknown element in music body",
-                    source: src
-                ))
-            }
+            handleUnknownCharacter(ch, source: src, voice: voice, ctx: &ctx,
+                                   diagnostics: &diagnostics,
+                                   message: "Unknown element in music body")
+        }
+    }
+
+    /// A character the music body gives no meaning to: an `I:linebreak` character, or else
+    /// something to report and skip.
+    private func handleUnknownCharacter(
+        _ ch: Character,
+        source: SourceRange,
+        voice: VoiceKey,
+        ctx: inout BodyContext,
+        diagnostics: inout [Diagnostic],
+        message: String
+    ) {
+        if ctx.linebreakChars.contains(ch) {
+            ctx.splitStave(in: voice.primary)
+        } else {
+            let severity: Diagnostic.Severity = options.strictRecovery ? .error : .warning
+            diagnostics.append(Diagnostic(
+                severity: severity, code: .reservedCharacter,
+                message: message,
+                source: source
+            ))
         }
     }
 

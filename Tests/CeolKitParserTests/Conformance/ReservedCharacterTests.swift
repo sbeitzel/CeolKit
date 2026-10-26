@@ -86,18 +86,22 @@ struct ReservedCharacterTests {
         #expect(cleanCount == dirtyCount)
     }
 
-    @Test("Both sources have the same pp decoration on the 'a' note")
-    func sameDecoration() {
+    @Test("Both sources have the same pp decoration on the 'b' note")
+    func sameDecoration() throws {
         let clean = parse(cleanSource)
         let dirty = parse(dirtySource)
 
-        let cleanFirst = clean.score.firstTune?.singleVoiceMeasures.first?.noteEvents.first
-        let dirtyFirst = dirty.score.firstTune?.singleVoiceMeasures.first?.noteEvents.first
+        // `!pp!` belongs to the note after it, space or no space, as abcm2ps draws it (#254).
+        let cleanNotes = try #require(clean.score.firstTune?.singleVoiceMeasures.first?.noteEvents)
+        let dirtyNotes = try #require(dirty.score.firstTune?.singleVoiceMeasures.first?.noteEvents)
+        try #require(cleanNotes.count >= 2 && dirtyNotes.count >= 2)
 
-        #expect(cleanFirst?.pitch.step == .a)
-        #expect(dirtyFirst?.pitch.step == .a)
-        #expect(cleanFirst?.decorations.contains(.pp) == true)
-        #expect(dirtyFirst?.decorations.contains(.pp) == true)
+        for notes in [cleanNotes, dirtyNotes] {
+            #expect(notes[0].pitch.step == .a)
+            #expect(notes[0].decorations.isEmpty)
+            #expect(notes[1].pitch.step == .b)
+            #expect(notes[1].decorations == [.pp])
+        }
     }
 
     @Test("Both sources produce the same inline key change [K:C#]")

@@ -76,6 +76,15 @@ struct SharedStaffMerger: Sendable {
     /// lines the staff draws.  See ``SizedMeasure/openingBarLead``.
     func merge(_ parts: [VoicePart], keyChange: KeyChange? = nil,
                ownsOpeningBar: Bool = false, atSystemStart: Bool = false) -> SizedMeasure {
+        // Each voice's tuplets opened out into its bar, as the sizer opens them out (#231),
+        // so their notes take onsets of their own.
+        var voiceTuplets: [Int: [TupletSpan]] = [:]
+        let parts = parts.map { part in
+            let (measure, tuplets) = TupletExpansion.expand(part.measure)
+            voiceTuplets[part.voiceIndex] = tuplets
+            return VoicePart(measure: measure, voiceIndex: part.voiceIndex,
+                             isPadding: part.isPadding)
+        }
         let sounding = parts.filter { !$0.isPadding }
         // Every voice padded: the bar is furniture only.  Its bar lines still draw, so it
         // keeps its width, and it contributes not one column of music.
@@ -97,6 +106,8 @@ struct SharedStaffMerger: Sendable {
         var graceEventIndices: Set<Int> = []
         // The primary voice's ending start, moved to where its event lands in the merge.
         var endingStartIndex: Int?
+        // Where each voice's events land in the merge, so its tuplets can follow them.
+        var mergedIndex: [Int: [Int: Int]] = [:]
 
         let primaryOwnsBar = { (part: VoicePart) in
             ownsOpeningBar && part.voiceIndex == primary.voiceIndex
@@ -156,6 +167,7 @@ struct SharedStaffMerger: Sendable {
                        eventIndex == primary.measure.endingStartIndex {
                         endingStartIndex = mergedEvents.count
                     }
+                    mergedIndex[run.voice.part.voiceIndex, default: [:]][eventIndex] = mergedEvents.count
                     mergedEvents.append(run.voice.part.measure.events[eventIndex])
                     offsets.append(subX[first + j])
                     voiceTags.append(run.voice.part.voiceIndex)
@@ -166,6 +178,13 @@ struct SharedStaffMerger: Sendable {
 
         let naturalWidth = x + (voices.map { metrics.rightPadding(for: $0.part.measure) }.max()
             ?? metrics.rightPadding(for: primary.measure))
+
+        let tuplets = voices.flatMap { voice -> [TupletSpan] in
+            let landed = mergedIndex[voice.part.voiceIndex] ?? [:]
+            return (voiceTuplets[voice.part.voiceIndex] ?? []).map {
+                TupletSpan(eventIndices: $0.eventIndices.compactMap { landed[$0] }, p: $0.p, q: $0.q)
+            }
+        }
 
         return SizedMeasure(
             measure: Measure(openingBar: primary.measure.openingBar, events: mergedEvents,
@@ -184,7 +203,8 @@ struct SharedStaffMerger: Sendable {
             ownsOpeningBar: ownsOpeningBar,
             openingBarLead: metrics.openingBarLead(for: primary.measure,
                                                    ownsOpeningBar: ownsOpeningBar,
-                                                   atSystemStart: atSystemStart))
+                                                   atSystemStart: atSystemStart),
+            tuplets: tuplets)
     }
 
     /// The measure a fully padded bar keeps: its own furniture, and no music at all.
@@ -373,7 +393,8 @@ extension Rational {
     /// How far `event` advances the clock, in quarter notes.
     ///
     /// A duration in the model is a multiple of the voice's unit note length, so a quarter
-    /// note is `4 × duration × L`.  Tuplets scale by `q/p`; everything untimed is zero.
+    /// note is `4 × duration × L`.  A tuplet lasts as long as its events, which the parser
+    /// has already scaled by `q/p`; everything untimed is zero.
     static func quarters(of event: Event, unitNoteLength: Fraction) -> Rational {
         let unit = Rational(4 * unitNoteLength.numerator, unitNoteLength.denominator)
         switch event {
@@ -383,7 +404,7 @@ extension Rational {
         case .tuplet(let t):
             // Summed the way `ColumnMetrics` sums it, so the merge and the sizer never
             // disagree about how long a tuplet is — a nested one included.
-            let written = t.events.reduce(Rational.zero) { total, inner in
+            let sounding = t.events.reduce(Rational.zero) { total, inner in
                 switch inner {
                 case .note(let n):  return total + Rational(n.duration.numerator, n.duration.denominator)
                 case .rest(let r):  return total + Rational(r.duration.numerator, r.duration.denominator)
@@ -391,7 +412,7 @@ extension Rational {
                 default:            return total
                 }
             }
-            return unit * written * Rational(t.q, t.p)
+            return unit * sounding
         default:
             return .zero
         }

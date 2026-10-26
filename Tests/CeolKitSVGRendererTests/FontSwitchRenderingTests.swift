@@ -205,8 +205,8 @@ struct FontSwitchRenderingTests {
     func tempoMark() throws {
         let all = try runs(tune())
         #expect(try run("Q1", in: all).weight == "bold")
-        #expect(try run(" ♩ = 120", in: all).size == 11.25)
-        #expect(try run(" ♩ = 90", in: all).weight == nil)
+        #expect(try run(" = 120", in: all).size == 11.25)
+        #expect(try run(" = 90", in: all).weight == nil)
     }
 
     @Test("A footer's $ marks are its own: $1 prints as written, $T without switches")

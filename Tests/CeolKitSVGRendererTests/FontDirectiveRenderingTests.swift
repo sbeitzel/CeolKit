@@ -93,7 +93,7 @@ struct FontDirectiveRenderingTests {
         ("subtitlefont", "Second Title", 20.0),
         ("composerfont", "Composer Name", 16.0),
         ("infofont", "Reel", 15.0),
-        ("tempofont", "♩ = 120", 14.0),
+        ("tempofont", " = 120", 14.0),
         ("wordsfont", "words line", 16.0),
         ("gchordfont", "Am", 16.0),
         ("annotationfont", "above", 9.0),
@@ -126,8 +126,8 @@ struct FontDirectiveRenderingTests {
         #expect(try run("Main Title", in: all).size == 15)
         #expect(try run("words line", in: all).size == 8)
         // The tempo in the header and the change in the music are both set in `tempofont`.
-        #expect(try run("♩ = 120", in: all).size == 7)
-        #expect(try run("♩ = 90", in: all).size == 7)
+        #expect(try run(" = 120", in: all).size == 7)
+        #expect(try run(" = 90", in: all).size == 7)
     }
 
     // MARK: - Faces

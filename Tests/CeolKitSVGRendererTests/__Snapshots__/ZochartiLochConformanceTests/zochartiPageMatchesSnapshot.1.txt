@@ -28,7 +28,7 @@
     <path id="libertinusSerifItalic-g26" d="<OUTLINE>"/>
     <path id="libertinusSerifItalic-g21" d="<OUTLINE>"/>
     <path id="libertinusSerifItalic-g10" d="<OUTLINE>"/>
-    <path id="libertinusSerif-g2261" d="<OUTLINE>"/>
+    <path id="bravura-g2509" d="<OUTLINE>"/>
     <path id="libertinusSerif-g30" d="<OUTLINE>"/>
     <path id="libertinusSerif-g24" d="<OUTLINE>"/>
     <path id="libertinusSerif-g23" d="<OUTLINE>"/>
@@ -94,10 +94,10 @@
   <use href="#libertinusSerifItalic-g26" xlink:href="#libertinusSerifItalic-g26" transform="translate(563.379 57.875) scale(0.0105 -0.0105)"/>
   <use href="#libertinusSerifItalic-g21" xlink:href="#libertinusSerifItalic-g21" transform="translate(568.041 57.875) scale(0.0105 -0.0105)"/>
   <use href="#libertinusSerifItalic-g10" xlink:href="#libertinusSerifItalic-g10" transform="translate(572.714 57.875) scale(0.0105 -0.0105)"/>
-  <use href="#libertinusSerif-g2261" xlink:href="#libertinusSerif-g2261" transform="translate(36 70.375) scale(0.01125 -0.01125)"/>
-  <use href="#libertinusSerif-g30" xlink:href="#libertinusSerif-g30" transform="translate(43.312 70.375) scale(0.01125 -0.01125)"/>
-  <use href="#libertinusSerif-g24" xlink:href="#libertinusSerif-g24" transform="translate(52.312 70.375) scale(0.01125 -0.01125)"/>
-  <use href="#libertinusSerif-g23" xlink:href="#libertinusSerif-g23" transform="translate(57.544 70.375) scale(0.01125 -0.01125)"/>
+  <use href="#bravura-g2509" xlink:href="#bravura-g2509" transform="translate(36 70.375) scale(0.01125 -0.01125)"/>
+  <use href="#libertinusSerif-g30" xlink:href="#libertinusSerif-g30" transform="translate(42.547 70.375) scale(0.01125 -0.01125)"/>
+  <use href="#libertinusSerif-g24" xlink:href="#libertinusSerif-g24" transform="translate(51.547 70.375) scale(0.01125 -0.01125)"/>
+  <use href="#libertinusSerif-g23" xlink:href="#libertinusSerif-g23" transform="translate(56.779 70.375) scale(0.01125 -0.01125)"/>
   <line x1="71.604" y1="78" x2="576" y2="78" stroke="black" stroke-width="0.585"/>
   <line x1="71.604" y1="82.5" x2="576" y2="82.5" stroke="black" stroke-width="0.585"/>
   <line x1="71.604" y1="87" x2="576" y2="87" stroke="black" stroke-width="0.585"/>

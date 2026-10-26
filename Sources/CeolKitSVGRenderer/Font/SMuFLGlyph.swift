@@ -72,6 +72,18 @@ public enum SMuFLGlyph: String, Sendable, CaseIterable {
     case timeSigCommon
     case timeSigCutCommon
 
+    // Tuplets
+    case tuplet0
+    case tuplet1
+    case tuplet2
+    case tuplet3
+    case tuplet4
+    case tuplet5
+    case tuplet6
+    case tuplet7
+    case tuplet8
+    case tuplet9
+
     // Augmentation
     case augmentationDot
 
@@ -150,6 +162,16 @@ public enum SMuFLGlyph: String, Sendable, CaseIterable {
         case .timeSig9:                    return 0xE089
         case .timeSigCommon:               return 0xE08A
         case .timeSigCutCommon:            return 0xE08B
+        case .tuplet0:                     return 0xE880
+        case .tuplet1:                     return 0xE881
+        case .tuplet2:                     return 0xE882
+        case .tuplet3:                     return 0xE883
+        case .tuplet4:                     return 0xE884
+        case .tuplet5:                     return 0xE885
+        case .tuplet6:                     return 0xE886
+        case .tuplet7:                     return 0xE887
+        case .tuplet8:                     return 0xE888
+        case .tuplet9:                     return 0xE889
         case .augmentationDot:             return 0xE1E7
         case .repeatDot:                   return 0xE044
         case .fermataAbove:                return 0xE4C0

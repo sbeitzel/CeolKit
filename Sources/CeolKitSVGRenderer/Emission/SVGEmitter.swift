@@ -91,6 +91,9 @@ struct SVGEmitter: Sendable {
     /// How a `Q:` written in the music is set on the system being emitted (issue #186);
     /// `nil` for the default.
     var tempoChangeStyle: TextStyle? = nil
+    /// How far above the top staff line the system being emitted sets its tempo changes,
+    /// clear of the chord symbols and annotations under them (#234); `nil` for the default.
+    var tempoChangeBaseline: Double? = nil
 
     init(config: SVGRenderConfig, metadata: BravuraMetadata,
          stemDirection: StemDirection = .auto,
@@ -235,6 +238,7 @@ struct SVGEmitter: Sendable {
     private func configured(for system: ResolvedSystem) -> SVGEmitter {
         var emitter = configuredForMusic(system)
         emitter.tempoChangeStyle = system.textStyles?.tempoChange
+        emitter.tempoChangeBaseline = system.annotationFloors?.tempoBaseline
         return emitter
     }
 
@@ -1242,10 +1246,20 @@ struct SVGEmitter: Sendable {
         // Grace note beam tip Y for the note that immediately follows, per voice for the same
         // reason; reset after each non-grace event of that voice.
         var lastGraceBeamY: [Int: Double] = [:]
+        // The event index of each entry of `pendingBeams`, and where each stem of the bar
+        // ends as drawn — at its beam, for a beamed note — so a tuplet's number can be set
+        // clear of them (#231).
+        var pendingBeamMembers: [Int: [Int]] = [:]
+        var stemEnds: [Int: StemEnd] = [:]
 
         func flushBeam(voice: Int) {
             guard let g = pendingBeams.removeValue(forKey: voice) else { return }
-            emitBeamGroup(g, builder: &builder)
+            let members = pendingBeamMembers.removeValue(forKey: voice) ?? []
+            if let beamY = emitBeamGroup(g, builder: &builder) {
+                for (member, entry) in zip(members, g) {
+                    stemEnds[member] = StemEnd(y: beamY, up: entry.stem.stemUp)
+                }
+            }
         }
 
         // One stem direction for every note of a beam group, decided before any of its stems
@@ -1280,6 +1294,9 @@ struct SVGEmitter: Sendable {
                                      stemOverride: beamStems[index],
                                      builder: &builder)
             lastGraceBeamY[voice] = nil
+            if let info = stemInfo {
+                stemEnds[index] = StemEnd(y: info.stemTipY, up: info.stemUp)
+            }
             if let info = stemInfo, let note = noteFrom(event) {
                 let bc = requiredBeamCount(absoluteDuration(note.duration,
                                                             unitNoteLength: measure.unitNoteLength))
@@ -1288,10 +1305,13 @@ struct SVGEmitter: Sendable {
                 case .start:
                     flushBeam(voice: voice)  // safety: shouldn't have an open group here
                     pendingBeams[voice] = [entry]
+                    pendingBeamMembers[voice] = [index]
                 case .middle:
                     pendingBeams[voice]?.append(entry)
+                    pendingBeamMembers[voice]?.append(index)
                 case .end:
                     pendingBeams[voice]?.append(entry)
+                    pendingBeamMembers[voice]?.append(index)
                     flushBeam(voice: voice)
                 case .single:
                     break
@@ -1354,6 +1374,110 @@ struct SVGEmitter: Sendable {
         // Safety flush for malformed input, in voice order so that what a broken bar draws
         // does not depend on which voice happened to open a run last.
         for voice in pendingBeams.keys.sorted() { flushBeam(voice: voice) }
+
+        for tuplet in measure.tuplets {
+            emitTuplet(tuplet, in: measure, stemEnds: stemEnds, topStaffY: topY,
+                       bottomStaffY: bottomY, builder: &builder)
+        }
+    }
+
+    /// Where a stem ends as drawn, and which way it went.
+    private struct StemEnd {
+        let y: Double
+        let up: Bool
+    }
+
+    /// Draws a tuplet's number over its notes, on the side their stems go, and a bracket
+    /// from the first of them to the last unless they are exactly one beam group, whose beam
+    /// already says which notes the number counts (#231).  abcm2ps draws it the same way.
+    private func emitTuplet(_ tuplet: TupletSpan, in measure: ResolvedMeasure,
+                            stemEnds: [Int: StemEnd], topStaffY: Double, bottomStaffY: Double,
+                            builder: inout SVGBuilder) {
+        let members = tuplet.eventIndices.filter {
+            switch measure.events[$0].kind {
+            case .note, .chord, .rest: return true
+            default:                   return false
+            }
+        }
+        guard let first = members.first, let last = members.last,
+              let glyphs = tupletDigitGlyphs(tuplet.p) else { return }
+
+        let s = config.staffSize
+        let half = s / 2
+        let directions = members.compactMap { stemEnds[$0]?.up }
+        let above = directions.filter { $0 }.count * 2 >= directions.count
+
+        // The outermost ink of the group on that side: stem ends, noteheads, and the middle
+        // of the staff for a rest.  The number never sits inside the staff.
+        var edge = above ? topStaffY : bottomStaffY
+        for index in members {
+            let event = measure.events[index]
+            var ys: [Double] = []
+            if let end = stemEnds[index], end.up == above { ys.append(end.y) }
+            switch event.kind {
+            case .note(let n):
+                let y = noteY(staffPos: staffPos(for: n.pitch, clef: event.clef),
+                              bottomStaffY: bottomStaffY)
+                ys.append(above ? y - half : y + half)
+            case .chord(let c):
+                for n in c.notes {
+                    let y = noteY(staffPos: staffPos(for: n.pitch, clef: event.clef),
+                                  bottomStaffY: bottomStaffY)
+                    ys.append(above ? y - half : y + half)
+                }
+            default:
+                ys.append((topStaffY + bottomStaffY) / 2)
+            }
+            edge = above ? ys.reduce(edge, min) : ys.reduce(edge, max)
+        }
+
+        let beamThick = metadata.engravingDefaults.beamThickness * s
+        let gap = half + beamThick / 2
+        let digitHeight = glyphs.compactMap { metadata.glyphBBoxes[$0.rawValue]?.neY }.max() ?? 1.2
+        let digitWidths = glyphs.map { (metadata.glyphBBoxes[$0.rawValue]?.width ?? 1.2) * s }
+        let numberHeight = digitHeight * s
+        // The number's baseline, and the line through its middle that a bracket runs along.
+        let baseline = above ? edge - gap : edge + gap + numberHeight
+        let middleY = baseline - numberHeight / 2
+
+        let left = measure.events[first].origin.x
+        let right = measure.events[last].origin.x + noteheadWidth()
+        let centre = (left + right) / 2
+        let numberWidth = digitWidths.reduce(0, +)
+        var x = centre - numberWidth / 2
+        for (glyph, width) in zip(glyphs, digitWidths) {
+            builder.text(String(glyph.character), x: x, y: baseline,
+                         fontFamily: "Bravura", fontSize: 4.0 * s)
+            x += width
+        }
+
+        guard !isOneBeamGroup(members, in: measure) else { return }
+        let thickness = metadata.engravingDefaults.tupletBracketThickness * s
+        let hookEnd = above ? middleY + half : middleY - half
+        let clearance = numberWidth / 2 + half / 2
+        builder.line(x1: left, y1: hookEnd, x2: left, y2: middleY,
+                     strokeWidth: thickness)
+        builder.line(x1: left, y1: middleY, x2: centre - clearance, y2: middleY,
+                     strokeWidth: thickness)
+        builder.line(x1: centre + clearance, y1: middleY, x2: right, y2: middleY,
+                     strokeWidth: thickness)
+        builder.line(x1: right, y1: middleY, x2: right, y2: hookEnd,
+                     strokeWidth: thickness)
+    }
+
+    /// Whether `members` are the notes of one beam group, all of it and nothing else.
+    private func isOneBeamGroup(_ members: [Int], in measure: ResolvedMeasure) -> Bool {
+        let beams = members.compactMap { noteFrom(measure.events[$0])?.beam }
+        guard beams.count == members.count, beams.count >= 2,
+              beams.first == .start, beams.last == .end else { return false }
+        return beams.dropFirst().dropLast().allSatisfy { $0 == .middle }
+    }
+
+    private func tupletDigitGlyphs(_ n: Int) -> [SMuFLGlyph]? {
+        let digits: [SMuFLGlyph] = [.tuplet0, .tuplet1, .tuplet2, .tuplet3, .tuplet4,
+                                    .tuplet5, .tuplet6, .tuplet7, .tuplet8, .tuplet9]
+        let glyphs = String(n).compactMap { $0.wholeNumberValue.map { digits[$0] } }
+        return glyphs.isEmpty ? nil : glyphs
     }
 
     private func noteFrom(_ event: ResolvedEvent) -> Note? {
@@ -1446,9 +1570,12 @@ struct SVGEmitter: Sendable {
         return 1                           // eighth
     }
 
+    /// Draws a beam group's stems and beams, and returns the y its outermost beam runs at,
+    /// or `nil` where there was no group to draw.
+    @discardableResult
     private func emitBeamGroup(_ entries: [(stem: StemInfo, beamCount: Int)],
-                               builder: inout SVGBuilder) {
-        guard entries.count >= 2 else { return }
+                               builder: inout SVGBuilder) -> Double? {
+        guard entries.count >= 2 else { return nil }
         let first = entries.first!.stem
         let stems = entries.map(\.stem)
 
@@ -1520,6 +1647,7 @@ struct SVGEmitter: Sendable {
                 emitRun(from: start, to: entries.count - 1)
             }
         }
+        return commonBeamY
     }
 
     // MARK: - Bar lines
@@ -1682,8 +1810,8 @@ struct SVGEmitter: Sendable {
             if !text.isEmpty {
                 let style = tempoChangeStyle
                     ?? TextStyles.standard(staffSize: config.staffSize).tempoChange
-                builder.text(text, x: event.origin.x, y: topStaffY - config.staffSize * 1.5,
-                             style: style)
+                let baseline = tempoChangeBaseline ?? config.staffSize * 1.5
+                builder.text(text, x: event.origin.x, y: topStaffY - baseline, style: style)
             }
         }
         return nil

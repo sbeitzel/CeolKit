@@ -48,6 +48,8 @@ public struct MeasureSizer: Sendable {
                      keyChange: KeyChange? = nil,
                      ownsOpeningBar: Bool = false,
                      atSystemStart: Bool = false) -> SizedMeasure {
+        // A tuplet's notes take a column each, like any others (#231).
+        let (measure, tuplets) = TupletExpansion.expand(measure)
         let unitNoteLength = measure.unitNoteLength
         // Quarter-note duration expressed in unit-note-length units.
         // e.g. unitNoteLength = 1/8 → quarterInUnits = 2.0
@@ -104,7 +106,8 @@ public struct MeasureSizer: Sendable {
             keyChange: keyChange,
             ownsOpeningBar: ownsOpeningBar,
             openingBarLead: metrics.openingBarLead(for: measure, ownsOpeningBar: ownsOpeningBar,
-                                                   atSystemStart: atSystemStart)))
+                                                   atSystemStart: atSystemStart),
+            tuplets: tuplets))
     }
 
     /// The next event of the bar that a column runs to.  A column is spaced for the syllable

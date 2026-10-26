@@ -108,9 +108,12 @@ struct TunebookTests {
         // Tunes appear in order across pages.
         #expect(archieBeagPage == 2, "Archie Beag should start on page 2 (assignments: \(pageAssignments))")
         #expect(radarPage == 3, "The Radar Racketeer should start on page 3 (assignments: \(pageAssignments))")
-        // At the default `%%scale 0.75` the short Parting Glass fits under the Radar
-        // Racketeer, and PM Sandy Gordon then opens the next page (issue #203).
-        #expect(partingPage == 3, "The Parting Glass should start on page 3 (assignments: \(pageAssignments))")
+        // At the default `%%scale 0.75` the short Parting Glass only just fitted under the
+        // Radar Racketeer (issue #203).  Since each tempo change stands over the grace notes
+        // and fermatas of the note after it rather than over a column of its own (issue
+        // #234), the two systems that carry one are taller, and it opens the next page, with
+        // PM Sandy Gordon under it.
+        #expect(partingPage == 4, "The Parting Glass should start on page 4 (assignments: \(pageAssignments))")
         #expect(sandyPage == 4, "PM Sandy Gordon should start on page 4 (assignments: \(pageAssignments))")
     }
 

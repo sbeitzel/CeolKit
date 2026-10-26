@@ -175,6 +175,17 @@ struct VoiceAccumulator {
     }
 
     mutating func closeWith(barLine: BarLine, endingNumber: [Int]?, endingStartIndex: Int? = nil) {
+        // A tempo change after the bar's last note governs the music of the next bar and is
+        // drawn over its first note, so it is carried over the bar line rather than closing
+        // a bar of its own or standing against this one's end (#234).
+        let trailing = (currentEvents.lastIndex(where: Self.isMeasureContent) ?? -1) + 1
+        let carried = currentEvents[trailing...].filter(Self.isTempoChange)
+        if !carried.isEmpty {
+            currentEvents = Array(currentEvents[..<trailing])
+                + currentEvents[trailing...].filter { !Self.isTempoChange($0) }
+        }
+        defer { currentEvents = carried + currentEvents }
+
         // Skip spacer-only content (e.g. the space between [V:1] and |:) — treat as empty.
         let hasMusicalContent = currentEvents.contains {
             if case .spacer = $0 { return false }
@@ -228,6 +239,20 @@ struct VoiceAccumulator {
         closedMeasures.append(measure)
         currentEvents = []
         lastBarLine = barLine
+    }
+
+    /// Whether `event` is what a bar is made of: anything but a spacer, which only breaks a
+    /// beam, and a tempo change, which belongs to the music after it.
+    static func isMeasureContent(_ event: Event) -> Bool {
+        switch event {
+        case .spacer, .tempoChange: return false
+        default:                    return true
+        }
+    }
+
+    static func isTempoChange(_ event: Event) -> Bool {
+        if case .tempoChange = event { return true }
+        return false
     }
 }
 
@@ -348,6 +373,9 @@ struct VoiceState {
             return
         }
         if tuplet != nil {
+            // "Spaces that appear between the tuplet specifier and the following notes are to
+            // be ignored" (§4.13): `(3 abc` is `(3abc`, and its notes beam (#231).
+            if tuplet!.events.isEmpty, case .spacer(let s) = event, s.width == 0 { return }
             tuplet!.events.append(event)
             if tuplet!.musicalEventCount >= tuplet!.r {
                 flushTuplet()
@@ -1201,6 +1229,14 @@ private func applyTupletFactor(q: Int, p: Int, to event: Event) -> Event {
             lyrics: c.lyrics,
             source: c.source
         ))
+    case .rest(let r):
+        // A rest is one of the tuplet's notes as much as any other: `(3zab` (#231).
+        let dur = reducedFraction(
+            numerator: r.duration.numerator * q,
+            denominator: r.duration.denominator * p
+        )
+        return .rest(Rest(kind: r.kind, duration: dur, decorations: r.decorations,
+                          source: r.source))
     default:
         return event
     }

@@ -57,20 +57,7 @@ struct LineClassifier {
                 }
             }
 
-            // Update state machine
-            switch line {
-            case .empty:
-                if case .body = mode { mode = .preamble }
-            case .informationField(let code, _, _):
-                switch mode {
-                case .preamble where code == "X": mode = .header
-                case .preamble where code == "K": mode = .body  // recovery: no X: preceding K:
-                case .header where code == "K": mode = .body
-                default: break
-                }
-            default:
-                break
-            }
+            mode = Self.mode(after: line, in: mode)
 
             // Start continuation tracking for music lines ending with backslash.
             if case .musicLine(let t, let s) = line, t.hasSuffix("\\") {
@@ -88,6 +75,39 @@ struct LineClassifier {
         }
 
         return joiningContinuedLyrics(result)
+    }
+
+    /// Every physical line classified on its own, in source order: what ``classify()``
+    /// sees before it joins `\\` continuations and continued lyrics.  For syntax
+    /// highlighting, where each line has to keep its own source range (#229).
+    func classifyPhysicalLines() -> [LogicalLine] {
+        var result: [LogicalLine] = []
+        var mode = ParserMode.preamble
+        for (lineNumber, text, _) in source.lines() {
+            let lineSource = source.range(line: lineNumber, column: 1, length: text.utf8.count)
+            let line = classifyLine(String(text), source: lineSource, mode: mode)
+            mode = Self.mode(after: line, in: mode)
+            result.append(line)
+        }
+        return result
+    }
+
+    /// The state machine: the mode the line after `line` is classified in.
+    private static func mode(after line: LogicalLine, in mode: ParserMode) -> ParserMode {
+        switch line {
+        case .empty:
+            if case .body = mode { return .preamble }
+        case .informationField(let code, _, _):
+            switch mode {
+            case .preamble where code == "X": return .header
+            case .preamble where code == "K": return .body  // recovery: no X: preceding K:
+            case .header where code == "K": return .body
+            default: break
+            }
+        default:
+            break
+        }
+        return mode
     }
 
     /// The `[code:payload]` text a line interrupting a `\\` continuation is equivalent to

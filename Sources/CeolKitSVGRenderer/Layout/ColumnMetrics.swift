@@ -96,11 +96,10 @@ struct ColumnMetrics: Sendable {
             guard sp.width > 0 else { return 0 }
             return s * 0.5 * Double(sp.width)
 
-        case .directiveAnchor:
+        case .directiveAnchor, .tempoChange:
+            // A tempo change is drawn above the staff, over the note that follows it, and
+            // leaves the spacing of the music alone, as abcm2ps does (#234).
             return 0
-
-        case .tempoChange:
-            return s * 6
 
         case .clefChange(let clef):
             return clefChangeWidth(for: clef, metadata: metadata, staffSize: s)
@@ -355,9 +354,9 @@ struct ColumnMetrics: Sendable {
         Double(fraction.numerator) / Double(fraction.denominator)
     }
 
-    /// A tuplet's sounding duration in unit note lengths: the written total scaled by `q/p`.
+    /// A tuplet's sounding duration in unit note lengths: the sum of its events', which the
+    /// parser has already scaled by `q/p` (#231).
     func tupletDuration(_ tuplet: Tuplet) -> Double {
-        let written = tuplet.events.reduce(0.0) { $0 + rawDuration($1) }
-        return written * Double(tuplet.q) / Double(tuplet.p)
+        tuplet.events.reduce(0.0) { $0 + rawDuration($1) }
     }
 }

@@ -1854,6 +1854,8 @@ struct SemanticPass {
                     layers.append((overlay.source, overlayMeasures))
                 }
                 let barsWritten = measures.count
+                let voiceBreaks = accumulator.staveBreaks(
+                    closingOpenMeasure: barsWritten > accumulator.closedMeasures.count)
                 diagnostics += reconcileOverlays(
                     &measures, with: &layers, voiceId: voiceId,
                     unitNoteLength: accumulator.effectiveUnitNoteLength)
@@ -1861,8 +1863,8 @@ struct SemanticPass {
                 // They are that line's — the source wrote them there — so the boundary
                 // recorded at what used to be the end is no longer a boundary at all.
                 let breaks = measures.count > barsWritten
-                    ? accumulator.staveBreaks.filter { $0.measureIndex < barsWritten }
-                    : accumulator.staveBreaks
+                    ? voiceBreaks.filter { $0.measureIndex < barsWritten }
+                    : voiceBreaks
 
                 var start = 0
                 func appendStaff(through end: Int, evenIfEmpty: Bool = false) {

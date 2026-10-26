@@ -12,6 +12,11 @@ struct StaveBreak {
     /// tune's stave numbering (#102); an ordinary break that happens to close no measures is
     /// not one of these, and still collapses away when the staves are sliced.
     var isEmptyStave = false
+    /// How much music the bar still open at the break already held.  A bar the source goes
+    /// on writing after the break ends on the next stave, because its music ends there; one
+    /// it never adds to — the last bar of a voice with no closing bar line — stays on the
+    /// stave it was written on (#249).
+    var openMusicalEventCount = 0
 }
 
 struct VoiceAccumulator {
@@ -156,7 +161,23 @@ struct VoiceAccumulator {
         }
         pendingEmptyStaves = 0
         if idx > resume { completedStaveCount += 1 }
-        staveBreaks.append(StaveBreak(measureIndex: idx))
+        staveBreaks.append(StaveBreak(measureIndex: idx, openMusicalEventCount: musicalEventCount))
+    }
+
+    /// The stave breaks once the bar left open at the end of the voice is closed as its last
+    /// measure (`closingOpenMeasure`).
+    ///
+    /// A break recorded while that bar stood open falls before it.  Where nothing was written
+    /// into the bar after the break, it belongs to the stave before the break instead (#249).
+    func staveBreaks(closingOpenMeasure: Bool) -> [StaveBreak] {
+        var breaks = staveBreaks
+        if closingOpenMeasure, let last = breaks.last,
+           last.measureIndex == closedMeasures.count,
+           last.openMusicalEventCount > 0,
+           last.openMusicalEventCount == musicalEventCount {
+            breaks[breaks.count - 1].measureIndex += 1
+        }
+        return breaks
     }
 
     /// Records the end of a line-set — one system of the source — for this voice.

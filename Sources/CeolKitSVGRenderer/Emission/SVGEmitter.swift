@@ -4,6 +4,14 @@ import Foundation
 // MARK: - Internal geometry
 
 /// Stem geometry returned by `emitStem` so the caller can draw beam strokes.
+/// One note of a beam group as `emitBeamGroup` needs it: where its stem is, how many beams
+/// it carries, and how many augmentation dots it has, which decide where a stub points.
+private struct BeamEntry {
+    let stem:      StemInfo
+    let beamCount: Int
+    let dots:      Int
+}
+
 private struct StemInfo {
     let stemX:     Double  // x of the stem stroke's centreline
     let stemTipY:  Double  // y of the tip (the end away from the notehead)
@@ -1239,11 +1247,11 @@ struct SVGEmitter: Sendable {
         // where (issue #79).  Empty everywhere but on a shared staff.
         let placements = collisionPlacements(in: measure)
 
-        // Beam accumulator: per-note (StemInfo, beamCount) pairs for the current beam run,
+        // Beam accumulator: per-note (StemInfo, beamCount, dots) entries for the current beam run,
         // one run per voice of the staff.  A shared staff interleaves its voices in one event
         // stream, so a single accumulator would take a `.start` in one voice as the end of
         // the other's open run and beam the two together (#78).
-        var pendingBeams: [Int: [(stem: StemInfo, beamCount: Int)]] = [:]
+        var pendingBeams: [Int: [BeamEntry]] = [:]
         // Grace note beam tip Y for the note that immediately follows, per voice for the same
         // reason; reset after each non-grace event of that voice.
         var lastGraceBeamY: [Int: Double] = [:]
@@ -1301,7 +1309,9 @@ struct SVGEmitter: Sendable {
             if let info = stemInfo, let stemmed = stemmed(event) {
                 let bc = requiredBeamCount(absoluteDuration(stemmed.duration,
                                                             unitNoteLength: measure.unitNoteLength))
-                let entry = (stem: info, beamCount: bc)
+                let entry = BeamEntry(stem: info, beamCount: bc,
+                                      dots: augmentationDots(stemmed.duration,
+                                                             unitNoteLength: measure.unitNoteLength))
                 switch stemmed.beam {
                 case .start:
                     flushBeam(voice: voice)  // safety: shouldn't have an open group here
@@ -1593,7 +1603,7 @@ struct SVGEmitter: Sendable {
     /// Draws a beam group's stems and beams, and returns the y its outermost beam runs at,
     /// or `nil` where there was no group to draw.
     @discardableResult
-    private func emitBeamGroup(_ entries: [(stem: StemInfo, beamCount: Int)],
+    private func emitBeamGroup(_ entries: [BeamEntry],
                                builder: inout SVGBuilder) -> Double? {
         guard entries.count >= 2 else { return nil }
         let first = entries.first!.stem
@@ -1637,13 +1647,27 @@ struct SVGEmitter: Sendable {
                                  x2: entries[end].stem.stemX + halfStem,   y2: beamY,
                                  stroke: "black", strokeWidth: beamThick)
                 } else {
-                    // Stub: point right if first in group, otherwise left.
+                    // Stub: the first note's points right and the last note's left.  One in
+                    // the middle points toward the neighbour it is paired with in the rhythm,
+                    // as abcm2ps decides it (`draw_beams`): right where the note before has
+                    // fewer beams than the note after, or as many and fewer dots — so `c` of
+                    // `Bc<e` points at the `e`, and of `B>ce` at the `B` (#240).
                     // Cap at 0.75 × staffSize so grace-note-inflated inter-stem distances
                     // don't produce excessively long stubs.
                     let stemX = entries[start].stem.stemX
                     let maxStubW = s * 0.75
+                    let pointsRight: Bool
                     if start == 0 {
-                        let stubW = min((entries[1].stem.stemX - stemX) * 0.5, maxStubW)
+                        pointsRight = true
+                    } else if start == entries.count - 1 {
+                        pointsRight = false
+                    } else {
+                        let before = entries[start - 1], after = entries[start + 1]
+                        pointsRight = before.beamCount < after.beamCount
+                            || (before.beamCount == after.beamCount && before.dots < after.dots)
+                    }
+                    if pointsRight {
+                        let stubW = min((entries[start + 1].stem.stemX - stemX) * 0.5, maxStubW)
                         builder.line(x1: stemX - halfStem, y1: beamY, x2: stemX + stubW, y2: beamY,
                                      stroke: "black", strokeWidth: beamThick)
                     } else {

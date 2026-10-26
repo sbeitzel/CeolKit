@@ -157,14 +157,15 @@ struct AnnotationSpacing: Sendable {
         }.max() ?? 0
     }
 
-    /// The dot the emitter steps `>` text past, as it does when drawing.
+    /// The dots the emitter steps `>` text past, as it does when drawing.
     private func dotAllowance(_ event: Event) -> Double {
-        let dotted: Bool = switch event {
-        case .note(let n):  metrics.isDottedDuration(n.duration)
-        case .chord(let c): metrics.isDottedDuration(c.duration)
-        default:            false
+        let dots: Int = switch event {
+        case .note(let n):  metrics.augmentationDots(n.duration)
+        case .chord(let c): metrics.augmentationDots(c.duration)
+        default:            0
         }
-        return dotted ? metrics.config.staffSize : 0
+        guard dots > 0 else { return 0 }
+        return metrics.config.staffSize + Double(dots - 1) * metrics.augmentationDotStep()
     }
 
     /// The accidental `<` text is set to the left of, as the emitter sets it.

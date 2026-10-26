@@ -13,7 +13,8 @@ struct CollisionHead {
     let staffPos: Int
     /// Which of the three notehead glyphs is drawn.
     let glyph: SMuFLGlyph
-    let isDotted: Bool
+    /// How many augmentation dots the head carries.
+    let dots: Int
     let accidental: Alteration?
     /// Which way this head's voice stems, already resolved.  Only the *direction* a displaced
     /// unison moves depends on it; whether anything moves at all does not, which is what lets
@@ -30,7 +31,7 @@ struct CollisionHead {
 
     /// Two heads that draw the same ink in the same place, and so need only be drawn once.
     func drawsSameInk(as other: CollisionHead) -> Bool {
-        staffPos == other.staffPos && glyph == other.glyph && isDotted == other.isDotted
+        staffPos == other.staffPos && glyph == other.glyph && dots == other.dots
             && accidental == other.accidental
     }
 }
@@ -48,8 +49,8 @@ struct HeadPlacement {
     /// dot and its ledger lines are that voice's; this one draws only its stem, which is what
     /// tells a reader two parts are sounding the note.
     var isShared: Bool = false
-    /// x of the augmentation dot relative to the column, where the column moved it out of
-    /// its default place beside the notehead.
+    /// x of the (first) augmentation dot relative to the column, where the column moved it
+    /// out of its default place beside the notehead.  Further dots follow it.
     var dotDX: Double?
     /// How far the augmentation dot moves from where the notehead alone would put it,
     /// positive downward, where two dots would otherwise land on the same spot.
@@ -197,7 +198,7 @@ struct NoteheadCollisions {
                            into placements: inout [HeadPlacement]) {
         // Highest first, and the upper voice first where two heads are at one pitch: whoever
         // is served first keeps the dot where the notehead alone would have put it.
-        let dotted = visible.filter { heads[$0].isDotted }.sorted {
+        let dotted = visible.filter { heads[$0].dots > 0 }.sorted {
             (-heads[$0].staffPos, heads[$0].voiceIndex) < (-heads[$1].staffPos, heads[$1].voiceIndex)
         }
         guard !dotted.isEmpty else { return }

@@ -230,8 +230,8 @@ struct EnglishABCTests {
         guard score.tunes.count >= 2 else { Issue.record("Parser prerequisite not met"); return }
         let tune = score.tunes[1]
         let allMeasures = tune.singleVoiceMeasures
-        let ending1 = allMeasures.first(where: { $0.endingNumber?.contains(1) == true })
-        let ending2 = allMeasures.first(where: { $0.endingNumber?.contains(2) == true })
+        let ending1 = allMeasures.first(where: { m in m.endings.contains { $0.numbers.contains(1) } })
+        let ending2 = allMeasures.first(where: { m in m.endings.contains { $0.numbers.contains(2) } })
         #expect(ending1 != nil)
         #expect(ending2 != nil)
     }

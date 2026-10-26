@@ -112,7 +112,6 @@ struct ClefNotePositionTests {
                 closingBar: BarLine(kind: .single,
                                     source: SourceRange(file: nil, byteOffset: 0, length: 0,
                                                         line: 0, column: 0)),
-                endingNumber: nil,
                 source: SourceRange(file: nil, byteOffset: 0, length: 0, line: 0, column: 0),
                 unitNoteLength: Fraction(numerator: 1, denominator: 8))
             let jm = JustifiedMeasure(

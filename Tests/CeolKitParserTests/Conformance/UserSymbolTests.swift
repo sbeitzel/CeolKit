@@ -2,7 +2,9 @@
 //
 // Expected decorations are abcm2ps's (8.14, `-g`): a U: definition replaces a symbol's
 // default meaning; one in the file header holds for every tune, one in a tune header ends
-// with that tune, and an inline [U:] holds from where it is written.
+// with that tune, and an inline [U:] holds from where it is written.  A U: between tunes
+// follows §2.2.2 rather than abcm2ps: the file header is only at the start of the file, so
+// it is ignored with a warning.
 import Testing
 import CeolKitModel
 import CeolKitParser
@@ -54,6 +56,30 @@ struct UserSymbolTests {
         #expect(tunes.count == 2)
         #expect(decorations(tunes.first) == [[.fermata], [.fermata], [.trill], []])
         #expect(decorations(tunes.last) == [[.fermata], [.trill], [], []])
+    }
+
+    @Test("A U: between tunes is ignored with a warning")
+    func betweenTunes() {
+        let abc = """
+            X:1
+            L:1/4
+            K:C
+            WC D E F|
+
+            U:W=!fermata!
+
+            X:2
+            L:1/4
+            K:C
+            WC D E F|
+            """
+        let result = parse(abc)
+        let tunes = result.score.tunes
+        #expect(tunes.count == 2)
+        #expect(decorations(tunes.last) == [[], [], [], []])
+        let misplaced = result.diagnostics.filter { $0.code == .misplacedField }
+        #expect(misplaced.count == 1)
+        #expect(misplaced.first?.source.line == 6)
     }
 
     @Test("J and R have abcm2ps's default meanings")

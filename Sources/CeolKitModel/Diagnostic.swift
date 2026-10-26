@@ -61,6 +61,9 @@ public enum DiagnosticCode: String, Codable, Sendable {
     /// ``AnnotationPosition/chordLine``, and never played or transposed; `"^…"` says the
     /// same thing without relying on the guess.
     case unrecognisedChordSymbol
+    /// An information field written where ABC v2.2 does not allow it — a `U:` between
+    /// tunes, which §2.2.2 does not count as the file header.  It is ignored.
+    case misplacedField
     // Fields
     case unknownField
     case malformedFieldPayload

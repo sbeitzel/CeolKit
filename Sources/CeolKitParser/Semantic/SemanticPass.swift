@@ -107,15 +107,25 @@ struct SemanticPass {
 
         let fileSource = file.tunes.first?.source ?? .emptySourceRange
 
-        // `U:` written outside any tune defines its symbol for every tune after it, as abcm2ps
-        // reads it (#254); a tune's own `U:` then overrides it for that tune alone.
-        let outsideUserSymbols = file.filePreamble.compactMap {
-            line -> (line: Int, symbol: Character, decoration: Decoration)? in
+        // `U:` in the file header defines its symbol for every tune (#254); a tune's own `U:`
+        // then overrides it for that tune alone.  §2.2.2 has the file header only at the
+        // start of the file, never between tunes, so a `U:` written there is ignored.
+        var fileUserSymbols: [Character: Decoration] = [:]
+        for line in file.filePreamble {
             guard case .informationField(let code, let payload, let src) = line, code == "U",
                   case .userSymbol(let ch, let decoration, _) =
                     parseField(code: code, payload: payload, source: src).0
-            else { return nil }
-            return (src.line, ch, decoration)
+            else { continue }
+            if src.line < firstTuneLine {
+                fileUserSymbols[ch] = decoration
+            } else {
+                diagnostics.append(Diagnostic(
+                    severity: .warning, code: .misplacedField,
+                    message: "U: between tunes is ignored; it is allowed only in the file "
+                        + "header, before the first tune, or in a tune",
+                    source: src
+                ))
+            }
         }
 
         // The footer the *file header* states: the last one written before any tune began.
@@ -140,10 +150,6 @@ struct SemanticPass {
             // *this* tune onto a fresh page, so they are its own, at stave 0.
             let ownedBreaks = preambleBreaks.filter {
                 $0.source.line > previousTuneLine && $0.source.line < tuneLine
-            }
-            var fileUserSymbols: [Character: Decoration] = [:]
-            for definition in outsideUserSymbols where definition.line < tuneLine {
-                fileUserSymbols[definition.symbol] = definition.decoration
             }
             let (tune, tuneDiags, tuneOrientations) = buildTune(abcTune, dialect: dialect,
                                                                 userSymbols: fileUserSymbols)
@@ -336,7 +342,7 @@ struct SemanticPass {
 
     // MARK: - Tune builder
 
-    /// - Parameter userSymbols: The `U:` definitions written outside any tune ahead of this one.
+    /// - Parameter userSymbols: The `U:` definitions of the file header.
     private func buildTune(_ abcTune: ABCTune, dialect: Dialect,
                            userSymbols: [Character: Decoration] = [:])
     -> (Tune, [Diagnostic], [OrientationRequest]) {

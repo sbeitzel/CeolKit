@@ -199,6 +199,20 @@ struct BarLineTests {
         #expect(measures.last?.endings.map(\.numbers) == [[2]])
     }
 
+    /// The voice's last bar is closed by the end of the music rather than a bar line, and
+    /// used to be built with no endings at all (#246).
+    @Test("An ending in a last bar with no closing bar line is kept", arguments: [
+        ("|:CDEF|1GABc:|2CDEF", [[2]], false),
+        ("|:CDEF|GA [1 Bc:|[2 CDEF", [[2]], false),
+        ("|:CDEF|GA [1 Bc [2 dc", [[1], [2]], true),
+    ])
+    func endingInUnclosedLastBar(body: String, numbers: [[Int]], midBar: Bool) {
+        let measures = parse(barTune(body)).score.firstTune?.singleVoiceMeasures ?? []
+        let endings = measures.last?.endings ?? []
+        #expect(endings.map(\.numbers) == numbers, "\(body)")
+        #expect(endings.allSatisfy { ($0.startIndex != nil) == midBar }, "\(body)")
+    }
+
     @Test("Measures without ending numbers have no endings")
     func noEndingNumber() {
         let result = parse(barTune("CDEF|GABC|"))

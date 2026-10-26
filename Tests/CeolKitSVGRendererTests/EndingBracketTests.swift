@@ -126,6 +126,19 @@ struct EndingBracketTests {
         #expect(abs(drawn[1].right - staff.right) < 0.5)
     }
 
+    @Test("A second ending in a last bar with no closing bar line is still drawn")
+    func endingInUnclosedLastBarIsDrawn() throws {
+        // #246: the same tune with and without the final `|]` draws the same brackets.
+        // Read off every system, not just the first: where the bar falls is not what this
+        // is about.  Only the labelled rules are compared, since a second system's band also
+        // takes in the first system's ledger line under its `C`.
+        for body in ["|:CDEF|1GABc:|2CDEF", "|:CDEF|1GABc:|2CDEF|]"] {
+            let (svg, staves) = try render(tune(body))
+            let drawn = staves.flatMap { brackets(in: svg, above: $0) }
+            #expect(drawn.compactMap(\.label) == ["1", "2"], "\(body)")
+        }
+    }
+
     @Test("A tune with no variant endings draws no bracket at all")
     func noEndingsNoBracket() throws {
         let (svg, staves) = try render(tune("|:CDEF|GABc:|"))

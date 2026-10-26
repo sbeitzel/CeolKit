@@ -2036,6 +2036,7 @@ struct SemanticPass {
                 openingBar: acc.lastBarLine,
                 events: acc.currentEvents,
                 closingBar: finalBar,
+                endings: acc.pendingEndings,
                 source: src,
                 meter: acc.pendingMeter,
                 key: finalKey,

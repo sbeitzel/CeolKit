@@ -42,6 +42,11 @@ struct VoiceAccumulator {
     // Set by VoiceState after a barline when the tune's meter has moved on since this voice
     // last reported it; consumed by the next closeWith to tag that measure for renderers.
     var pendingMeter: Meter? = nil
+    /// The variant endings opened in the bar being written — see `Measure.endings`.
+    ///
+    /// Kept here rather than on the voice so that the voice's last bar keeps them when no
+    /// bar line closes it: `finaliseAccumulator` sees only the accumulator (#246).
+    var pendingEndings: [VariantEnding] = []
     /// An `L:` that moved the unit note length part way through the voice, paired with the
     /// number of musical events the measure then being written already held.
     ///
@@ -194,7 +199,9 @@ struct VoiceAccumulator {
         }
     }
 
-    mutating func closeWith(barLine: BarLine, endings: [VariantEnding] = []) {
+    mutating func closeWith(barLine: BarLine) {
+        let endings = pendingEndings
+        pendingEndings = []
         // A tempo change after the bar's last note governs the music of the next bar and is
         // drawn over its first note, so it is carried over the bar line rather than closing
         // a bar of its own or standing against this one's end (#234).
@@ -347,8 +354,6 @@ struct VoiceState {
     var pendingDecorations: [Decoration] = []
     var pendingAnnotations: [Annotation] = []
     var pendingChordSymbol: ChordSymbol? = nil
-    /// The variant endings opened in the bar being written — see `Measure.endings`.
-    var pendingEndings: [VariantEnding] = []
 
     // Slur state
     var openSlurs: Int = 0
@@ -453,8 +458,7 @@ struct VoiceState {
     }
 
     mutating func closeMeasure(barLine: BarLine, currentMeter: Meter, generation: Int) {
-        accumulator.closeWith(barLine: barLine, endings: pendingEndings)
-        pendingEndings = []
+        accumulator.closeWith(barLine: barLine)
         // Tag the measure *after* this bar line, matching where a tune-wide [M:] takes effect.
         if generation != lastTaggedMeterGeneration {
             accumulator.pendingMeter = currentMeter
@@ -478,11 +482,12 @@ struct VoiceState {
                 return true
             }
         }
-        if let last = pendingEndings.last, !hasMusic(events[(last.startIndex ?? 0)...]) {
-            pendingEndings.removeLast()
+        if let last = accumulator.pendingEndings.last,
+           !hasMusic(events[(last.startIndex ?? 0)...]) {
+            accumulator.pendingEndings.removeLast()
         }
         let startIndex = hasMusic(events[...]) ? events.count : nil
-        pendingEndings.append(VariantEnding(numbers: numbers, startIndex: startIndex))
+        accumulator.pendingEndings.append(VariantEnding(numbers: numbers, startIndex: startIndex))
     }
 
     // MARK: Grace groups

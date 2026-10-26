@@ -30,6 +30,9 @@ struct LayoutDirectives {
     var straightFlags: Bool
     /// Whether a grace group is slurred to the note it decorates, from `%%graceslurs`.
     var graceSlurs: Bool
+    /// Whether every variant-ending bracket is hooked at its end, from
+    /// `%%ceolkit:closevariants`.
+    var closeVariants: Bool
     /// `strftime` pattern for the `$D`/`$d` marks of a `%%footer`, from `%%dateformat`.
     /// `nil` leaves the renderer's own default date format standing.  Scoped like the rest:
     /// one in a tune header dates that tune's pages and no others (issue #155).
@@ -57,6 +60,7 @@ struct LayoutDirectives {
         graceNoteSpacing = config.graceNoteSpacing
         straightFlags = config.straightFlags
         graceSlurs = config.graceSlurs
+        closeVariants = config.closeVariants
     }
 
     mutating func apply(_ directive: CeolKitDirective, source: SourceRange? = nil) {
@@ -74,6 +78,7 @@ struct LayoutDirectives {
         case .graceNoteSpacing(let step): graceNoteSpacing = step
         case .straightFlags(let on):      straightFlags = on
         case .graceSlurs(let on):         graceSlurs = on
+        case .closeVariants(let on):      closeVariants = on
         case .dateFormat(let pattern):    dateFormat = pattern
         case .label(let text):            label = text
         default: break

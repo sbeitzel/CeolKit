@@ -58,7 +58,8 @@ public struct VerticalLayoutEngine: Sendable {
         // A staff of its own is a group of one, so the same walk that carries an ending over
         // a system break in a multi-voice tune serves here too.
         let endingRuns = EndingBracketBand.runs(
-            in: systems.map { JustifiedSystemGroup(staves: [$0]) })
+            in: systems.map { JustifiedSystemGroup(staves: [$0]) },
+            closeAll: config.closeVariants)
 
         for (index, jsystem) in systems.enumerated() {
             let runs = endingRuns[index][0]
@@ -207,7 +208,8 @@ public struct VerticalLayoutEngine: Sendable {
             // which measures a bracket covers is not something one system can answer alone.
             // The same table is read by the fits-on-this-page pre-pass below and by the
             // placement that follows it, so the space reserved is the space drawn into.
-            let endingRuns = EndingBracketBand.runs(in: groups)
+            let endingRuns = EndingBracketBand.runs(
+                in: groups, closeAll: block.closeVariants ?? config.closeVariants)
             // The page scale (`%%scale`) sizes this tune's music, text and the gaps derived
             // from staffSize. Page size and margins stay absolute.
             let tuneConfig  = config.scaled(by: block.scale)

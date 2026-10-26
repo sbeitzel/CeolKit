@@ -1078,7 +1078,8 @@ struct SemanticPass {
                 source: source))
         case "landscape", "flatbeams", "ceolkit:justifylast", "stretchlast", "stretchstaff",
              "ceolkit:scale",
-             "scale", "pagescale", "ceolkit:gracenotespacing", "ceolkit:fontlist", "writefields",
+             "scale", "pagescale", "ceolkit:gracenotespacing", "ceolkit:closevariants",
+             "ceolkit:fontlist", "writefields",
              "dateformat", "footer", "straightflags", "graceslurs",
              _ where TextFontRole(rawValue: name) != nil:
             var tempDiags: [Diagnostic] = []
@@ -1637,6 +1638,11 @@ struct SemanticPass {
             }
             diagnostics.append(Diagnostic(severity: .warning, code: .invalidGraceNoteSpacing,
                 message: "%%ceolkit:gracenotespacing expects a number (got '\(trimmed)')", source: source))
+            return nil
+        case "ceolkit:closevariants":
+            if let value = parseLogical(trimmed) { return .closeVariants(value) }
+            diagnostics.append(Diagnostic(severity: .warning, code: .unknownDirective,
+                message: "%%ceolkit:closevariants expects 'true' or 'false'", source: source))
             return nil
         case "landscape":
             if let value = parseLogical(trimmed) { return .landscape(value) }

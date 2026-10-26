@@ -308,6 +308,83 @@ struct EndingBracketTests {
         #expect(trailing == nil)
     }
 
+    // MARK: - %%ceolkit:closevariants (issue #237)
+
+    /// Whether each bracket drawn on each staff turns down at its right end, staff by staff.
+    ///
+    /// Only what stands below the staff before it counts: the band ``brackets(in:above:)``
+    /// searches reaches far enough up to take in the ledger lines under that staff, which
+    /// are stroked at the bracket's weight.
+    private func endHooks(_ abc: String) throws -> [[Bool]] {
+        let (svg, staves) = try render(abc)
+        return staves.indices.map { i in
+            let floor = i > 0 ? staves[i - 1].bottomY + staves[i].staffLineGap * 2 : -.infinity
+            return brackets(in: svg, above: staves[i]).filter { $0.y > floor }.map(\.hasEndHook)
+        }
+    }
+
+    private let threeEndings = "|:CDEF|1GABc:|2CDEF:|3GABc|]"
+
+    @Test("By default only the endings that close at a repeat bar are hooked")
+    func closeVariantsOffByDefault() throws {
+        #expect(try endHooks(tune(threeEndings)) == [[true, true, false]])
+    }
+
+    @Test("%%ceolkit:closevariants true hooks every ending at its end")
+    func closeVariantsHooksEveryEnding() throws {
+        #expect(try endHooks(tune("%%ceolkit:closevariants true\n" + threeEndings))
+                == [[true, true, true]])
+        #expect(try endHooks(tune("%%ceolkit:closevariants true\n|:CDEF|1GABc:|2CDEF|]"))
+                == [[true, true]])
+    }
+
+    /// Two tunes, the preamble and each header given their own lines.
+    private func twoTunes(preamble: String = "", first: String = "",
+                          second: String = "") -> String {
+        func tune(_ x: Int, _ header: String) -> String {
+            "X:\(x)\nT:Endings \(x)\nM:4/4\nL:1/4\n\(header)K:C\n\(threeEndings)\n"
+        }
+        return preamble + "\n" + tune(1, first) + "\n" + tune(2, second)
+    }
+
+    @Test("%%ceolkit:closevariants in the file preamble reaches every tune")
+    func closeVariantsInPreambleReachesEveryTune() throws {
+        let hooks = try endHooks(twoTunes(preamble: "%%ceolkit:closevariants true\n"))
+        #expect(hooks == [[true, true, true], [true, true, true]])
+    }
+
+    @Test("%%ceolkit:closevariants in a tune header applies to that tune only")
+    func closeVariantsInTuneHeaderIsScopedToTheTune() throws {
+        let hooks = try endHooks(twoTunes(first: "%%ceolkit:closevariants true\n"))
+        #expect(hooks == [[true, true, true], [true, true, false]])
+    }
+
+    @Test("%%ceolkit:closevariants false in a tune header overrides the file setting")
+    func closeVariantsTuneOverridesPreamble() throws {
+        let hooks = try endHooks(twoTunes(preamble: "%%ceolkit:closevariants true\n",
+                                          second: "%%ceolkit:closevariants false\n"))
+        #expect(hooks == [[true, true, true], [true, true, false]])
+    }
+
+    @Test("Under closevariants an ending is not hooked where it only breaks across systems")
+    func closeVariantsLeavesTheSystemBreakOpen() throws {
+        let hooks = try endHooks(tune("%%ceolkit:closevariants true\n|:CDEF|1GABc|\nCDEF:|2GABc|]"))
+        #expect(hooks == [[false], [true, true]])
+    }
+
+    @Test("Under closevariants an ending that stops at a system break is hooked there")
+    func closeVariantsHooksAnEndingThatStopsAtTheBreak() throws {
+        let hooks = try endHooks(tune("%%ceolkit:closevariants true\n|:CDEF|1GABc|\n|2CDEF|]"))
+        #expect(hooks == [[true], [true]])
+    }
+
+    @Test("Under closevariants an ending left open at the end of the tune is hooked")
+    func closeVariantsHooksTheLastUnclosedEnding() throws {
+        #expect(try endHooks(tune("%%ceolkit:closevariants true\n|:CDEF|1GABc:|2CDEF"))
+                == [[true, true]])
+        #expect(try endHooks(tune("|:CDEF|1GABc:|2CDEF")) == [[true, false]])
+    }
+
     // MARK: - Runs, worked out from the measures
 
     /// `EndingBracketBand` on its own, where the cases that need a whole page of music to

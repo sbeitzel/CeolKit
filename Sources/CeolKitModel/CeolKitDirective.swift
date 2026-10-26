@@ -16,6 +16,9 @@ public enum CeolKitDirective: Hashable, Sendable {
     /// `%%ceolkit:scale F` are both `.scale(0.75 × F)`.
     case scale(Double)                 // %%scale S | %%pagescale F | %%ceolkit:scale F  (> 0)
     case graceNoteSpacing(Double)      // %%ceolkit:gracenotespacing F  (F >= 1)
+    /// Whether every variant-ending bracket is closed with a hook at its end (issue #237).
+    /// `false`, the default, hooks only the ending that closes at a repeat bar.
+    case closeVariants(Bool)           // %%ceolkit:closevariants true|false
     case landscape(Bool)               // %%landscape 0|1  (ABC v2.2 §9.1)
     case flatBeams(Bool)               // %%flatbeams true|false  (abcm2ps; implicit in pipeFormat)
     /// How short the last system of a tune may be and still be stretched to the full line,

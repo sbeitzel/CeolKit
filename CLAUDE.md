@@ -108,7 +108,7 @@ The parser **always returns a `Score`**, even on error. Every stage has a recove
 `Note` carries both `writtenAccidental` (what was in the ABC source) and `displayedAccidental` (what a renderer should draw after key signature and intra-bar accidental memory). These differ, e.g., for the second `c` after `^c` in C major.
 
 ### CeolKit extensions
-Eight `%%ceolkit:*` directives are first-class model members:
+Nine `%%ceolkit:*` directives are first-class model members:
 - `%%ceolkit:pipeformat true|false`
 - `%%ceolkit:pagenumber N`
 - `%%ceolkit:stemalignment N`
@@ -117,6 +117,8 @@ Eight `%%ceolkit:*` directives are first-class model members:
 - `%%ceolkit:scale F` (**deprecated**: parsed as `%%pagescale F` with a `deprecatedDirective` warning;
   the page scale is `%%scale`/`%%pagescale`, as in abcm2ps — see `EXTENSIONS.md`)
 - `%%ceolkit:gracenotespacing F` (F >= 1, in grace notehead widths; tune-wide, never per-voice)
+- `%%ceolkit:closevariants true|false` (close every variant-ending bracket at its end, not
+  only at a repeat bar; file-wide or per tune, never per-voice)
 - `%%ceolkit:label "text"` (the value of a `${label}` footer mark; scoped like `%%footer`)
 - `%%ceolkit:fontlist [resolved|available]` (reports fonts as `.info` diagnostics at the directive; the renderer does the reporting)
 

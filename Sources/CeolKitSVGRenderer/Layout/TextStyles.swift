@@ -82,11 +82,11 @@ struct TextStyle: Sendable {
     /// and around any SMuFL characters, which are set in Bravura at the run's size (issue
     /// #230).  Text with neither is one run in this style, exactly as written.
     func runs(of text: String) -> [(text: String, style: TextStyle)] {
-        let switched: [(text: String, style: TextStyle)] = text.contains("$")
+        let byFont: [(text: String, style: TextStyle)] = text.contains("$")
             ? FontSwitch.runs(in: text).runs.map { ($0.text, switched(to: $0.font)) }
             : [(text, self)]
-        guard text.unicodeScalars.contains(where: TextFace.isSMuFL) else { return switched }
-        return switched.flatMap { $0.style.smuflRuns(of: $0.text) }
+        guard text.unicodeScalars.contains(where: TextFace.isSMuFL) else { return byFont }
+        return byFont.flatMap { $0.style.smuflRuns(of: $0.text) }
     }
 
     /// `run` split where it moves into or out of SMuFL characters, those set in Bravura.

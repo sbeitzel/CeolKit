@@ -10,6 +10,13 @@ private struct BeamEntry {
     let stem:      StemInfo
     let beamCount: Int
     let dots:      Int
+    /// How many beams run through a `!beambr1!`/`!beambr2!` break before this note (#243).
+    let beamBreak: Int?
+
+    /// Whether beam level `level` (0 for the primary beam) stops before this note.
+    func breaksBeam(atLevel level: Int) -> Bool {
+        beamBreak.map { level >= $0 } ?? false
+    }
 }
 
 private struct StemInfo {
@@ -1311,7 +1318,8 @@ struct SVGEmitter: Sendable {
                                                             unitNoteLength: measure.unitNoteLength))
                 let entry = BeamEntry(stem: info, beamCount: bc,
                                       dots: augmentationDots(stemmed.duration,
-                                                             unitNoteLength: measure.unitNoteLength))
+                                                             unitNoteLength: measure.unitNoteLength),
+                                      beamBreak: beamBreak(event))
                 switch stemmed.beam {
                 case .start:
                     flushBeam(voice: voice)  // safety: shouldn't have an open group here
@@ -1510,6 +1518,16 @@ struct SVGEmitter: Sendable {
         }
     }
 
+    /// How many beams run through a beam break written on `event`, if it is a note or chord
+    /// that carries one.
+    private func beamBreak(_ event: ResolvedEvent) -> Int? {
+        switch event.kind {
+        case .note(let n):  return n.beamBreak
+        case .chord(let c): return c.beamBreak
+        default:            return nil
+        }
+    }
+
     /// The stem direction for each beamed note of `measure`, and each unbeamed note on the
     /// middle line, keyed by event index, for the voices whose direction is left to the
     /// notes (`.auto`).  A voice with a direction of
@@ -1630,8 +1648,9 @@ struct SVGEmitter: Sendable {
         }
 
         // Draw beam levels. Level 0 always spans all notes. Higher levels span only
-        // consecutive notes with sufficient beam count; isolated notes at a higher level
-        // get a stub beam pointing toward the nearest neighbor.
+        // consecutive notes with sufficient beam count, and stop before a note that carries
+        // a beam break below them (`!beambr1!`, `!beambr2!`, #243); isolated notes at a
+        // higher level get a stub beam pointing toward the nearest neighbor.
         let maxBeams = entries.map(\.beamCount).max() ?? 1
         for b in 0..<maxBeams {
             let beamY = stemUp
@@ -1651,7 +1670,9 @@ struct SVGEmitter: Sendable {
                     // the middle points toward the neighbour it is paired with in the rhythm,
                     // as abcm2ps decides it (`draw_beams`): right where the note before has
                     // fewer beams than the note after, or as many and fewer dots — so `c` of
-                    // `Bc<e` points at the `e`, and of `B>ce` at the `B` (#240).
+                    // `Bc<e` points at the `e`, and of `B>ce` at the `B` (#240).  A beam break
+                    // overrides that, as it does there: a stub on the note the break comes
+                    // before points right, and one on the note before the break points left.
                     // Cap at 0.75 × staffSize so grace-note-inflated inter-stem distances
                     // don't produce excessively long stubs.
                     let stemX = entries[start].stem.stemX
@@ -1660,6 +1681,10 @@ struct SVGEmitter: Sendable {
                     if start == 0 {
                         pointsRight = true
                     } else if start == entries.count - 1 {
+                        pointsRight = false
+                    } else if entries[start].breaksBeam(atLevel: b) {
+                        pointsRight = true
+                    } else if entries[start + 1].breaksBeam(atLevel: b) {
                         pointsRight = false
                     } else {
                         let before = entries[start - 1], after = entries[start + 1]
@@ -1681,7 +1706,12 @@ struct SVGEmitter: Sendable {
             var runStart: Int? = nil
             for i in 0..<entries.count {
                 if entries[i].beamCount > b {
-                    if runStart == nil { runStart = i }
+                    if let start = runStart, entries[i].breaksBeam(atLevel: b) {
+                        emitRun(from: start, to: i - 1)
+                        runStart = i
+                    } else if runStart == nil {
+                        runStart = i
+                    }
                 } else if let start = runStart {
                     emitRun(from: start, to: i - 1)
                     runStart = nil

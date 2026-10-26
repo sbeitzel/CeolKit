@@ -140,6 +140,8 @@ enum MetadataFieldParser {
         case "d.s.al coda":             return .dalsegnoAlCoda
         case "breath":                  return .breath
         case "caesura":                 return .caesura
+        case "beambr1":                 return .beamBreak(1)
+        case "beambr2":                 return .beamBreak(2)
         case "ppp":                     return .ppp
         case "pp":                      return .pp
         case "p":                       return .p

@@ -61,6 +61,10 @@ public enum DiagnosticCode: String, Codable, Sendable {
     /// ``AnnotationPosition/chordLine``, and never played or transposed; `"^…"` says the
     /// same thing without relying on the guess.
     case unrecognisedChordSymbol
+    /// A `!beambr1!` or `!beambr2!` written on something other than a note or chord — a
+    /// rest, say — where there is no beam for it to break.  It is dropped, as abcm2ps
+    /// drops it.
+    case misplacedBeamBreak
     // Fields
     case unknownField
     case malformedFieldPayload

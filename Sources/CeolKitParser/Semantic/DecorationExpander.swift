@@ -95,6 +95,9 @@ private func expandLong(_ text: String) -> Decoration {
     // Breath
     case "breath":           return .breath
     case "caesura":          return .caesura
+    // Beaming
+    case "beambr1":          return .beamBreak(1)
+    case "beambr2":          return .beamBreak(2)
     default:                 return .unknown(text)
     }
 }

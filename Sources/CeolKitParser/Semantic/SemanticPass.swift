@@ -10,10 +10,15 @@ struct SemanticPass {
     func build() -> (Score, [Diagnostic]) {
         var diagnostics = file.diagnostics
 
-        // Process file-preamble directives: collect ceolkit directives to promote to first tune.
-        // filePreamble contains both the initial preamble and any inter-tune gaps (lines between
-        // tunes that fall outside any tune header), so scanning it here covers both.
+        // Process file-preamble directives.  filePreamble contains both the file header and
+        // any inter-tune gaps (lines between tunes that fall outside any tune header), so
+        // scanning it here covers both — but they are attached differently.  The file header's
+        // are promoted to the first tune; one written in a gap is attached to the tune that
+        // follows it, because it governs that tune and the ones after it, never the ones
+        // before (issue #257).  Both are at ``Scope/fileGlobal``: a renderer carries them
+        // forward from the tune they are attached to.
         var preambleCeolKitDirectives: [CeolKitDirectiveScope] = []
+        var gapCeolKitDirectives: [CeolKitDirectiveScope] = []
         // `%%newpage` met outside any tune, in source order.  Unlike everything else in the
         // preamble these are *not* promoted to the first tune: a break written in the gap
         // between two tunes belongs to the one that follows it, so each is matched to its
@@ -76,6 +81,10 @@ struct SemanticPass {
                         // the break in front of the tune that follows it (issue #158).
                         outsideOrientations.append(
                             OrientationRequest(landscape: on, stave: 0, source: src))
+                    } else if src.line > firstTuneLine {
+                        gapCeolKitDirectives.append(
+                            CeolKitDirectiveScope(directive: d, scope: .fileGlobal, source: src)
+                        )
                     } else {
                         preambleCeolKitDirectives.append(
                             CeolKitDirectiveScope(directive: d, scope: .fileGlobal, source: src)
@@ -173,11 +182,14 @@ struct SemanticPass {
             let gapOrientations = outsideOrientations.filter {
                 $0.source.line > previousTuneLine && $0.source.line < tuneLine
             }
+            let gapDirectives = gapCeolKitDirectives.filter {
+                $0.source.line > previousTuneLine && $0.source.line < tuneLine
+            }
             previousTuneLine = tuneLine
             let breaks = resolvingOrientations(gapOrientations + tuneOrientations,
                                                against: ownedBreaks + tune.pageBreaks,
                                                into: &diagnostics)
-            let extraDirectives = idx == 0 ? preambleCeolKitDirectives : []
+            let extraDirectives = (idx == 0 ? preambleCeolKitDirectives : []) + gapDirectives
             let filePlans = fileStaffPlans(
                 for: tune,
                 from: outsidePlans.last { $0.line < tuneLine }?.plan,
@@ -213,6 +225,15 @@ struct SemanticPass {
             diagnostics.append(Diagnostic(
                 severity: .info, code: .pageBreakAfterLastTune,
                 message: "%%newpage after the last tune has nothing to break before; ignored",
+                source: orphan.source
+            ))
+        }
+
+        // Nor has any other directive past the last tune a tune left to govern.
+        for orphan in gapCeolKitDirectives where orphan.source.line > previousTuneLine {
+            diagnostics.append(Diagnostic(
+                severity: .info, code: .directiveAfterLastTune,
+                message: "Directive after the last tune has no tune left to apply to; ignored",
                 source: orphan.source
             ))
         }

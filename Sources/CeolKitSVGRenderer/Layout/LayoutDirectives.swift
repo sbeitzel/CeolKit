@@ -88,9 +88,10 @@ struct LayoutDirectives {
     /// This baseline with `tune`'s own directives layered on top.
     ///
     /// Every directive the tune carries is applied, file-global ones included: the parser
-    /// folds the preamble into the first tune's list ahead of that tune's own entries, so
-    /// re-applying them here lands on the value they already put in the baseline, and every
-    /// later tune carries none of them at all.  ``WriteFieldsConfig`` is layered the same way.
+    /// puts them ahead of the tune's own entries — the file header's on the first tune, a
+    /// gap's on the tune after it — and the renderer folds them into the baseline before
+    /// layering, so re-applying them here lands on the value they already put there.
+    /// ``WriteFieldsConfig`` is layered the same way.
     func layering(_ tune: Tune) -> LayoutDirectives {
         var resolved = self
         for scope in tune.directives { resolved.apply(scope.directive, source: scope.source) }

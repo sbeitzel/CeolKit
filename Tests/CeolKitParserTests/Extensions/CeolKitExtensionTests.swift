@@ -85,6 +85,51 @@ struct CeolKitExtensionTests {
         }
     }
 
+    @Test("A directive between tunes is attached to the tune after it, not the first (#257)")
+    func gapDirectiveAttachesToFollowingTune() {
+        let abc = """
+        %%ceolkit:pipeformat true
+
+        X:1
+        K:C
+        CDEF|
+
+        %%ceolkit:pipeformat false
+
+        X:2
+        K:C
+        CDEF|
+
+        X:3
+        K:C
+        CDEF|
+        """
+        let tunes = parse(abc).score.tunes
+        let pipeFormats = tunes.map { tune in
+            tune.directives.compactMap { scope -> Bool? in
+                guard case .fileGlobal = scope.scope,
+                      case .pipeFormat(let on) = scope.directive else { return nil }
+                return on
+            }
+        }
+        #expect(pipeFormats == [[true], [false], []])
+    }
+
+    @Test("A directive after the last tune is dropped with an info diagnostic (#257)")
+    func directiveAfterLastTuneIsDropped() {
+        let abc = """
+        X:1
+        K:C
+        CDEF|
+
+        %%ceolkit:pipeformat true
+        """
+        let result = parse(abc)
+        let tune = result.score.firstTune
+        #expect(tune?.directives.isEmpty == true)
+        #expect(result.diagnostics.filter { $0.code == .directiveAfterLastTune }.count == 1)
+    }
+
     // MARK: %%ceolkit:pagenumber
 
     @Test("%%ceolkit:pagenumber 3 attaches pageNumber(3) directive")

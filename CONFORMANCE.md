@@ -42,6 +42,23 @@ after it.
 A tune with no `X:` takes the block of lines directly above its `K:` or first music line as
 its header. A block above that, set off by a blank line, is still the file header.
 
+### Stylesheet directives between tunes
+
+Stylesheet directives are different. A `%%` directive written between two tunes is kept,
+as it is in abcm2ps:
+
+| Written in | Governs |
+| --- | --- |
+| the file header | every tune, unless a later directive overrides it |
+| the gap between two tunes | the tunes after it, never the tunes before |
+| a tune header | that tune only |
+| after the last tune | nothing: dropped, with a `directiveAfterLastTune` info diagnostic |
+
+A tune header overrides the directive in force for that tune alone. The next tune goes back
+to the directive in force outside the tunes. In the model, a directive from the gap is a
+`.fileGlobal` entry on the tune after the gap. `%%footer`, `%%score`, `%%newpage` and
+`%%landscape` follow their own rules, which are described in their sections below.
+
 ---
 
 ## §11.1 Voice grouping — `%%score` and `%%staves`

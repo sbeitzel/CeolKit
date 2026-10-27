@@ -44,6 +44,15 @@ struct DirectiveScopeTests {
         preamble + "\n" + tunes(headers, body: body)
     }
 
+    /// The same tunes with `gaps[i]` standing in the gap *in front of* tune *i* — between
+    /// tune *i − 1* and tune *i* (issue #257).
+    private func tunes(_ headers: [String?], gaps: [Int: String],
+                       body: String = "CDEF|") -> String {
+        tunes(headers, body: body).components(separatedBy: "\n\n").enumerated()
+            .map { index, tune in gaps[index].map { $0 + "\n\n" + tune } ?? tune }
+            .joined(separator: "\n\n")
+    }
+
     // MARK: - Probes
 
     private func render(_ abc: String, config: SVGRenderConfig = SVGRenderConfig()) throws -> String {
@@ -262,5 +271,36 @@ struct DirectiveScopeTests {
             tunes(preamble: "%%ceolkit:pipeformat true",
                   [nil, "%%ceolkit:pipeformat false", nil]), tuneCount: 3)
         #expect(stemsUp == [false, true, false])
+    }
+
+    // MARK: - Between tunes (#257)
+
+    @Test("A %%ceolkit:pipeformat between tunes leaves the tunes before it alone")
+    func gapPipeFormatDoesNotReachBack() throws {
+        // The example from the issue: before #257 the gap's `false` governed all three.
+        let stemsUp = try stemsUpPerTune(
+            "%%ceolkit:pipeformat true\n\n"
+                + tunes([nil, nil, nil], gaps: [1: "%%ceolkit:pipeformat false"]),
+            tuneCount: 3)
+        #expect(stemsUp == [false, true, true])
+    }
+
+    @Test("A %%ceolkit:pipeformat between tunes governs every tune after it")
+    func gapPipeFormatGovernsLaterTunes() throws {
+        let stemsUp = try stemsUpPerTune(
+            tunes([nil, nil, nil], gaps: [1: "%%ceolkit:pipeformat true"]), tuneCount: 3)
+        #expect(stemsUp == [true, false, false])
+    }
+
+    @Test("A tune header overrides a %%pagescale between tunes for that tune alone")
+    func gapScaleGovernsLaterTunes() throws {
+        let scaled = SVGRenderConfig().scaledStaffSize * 0.5
+        let runs = staffRuns(in: try render(
+            tunes([nil, nil, "%%pagescale 1", nil], gaps: [1: "%%pagescale 0.5"])))
+        try #require(runs.count == 4)
+        #expect(runs[0].spacing == SVGRenderConfig().scaledStaffSize)
+        #expect(abs(runs[1].spacing - scaled) < 1e-9)
+        #expect(runs[2].spacing == SVGRenderConfig().scaledStaffSize)
+        #expect(abs(runs[3].spacing - scaled) < 1e-9)
     }
 }

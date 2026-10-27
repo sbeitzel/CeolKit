@@ -116,6 +116,10 @@ public enum DiagnosticCode: String, Codable, Sendable {
     /// A `%%newpage` stands after the last tune in the file, so there is nothing left for it
     /// to move onto a fresh page.  It is dropped.
     case pageBreakAfterLastTune
+    /// A stylesheet directive stands after the last tune in the file.  A directive written
+    /// between tunes governs the tunes that follow it (issue #257), and none does, so it is
+    /// dropped.
+    case directiveAfterLastTune
     /// A `%%landscape` was written where no `%%newpage` breaks, so there is no page boundary
     /// for the new orientation to start at.  A page size cannot change part-way down a page,
     /// so the directive is dropped rather than reaching forward to some later break the

@@ -370,9 +370,6 @@ struct VoiceState {
     /// wherever a new music line resets the anchor they align against.
     var lyricVerse: Int = 0
 
-    /// Space tracking for post-note decoration.
-    var lastElementWasSpace: Bool = false
-
     /// Which `[M:]` this voice last reported, as a generation counter rather than a value: a
     /// restated `[M:4/4]` in a 4/4 tune is still an event a renderer wants tagged, and `Meter`
     /// is not Equatable in any case.  A meter change is tune-wide — one conductor — but each
@@ -579,36 +576,6 @@ struct VoiceState {
     }
 
     // MARK: Retroactive edits to the last event
-
-    /// Retroactively applies a decoration to the last note in currentEvents (skipping spacers).
-    /// Returns true if successfully applied.
-    mutating func applyDecorationToLastNote(_ decoration: Decoration) -> Bool {
-        for i in stride(from: accumulator.currentEvents.count - 1, through: 0, by: -1) {
-            switch accumulator.currentEvents[i] {
-            case .spacer:
-                continue
-            case .note(let n):
-                accumulator.currentEvents[i] = .note(Note(
-                    pitch: n.pitch,
-                    writtenAccidental: n.writtenAccidental,
-                    displayedAccidental: n.displayedAccidental,
-                    duration: n.duration,
-                    ties: n.ties,
-                    slurs: n.slurs,
-                    decorations: n.decorations + [decoration],
-                    chordSymbol: n.chordSymbol,
-                    annotations: n.annotations,
-                    beam: n.beam,
-                    lyrics: n.lyrics,
-                    source: n.source
-                ))
-                return true
-            default:
-                return false
-            }
-        }
-        return false
-    }
 
     /// Retroactively increments the `slurs.closes` count on the last note in
     /// `currentEvents` (skipping spacers).  Returns true if a note was found and updated.
@@ -1091,11 +1058,6 @@ struct BodyContext {
         voices[voice]?.applyLyrics(tokens)
     }
 
-    mutating func applyDecorationToLastNote(_ decoration: Decoration, in voice: VoiceKey) -> Bool {
-        guard voices[voice] != nil else { return false }
-        return voices[voice]!.applyDecorationToLastNote(decoration)
-    }
-
     mutating func addSlurCloseToLastNote(in voice: VoiceKey) -> Bool {
         guard voices[voice] != nil else { return false }
         return voices[voice]!.addSlurCloseToLastNote()
@@ -1139,15 +1101,6 @@ struct BodyContext {
 
     mutating func flushChordSymbol(in voice: VoiceKey, source: SourceRange) -> ChordSymbol? {
         withVoice(voice, source: source) { $0.flushChordSymbol() }
-    }
-
-    func lastElementWasSpace(in voice: VoiceKey) -> Bool {
-        voices[voice]?.lastElementWasSpace ?? false
-    }
-
-    mutating func setLastElementWasSpace(_ value: Bool, in voice: VoiceKey) {
-        // Only meaningful once the voice exists; a voice with no state has nothing to decorate.
-        voices[voice]?.lastElementWasSpace = value
     }
 
     // MARK: Voice overlay (§7.4)

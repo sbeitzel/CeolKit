@@ -1,11 +1,12 @@
 import CeolKitModel
 
 /// Maps syntactic DecorationToken values to their canonical Decoration enum cases.
-/// Short-form characters are expanded per ABC v2.2 §4.14.
+/// Short-form characters are expanded per ABC v2.2 §4.14 and §4.16, or are `nil` where the
+/// symbol has no definition.
 func expandDecoration(
     _ token: DecorationToken,
     userSymbols: [Character: Decoration]
-) -> Decoration {
+) -> Decoration? {
     switch token {
     case .shortForm(let ch):
         return expandShort(ch, userSymbols: userSymbols)
@@ -14,7 +15,10 @@ func expandDecoration(
     }
 }
 
-private func expandShort(_ ch: Character, userSymbols: [Character: Decoration]) -> Decoration {
+/// A `U:` definition wins over the symbol's default meaning (#254); the defaults are
+/// abcm2ps's (`init_deco`), which add `J` and `R` to §4.14's.
+private func expandShort(_ ch: Character, userSymbols: [Character: Decoration]) -> Decoration? {
+    if let defined = userSymbols[ch] { return defined }
     switch ch {
     case ".": return .staccato
     case "~": return .roll
@@ -27,8 +31,9 @@ private func expandShort(_ ch: Character, userSymbols: [Character: Decoration]) 
     case "T": return .trill
     case "u": return .upbow
     case "v": return .downbow
-    default:
-        return userSymbols[ch] ?? .unknown(String(ch))
+    case "J": return .unknown("slide")
+    case "R": return .roll
+    default:  return nil
     }
 }
 

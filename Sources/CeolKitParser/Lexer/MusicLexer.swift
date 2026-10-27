@@ -105,17 +105,9 @@ struct MusicLexer {
         case "}": return .rightBrace
         case "\"": return scanQuotedString()
         case "!": return scanExclamation()
-        case ".": return .shortDecoration(".")
-        case "~": return .shortDecoration("~")
-        case "H": return .shortDecoration("H")
-        case "L": return .shortDecoration("L")
-        case "M": return .shortDecoration("M")
-        case "O": return .shortDecoration("O")
-        case "P": return .shortDecoration("P")
-        case "S": return .shortDecoration("S")
-        case "T": return .shortDecoration("T")
-        case "u": return .shortDecoration("u")
-        case "v": return .shortDecoration("v")
+        // §4.16: every letter `U:` may define is a decoration symbol, whether or not one is
+        // defined; the semantic pass decides what it means.  `Y` too, as abcm2ps reads it.
+        case ".", "~", "H"..."W", "Y", "h"..."w": return .shortDecoration(ch)
         case "-": return .tie
         case ">": return .brokenRight
         case "<": return .brokenLeft

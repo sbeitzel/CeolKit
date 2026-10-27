@@ -89,13 +89,12 @@ struct VoiceScopeTests {
         #expect(twoFirst.endings.isEmpty)
     }
 
-    // MARK: Post-note decoration lookbehind
+    // MARK: Pending decorations across a voice switch
     //
-    // `lastElementWasSpace` moved into VoiceState for consistency, not to fix a leak: it cannot
-    // cross a voice switch, because every element resets it before the next one is read and a
-    // `[V:…]` switch is itself an element.  This pins that, so the move stays behaviour-neutral.
+    // A decoration is pending for the next note of the voice it was written in, so a `[V:…]`
+    // just before it cannot hand it to the note before the switch.
 
-    @Test("A post-note decoration still attaches across a voice switch boundary")
+    @Test("A decoration after a voice switch attaches to that voice's next note")
     func postNoteDecorationUnaffectedByVoiceSwitch() {
         let result = parse(Self.twoVoiceHeader + "[V:1] C [V:2] !trill! D|\n")
         let two = measures(result, "2").first?.noteEvents ?? []

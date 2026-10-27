@@ -9,6 +9,41 @@ Non-standard `%%ceolkit:*` directives are documented separately, in
 
 ---
 
+## §2.2.2 The file header — information fields
+
+The fields the §3 table allows in the file header set the default for every tune in the
+file: `L:`, `M:`, `m:`, `U:`, and the text fields `A:`, `B:`, `C:`, `D:`, `F:`, `G:`, `H:`,
+`N:`, `O:`, `R:`, `S:`, `Z:`. (`I:` is read as the stylesheet directive it stands for, and
+`r:` is a remark.) A tune overrides a default for itself alone, and the next tune starts
+again from the file header.
+
+### A tune's own text field replaces the file header's
+
+The standard says a tune may override the file header, but not what that means for a field
+that may be written more than once. CeolKit follows abcm2ps: a tune's first `C:` replaces
+**all** of the file header's `C:` lines, and its later `C:` lines add to the tune's own. Each
+kind of field is decided separately, so a tune with its own `C:` still inherits the file
+header's `N:`. `m:` is the exception: macros are definitions, not text, so a tune's `m:`
+adds to the file header's rather than replacing them. `U:` redefines only the symbol it
+names.
+
+### Where a field may be written
+
+| Written | Effect |
+| --- | --- |
+| an allowed field in the file header | the default for every tune |
+| `K:`, `P:`, `Q:`, `T:`, `V:`, `W:`, `w:`, `s:` in the file header | ignored, with a `misplacedField` warning |
+| any field between tunes | ignored, with a `misplacedField` warning |
+
+§2.2.2 allows the file header only at the start of the file, never between tunes. Here
+CeolKit differs from abcm2ps, which applies a field written between tunes to the tunes
+after it.
+
+A tune with no `X:` takes the block of lines directly above its `K:` or first music line as
+its header. A block above that, set off by a blank line, is still the file header.
+
+---
+
 ## §11.1 Voice grouping — `%%score` and `%%staves`
 
 `V:` says which voice a line of music belongs to. It does not say what staff that voice is

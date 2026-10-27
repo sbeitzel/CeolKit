@@ -44,8 +44,14 @@ struct ABCFileBuilder {
 
         func startImplicitTune(source: SourceRange) {
             // Called when a K: or music line appears without a preceding X:.
-            // The preamble may contain header-like info fields; promote them.
-            let promotableFields = filePreamble.compactMap { line -> InformationField? in
+            // The block of lines just above it is the tune's header; promote its fields.
+            // A block before that, set off by a blank line, is the file header, and stays
+            // in the preamble to be the default for every tune (issue #256).
+            let blockStart = (filePreamble.lastIndex { line in
+                if case .empty = line { return true }
+                return false
+            }).map { $0 + 1 } ?? filePreamble.startIndex
+            let promotableFields = filePreamble[blockStart...].compactMap { line -> InformationField? in
                 guard case .informationField(let c, let p, let s) = line,
                       !"XK".contains(c) else { return nil }
                 let (field, _) = parseField(code: c, payload: p, source: s)
@@ -60,8 +66,8 @@ struct ABCFileBuilder {
             }
             tuneStartSource = source
             missingRefNumber = true
-            // filePreamble entries consumed into header; keep non-field entries
-            filePreamble = filePreamble.filter { line in
+            // The block's fields are consumed into the header; keep its other entries
+            filePreamble = filePreamble[..<blockStart] + filePreamble[blockStart...].filter { line in
                 if case .informationField = line { return false }
                 return true
             }

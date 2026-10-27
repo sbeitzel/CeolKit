@@ -107,26 +107,39 @@ struct SemanticPass {
 
         let fileSource = file.tunes.first?.source ?? .emptySourceRange
 
-        // `U:` in the file header defines its symbol for every tune (#254); a tune's own `U:`
-        // then overrides it for that tune alone.  §2.2.2 has the file header only at the
-        // start of the file, never between tunes, so a `U:` written there is ignored.
-        var fileUserSymbols: [Character: Decoration] = [:]
+        // The information fields of the file header are the defaults every tune starts from
+        // (§2.2.2; #254, #256).  A tune overrides them for itself alone, and the next tune
+        // starts again from the file header.  `I:` is a directive there and is read with the
+        // `%%` lines above; `r:` is a remark.  A field the file header may not hold, or any
+        // field written between tunes — §2.2.2 has the file header only at the start of the
+        // file — is ignored with a warning.
+        var fileHeader = TuneContext()
         for line in file.filePreamble {
-            guard case .informationField(let code, let payload, let src) = line, code == "U",
-                  case .userSymbol(let ch, let decoration, _) =
-                    parseField(code: code, payload: payload, source: src).0
-            else { continue }
-            if src.line < firstTuneLine {
-                fileUserSymbols[ch] = decoration
+            guard case .informationField(let code, let payload, let src) = line,
+                  !"Ir".contains(code) else { continue }
+            if src.line > firstTuneLine {
+                diagnostics.append(Diagnostic(
+                    severity: .warning, code: .misplacedField,
+                    message: "\(code): between tunes is ignored; it is allowed only in the file "
+                        + "header, before the first tune, or in a tune",
+                    source: src
+                ))
+                continue
+            }
+            let (field, fieldDiags) = parseField(code: code, payload: payload, source: src)
+            diagnostics += fieldDiags
+            if case .unknown = field { continue }
+            if Self.fileHeaderFieldCodes.contains(code) {
+                applyHeaderField(field, to: &fileHeader, diagnostics: &diagnostics)
             } else {
                 diagnostics.append(Diagnostic(
                     severity: .warning, code: .misplacedField,
-                    message: "U: between tunes is ignored; it is allowed only in the file "
-                        + "header, before the first tune, or in a tune",
+                    message: "\(code): is not allowed in the file header and is ignored",
                     source: src
                 ))
             }
         }
+        fileHeader.inherited = TuneContext.repeatableFields
 
         // The footer the *file header* states: the last one written before any tune began.
         // A file with no tunes has nothing but a file header, so every one of them counts.
@@ -152,7 +165,7 @@ struct SemanticPass {
                 $0.source.line > previousTuneLine && $0.source.line < tuneLine
             }
             let (tune, tuneDiags, tuneOrientations) = buildTune(abcTune, dialect: dialect,
-                                                                userSymbols: fileUserSymbols)
+                                                                fileHeader: fileHeader)
             diagnostics += tuneDiags
             // Every `%%landscape` this tune can be asked to honour, in source order: the ones
             // written in the gap in front of it — which break before its first stave, exactly
@@ -342,13 +355,18 @@ struct SemanticPass {
 
     // MARK: - Tune builder
 
-    /// - Parameter userSymbols: The `U:` definitions of the file header.
+    /// The fields ABC v2.2 §3 allows in the file header and that set a default for the tunes.
+    /// `I:` is allowed too, but is read as a directive; `r:` is a remark.
+    private static let fileHeaderFieldCodes: Set<Character> = [
+        "L", "M", "m", "U", "A", "B", "C", "D", "F", "G", "H", "N", "O", "R", "S", "Z",
+    ]
+
+    /// - Parameter fileHeader: The fields of the file header, which the tune starts from.
     private func buildTune(_ abcTune: ABCTune, dialect: Dialect,
-                           userSymbols: [Character: Decoration] = [:])
+                           fileHeader: TuneContext = TuneContext())
     -> (Tune, [Diagnostic], [OrientationRequest]) {
         var diagnostics: [Diagnostic] = []
-        var ctx = TuneContext()
-        ctx.userSymbols = userSymbols
+        var ctx = fileHeader
 
         for field in abcTune.headerFields {
             applyHeaderField(field, to: &ctx, diagnostics: &diagnostics)
@@ -473,24 +491,24 @@ struct SemanticPass {
         case .userSymbol(let ch, let d, _): ctx.userSymbols[ch] = d
         case .macro(let pat, let exp, let src):
             ctx.macros.append(MacroDefinition(pattern: pat, expansion: exp, source: src))
-        case .composer(let t):          ctx.composer.append(t)
+        case .composer(let t):          ctx.append(contentsOf: [t], to: \.composer)
         case .words(let t):             ctx.words.append(t)
         case .origin(let t):
             let parts = t.value.components(separatedBy: ";")
                 .map { $0.trimmingCharacters(in: .whitespaces) }
                 .filter { !$0.isEmpty }
-            ctx.origins.append(contentsOf: parts)
-        case .area(let t):              ctx.area.append(t)
-        case .book(let t):              ctx.book.append(t)
-        case .discography(let t):       ctx.discography.append(t)
+            ctx.append(contentsOf: parts, to: \.origins)
+        case .area(let t):              ctx.append(contentsOf: [t], to: \.area)
+        case .book(let t):              ctx.append(contentsOf: [t], to: \.book)
+        case .discography(let t):       ctx.append(contentsOf: [t], to: \.discography)
         case .fileUrl(let t):
-            if let url = URL(string: t.value) { ctx.fileURL.append(url) }
-        case .group(let t):             ctx.group.append(t)
-        case .history(let t):           ctx.history.append(t)
-        case .notes(let t):             ctx.notes.append(t)
-        case .sourceText(let t):        ctx.sourceText.append(t)
-        case .rhythm(let t):            ctx.rhythm.append(t)
-        case .transcription(let t):     ctx.transcription.append(t)
+            ctx.append(contentsOf: URL(string: t.value).map { [$0] } ?? [], to: \.fileURL)
+        case .group(let t):             ctx.append(contentsOf: [t], to: \.group)
+        case .history(let t):           ctx.append(contentsOf: [t], to: \.history)
+        case .notes(let t):             ctx.append(contentsOf: [t], to: \.notes)
+        case .sourceText(let t):        ctx.append(contentsOf: [t], to: \.sourceText)
+        case .rhythm(let t):            ctx.append(contentsOf: [t], to: \.rhythm)
+        case .transcription(let t):     ctx.append(contentsOf: [t], to: \.transcription)
         case .instruction(let t):
             let parts = t.value.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
             if parts.first?.lowercased() == "linebreak" {
@@ -2276,6 +2294,25 @@ private struct TuneContext {
     // I:linebreak parsed per ABC 2.2 §9.2 — default is I:linebreak <EOL> $
     var linebreakChars: Set<Character> = ["$"] // $ and/or !
     var linebreakOnEOL: Bool = true            // <EOL> token
+    /// The repeatable text fields still holding the file header's lines (issue #256).  A
+    /// tune's first field of one of these kinds replaces the file header's lines and its
+    /// later ones add to it, as abcm2ps does: a tune with its own `C:` has its own composer.
+    var inherited: Set<PartialKeyPath<TuneContext>> = []
+
+    /// Every repeatable text field the file header may set.
+    static var repeatableFields: Set<PartialKeyPath<TuneContext>> {
+        [\TuneContext.composer, \TuneContext.origins, \TuneContext.area, \TuneContext.book,
+         \TuneContext.discography, \TuneContext.fileURL, \TuneContext.group,
+         \TuneContext.history, \TuneContext.notes, \TuneContext.sourceText,
+         \TuneContext.rhythm, \TuneContext.transcription]
+    }
+
+    /// Adds `values` to `field`, first dropping the file header's lines if they are still
+    /// standing there.
+    mutating func append<T>(contentsOf values: [T], to field: WritableKeyPath<TuneContext, [T]>) {
+        if inherited.remove(field) != nil { self[keyPath: field] = [] }
+        self[keyPath: field].append(contentsOf: values)
+    }
 }
 
 // MARK: - Orientation requests

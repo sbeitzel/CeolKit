@@ -4,6 +4,21 @@ import Foundation
 // MARK: - Internal geometry
 
 /// Stem geometry returned by `emitStem` so the caller can draw beam strokes.
+/// One note of a beam group as `emitBeamGroup` needs it: where its stem is, how many beams
+/// it carries, and how many augmentation dots it has, which decide where a stub points.
+private struct BeamEntry {
+    let stem:      StemInfo
+    let beamCount: Int
+    let dots:      Int
+    /// How many beams run through a `!beambr1!`/`!beambr2!` break before this note (#243).
+    let beamBreak: Int?
+
+    /// Whether beam level `level` (0 for the primary beam) stops before this note.
+    func breaksBeam(atLevel level: Int) -> Bool {
+        beamBreak.map { level >= $0 } ?? false
+    }
+}
+
 private struct StemInfo {
     let stemX:     Double  // x of the stem stroke's centreline
     let stemTipY:  Double  // y of the tip (the end away from the notehead)
@@ -358,7 +373,7 @@ struct SVGEmitter: Sendable {
             let absDur = absoluteDuration(note.duration, unitNoteLength: unitNoteLength)
             return CollisionHead(voiceIndex: event.voiceIndex, staffPos: staffPos,
                                  glyph: .notehead(absoluteDuration: absDur),
-                                 isDotted: isDotted(absDur),
+                                 dots: augmentationDots(note.duration, unitNoteLength: unitNoteLength),
                                  accidental: note.displayedAccidental,
                                  stemUp: stemsUp(direction, staffPos: staffPos))
         }
@@ -869,10 +884,11 @@ struct SVGEmitter: Sendable {
                 }
 
                 let right = AnnotationBand.texts(in: annotations, at: .right)
-                let dotted = notes.contains {
-                    isDotted(absoluteDuration($0.duration, unitNoteLength: measure.unitNoteLength))
-                }
-                let rightX = x + noteheadWidth() + gap + (dotted ? s : 0)
+                let dots = notes.map {
+                    augmentationDots($0.duration, unitNoteLength: measure.unitNoteLength)
+                }.max() ?? 0
+                let dotAllowance = dots > 0 ? s + Double(dots - 1) * augmentationDotStep() : 0
+                let rightX = x + noteheadWidth() + gap + dotAllowance
                 for (i, text) in right.enumerated() {
                     draw(text, style: annotationStyle, x: rightX, y: sideY(i, of: right.count))
                 }
@@ -1238,11 +1254,11 @@ struct SVGEmitter: Sendable {
         // where (issue #79).  Empty everywhere but on a shared staff.
         let placements = collisionPlacements(in: measure)
 
-        // Beam accumulator: per-note (StemInfo, beamCount) pairs for the current beam run,
+        // Beam accumulator: per-note (StemInfo, beamCount, dots) entries for the current beam run,
         // one run per voice of the staff.  A shared staff interleaves its voices in one event
         // stream, so a single accumulator would take a `.start` in one voice as the end of
         // the other's open run and beam the two together (#78).
-        var pendingBeams: [Int: [(stem: StemInfo, beamCount: Int)]] = [:]
+        var pendingBeams: [Int: [BeamEntry]] = [:]
         // Grace note beam tip Y for the note that immediately follows, per voice for the same
         // reason; reset after each non-grace event of that voice.
         var lastGraceBeamY: [Int: Double] = [:]
@@ -1297,11 +1313,14 @@ struct SVGEmitter: Sendable {
             if let info = stemInfo {
                 stemEnds[index] = StemEnd(y: info.stemTipY, up: info.stemUp)
             }
-            if let info = stemInfo, let note = noteFrom(event) {
-                let bc = requiredBeamCount(absoluteDuration(note.duration,
+            if let info = stemInfo, let stemmed = stemmed(event) {
+                let bc = requiredBeamCount(absoluteDuration(stemmed.duration,
                                                             unitNoteLength: measure.unitNoteLength))
-                let entry = (stem: info, beamCount: bc)
-                switch note.beam {
+                let entry = BeamEntry(stem: info, beamCount: bc,
+                                      dots: augmentationDots(stemmed.duration,
+                                                             unitNoteLength: measure.unitNoteLength),
+                                      beamBreak: beamBreak(event))
+                switch stemmed.beam {
                 case .start:
                     flushBeam(voice: voice)  // safety: shouldn't have an open group here
                     pendingBeams[voice] = [entry]
@@ -1467,7 +1486,7 @@ struct SVGEmitter: Sendable {
 
     /// Whether `members` are the notes of one beam group, all of it and nothing else.
     private func isOneBeamGroup(_ members: [Int], in measure: ResolvedMeasure) -> Bool {
-        let beams = members.compactMap { noteFrom(measure.events[$0])?.beam }
+        let beams = members.compactMap { stemmed(measure.events[$0])?.beam }
         guard beams.count == members.count, beams.count >= 2,
               beams.first == .start, beams.last == .end else { return false }
         return beams.dropFirst().dropLast().allSatisfy { $0 == .middle }
@@ -1483,6 +1502,30 @@ struct SVGEmitter: Sendable {
     private func noteFrom(_ event: ResolvedEvent) -> Note? {
         if case .note(let n) = event.kind { return n }
         return nil
+    }
+
+    /// What one stem is drawn for — a note, or a chord, whose notes share one (#233) — with
+    /// the beam state and duration of that stem and the staff positions of its noteheads.
+    private func stemmed(_ event: ResolvedEvent) -> (beam: BeamState, duration: Fraction,
+                                                      positions: [Int])? {
+        switch event.kind {
+        case .note(let n):
+            return (n.beam, n.duration, [staffPos(for: n.pitch, clef: event.clef)])
+        case .chord(let c):
+            return (c.beam, c.duration, c.notes.map { staffPos(for: $0.pitch, clef: event.clef) })
+        default:
+            return nil
+        }
+    }
+
+    /// How many beams run through a beam break written on `event`, if it is a note or chord
+    /// that carries one.
+    private func beamBreak(_ event: ResolvedEvent) -> Int? {
+        switch event.kind {
+        case .note(let n):  return n.beamBreak
+        case .chord(let c): return c.beamBreak
+        default:            return nil
+        }
     }
 
     /// The stem direction for each beamed note of `measure`, and each unbeamed note on the
@@ -1505,9 +1548,9 @@ struct SVGEmitter: Sendable {
         var open: [Int: [Int]] = [:]
         var groups: [[Int]] = []
         for (index, event) in measure.events.enumerated() {
-            guard let note = noteFrom(event) else { continue }
+            guard let beam = stemmed(event)?.beam else { continue }
             let voice = event.voiceIndex
-            switch note.beam {
+            switch beam {
             case .start:
                 if let g = open.removeValue(forKey: voice) { groups.append(g) }
                 open[voice] = [index]
@@ -1528,15 +1571,11 @@ struct SVGEmitter: Sendable {
         let middleLine = 4
         var result: [Int: StemDirection] = [:]
         for (index, event) in measure.events.enumerated() {
-            guard let note = noteFrom(event) else { continue }
+            guard let stemmed = stemmed(event) else { continue }
             let direction = resolvedStemDirection(forVoice: event.voiceIndex)
             let part = PartKey(staff: staffIndex, voice: event.voiceIndex)
             if let group = groupAt[index] {
-                let positions = group.compactMap { member in
-                    noteFrom(measure.events[member]).map {
-                        staffPos(for: $0.pitch, clef: measure.events[member].clef)
-                    }
-                }
+                let positions = group.flatMap { self.stemmed(measure.events[$0])?.positions ?? [] }
                 let up: Bool
                 switch direction {
                 case .up:   up = true
@@ -1547,15 +1586,24 @@ struct SVGEmitter: Sendable {
                     for member in group { result[member] = up ? .up : .down }
                 }
                 lastStemUp[part] = up
-            } else if note.beam == .single {
-                let position = staffPos(for: note.pitch, clef: event.clef)
+            } else if stemmed.beam == .single {
+                let positions = stemmed.positions
                 let up: Bool
-                if direction == .auto && position == middleLine {
+                if direction == .auto && positions.count > 1 {
+                    // A chord is decided by its outer notes, and where they balance by all of
+                    // them; where those balance too, it follows the stem before (#233).
+                    var balance = positions.min()! + positions.max()! - 2 * middleLine
+                    if balance == 0 {
+                        balance = positions.reduce(0, +) - positions.count * middleLine
+                    }
+                    up = balance == 0 ? (lastStemUp[part] ?? true) : balance < 0
+                    result[index] = up ? .up : .down
+                } else if direction == .auto && positions[0] == middleLine {
                     // The middle line is the same tie-break for a lone note (#221).
                     up = lastStemUp[part] ?? true
                     result[index] = up ? .up : .down
                 } else {
-                    up = stemsUp(direction, staffPos: position)
+                    up = stemsUp(direction, staffPos: positions[0])
                 }
                 lastStemUp[part] = up
             }
@@ -1573,7 +1621,7 @@ struct SVGEmitter: Sendable {
     /// Draws a beam group's stems and beams, and returns the y its outermost beam runs at,
     /// or `nil` where there was no group to draw.
     @discardableResult
-    private func emitBeamGroup(_ entries: [(stem: StemInfo, beamCount: Int)],
+    private func emitBeamGroup(_ entries: [BeamEntry],
                                builder: inout SVGBuilder) -> Double? {
         guard entries.count >= 2 else { return nil }
         let first = entries.first!.stem
@@ -1600,8 +1648,9 @@ struct SVGEmitter: Sendable {
         }
 
         // Draw beam levels. Level 0 always spans all notes. Higher levels span only
-        // consecutive notes with sufficient beam count; isolated notes at a higher level
-        // get a stub beam pointing toward the nearest neighbor.
+        // consecutive notes with sufficient beam count, and stop before a note that carries
+        // a beam break below them (`!beambr1!`, `!beambr2!`, #243); isolated notes at a
+        // higher level get a stub beam pointing toward the nearest neighbor.
         let maxBeams = entries.map(\.beamCount).max() ?? 1
         for b in 0..<maxBeams {
             let beamY = stemUp
@@ -1617,13 +1666,33 @@ struct SVGEmitter: Sendable {
                                  x2: entries[end].stem.stemX + halfStem,   y2: beamY,
                                  stroke: "black", strokeWidth: beamThick)
                 } else {
-                    // Stub: point right if first in group, otherwise left.
+                    // Stub: the first note's points right and the last note's left.  One in
+                    // the middle points toward the neighbour it is paired with in the rhythm,
+                    // as abcm2ps decides it (`draw_beams`): right where the note before has
+                    // fewer beams than the note after, or as many and fewer dots — so `c` of
+                    // `Bc<e` points at the `e`, and of `B>ce` at the `B` (#240).  A beam break
+                    // overrides that, as it does there: a stub on the note the break comes
+                    // before points right, and one on the note before the break points left.
                     // Cap at 0.75 × staffSize so grace-note-inflated inter-stem distances
                     // don't produce excessively long stubs.
                     let stemX = entries[start].stem.stemX
                     let maxStubW = s * 0.75
+                    let pointsRight: Bool
                     if start == 0 {
-                        let stubW = min((entries[1].stem.stemX - stemX) * 0.5, maxStubW)
+                        pointsRight = true
+                    } else if start == entries.count - 1 {
+                        pointsRight = false
+                    } else if entries[start].breaksBeam(atLevel: b) {
+                        pointsRight = true
+                    } else if entries[start + 1].breaksBeam(atLevel: b) {
+                        pointsRight = false
+                    } else {
+                        let before = entries[start - 1], after = entries[start + 1]
+                        pointsRight = before.beamCount < after.beamCount
+                            || (before.beamCount == after.beamCount && before.dots < after.dots)
+                    }
+                    if pointsRight {
+                        let stubW = min((entries[start + 1].stem.stemX - stemX) * 0.5, maxStubW)
                         builder.line(x1: stemX - halfStem, y1: beamY, x2: stemX + stubW, y2: beamY,
                                      stroke: "black", strokeWidth: beamThick)
                     } else {
@@ -1637,7 +1706,12 @@ struct SVGEmitter: Sendable {
             var runStart: Int? = nil
             for i in 0..<entries.count {
                 if entries[i].beamCount > b {
-                    if runStart == nil { runStart = i }
+                    if let start = runStart, entries[i].breaksBeam(atLevel: b) {
+                        emitRun(from: start, to: i - 1)
+                        runStart = i
+                    } else if runStart == nil {
+                        runStart = i
+                    }
                 } else if let start = runStart {
                     emitRun(from: start, to: i - 1)
                     runStart = nil
@@ -1789,13 +1863,31 @@ struct SVGEmitter: Sendable {
                      voiceIndex: separateRests ? event.voiceIndex : nil,
                      builder: &builder)
         case .chord(let c):
+            let placementOf = { (i: Int) in i < placements.count ? placements[i] : .unmoved }
             for (i, note) in c.notes.enumerated() {
                 emitNote(note, clef: event.clef, x: event.origin.x, topStaffY: topStaffY, bottomStaffY: bottomStaffY,
                          unitNoteLength: unitNoteLength, stemDirection: stem,
                          precedingGraceBeamY: precedingGraceBeamY,
-                         placement: i < placements.count ? placements[i] : .unmoved,
+                         placement: placementOf(i), drawsStem: false,
                          builder: &builder)
             }
+            // The chord's one stem (#233) leaves the notehead farthest from its tip and is
+            // measured from the one nearest, so it runs the full length past every head.
+            let absDur = absoluteDuration(c.duration, unitNoteLength: unitNoteLength)
+            let positions = c.notes.map { staffPos(for: $0.pitch, clef: event.clef) }
+            guard absDur < 1.0, let low = positions.indices.min(by: { positions[$0] < positions[$1] }),
+                  let high = positions.indices.max(by: { positions[$0] < positions[$1] }) else {
+                return nil
+            }
+            let up = stemsUp(stem, staffPos: (positions[low] + positions[high]) / 2)
+            let (base, tip) = up ? (low, high) : (high, low)
+            return emitStem(staffPos: positions[base],
+                            noteheadY: noteY(staffPos: positions[base], bottomStaffY: bottomStaffY),
+                            x: event.origin.x + placementOf(base).dx,
+                            notehead: noteheadGlyph(absoluteDuration: absDur), absDur: absDur,
+                            beamState: c.beam, direction: up ? .up : .down,
+                            tipNoteheadY: noteY(staffPos: positions[tip], bottomStaffY: bottomStaffY),
+                            builder: &builder)
         case .grace:
             break // handled in emitMeasure to capture stem-tip Y
         case .tuplet, .spacer, .directiveAnchor:
@@ -1827,6 +1919,7 @@ struct SVGEmitter: Sendable {
                           unitNoteLength: Fraction, stemDirection: StemDirection,
                           precedingGraceBeamY: Double? = nil,
                           placement: HeadPlacement = .unmoved,
+                          drawsStem: Bool = true,
                           builder: inout SVGBuilder) -> StemInfo? {
         let staffPos  = self.staffPos(for: note.pitch, clef: clef)
         let y         = noteY(staffPos: staffPos, bottomStaffY: bottomStaffY)
@@ -1849,10 +1942,11 @@ struct SVGEmitter: Sendable {
                                builder: &builder)
             }
 
-            if isDotted(absDur) {
-                emitAugmentationDot(x: headX, noteheadY: y, staffPos: staffPos, fontSize: fontSize,
-                                    dotX: placement.dotDX.map { x + $0 }, dotDY: placement.dotDY ?? 0,
-                                    builder: &builder)
+            let dots = augmentationDots(note.duration, unitNoteLength: unitNoteLength)
+            if dots > 0 {
+                emitAugmentationDots(dots, x: headX, noteheadY: y, staffPos: staffPos, fontSize: fontSize,
+                                     dotX: placement.dotDX.map { x + $0 }, dotDY: placement.dotDY ?? 0,
+                                     builder: &builder)
             }
         }
 
@@ -1860,7 +1954,7 @@ struct SVGEmitter: Sendable {
                         fontSize: fontSize, precedingGraceBeamY: precedingGraceBeamY, builder: &builder)
 
         var stemInfo: StemInfo?
-        if absDur < 1.0 {
+        if absDur < 1.0 && drawsStem {
             stemInfo = emitStem(staffPos: staffPos, noteheadY: y, x: headX, notehead: glyph,
                                 absDur: absDur,
                                 beamState: note.beam, direction: stemDirection, builder: &builder)
@@ -1872,37 +1966,38 @@ struct SVGEmitter: Sendable {
         return stemInfo
     }
 
+    /// Draws `count` augmentation dots in a row, the first beside the notehead.
+    ///
     /// - Parameters:
-    ///   - dotX: where the dot goes when its column moved it out of its default place beside
-    ///     the notehead — the dots of a shared staff's column are drawn in one strip.
-    ///   - dotDY: how far the dot moves from where the notehead alone would put it, positive
+    ///   - dotX: where the first dot goes when its column moved it out of its default place
+    ///     beside the notehead — the dots of a shared staff's column are drawn in one strip.
+    ///   - dotDY: how far the dots move from where the notehead alone would put them, positive
     ///     downward, where another voice's dot has taken that spot.
-    private func emitAugmentationDot(x: Double, noteheadY: Double, staffPos: Int,
+    private func emitAugmentationDots(_ count: Int, x: Double, noteheadY: Double, staffPos: Int,
                                       fontSize: Double, dotX: Double? = nil, dotDY: Double = 0,
                                       builder: inout SVGBuilder) {
         let noteW   = noteheadWidth()
         let dotGap  = noteW * 0.2
+        let step    = augmentationDotStep()
 
         // If the notehead sits on a line (even staffPos), shift dot up half a space to a space.
         let dotY = staffPos.isMultiple(of: 2)
             ? noteheadY - config.staffSize / 2.0
             : noteheadY
-        builder.text(String(SMuFLGlyph.augmentationDot.character),
-                     x: dotX ?? (x + noteW + dotGap), y: dotY + dotDY,
-                     fontFamily: "Bravura", fontSize: fontSize)
+        let firstX = dotX ?? (x + noteW + dotGap)
+        for i in 0..<count {
+            builder.text(String(SMuFLGlyph.augmentationDot.character),
+                         x: firstX + Double(i) * step, y: dotY + dotDY,
+                         fontFamily: "Bravura", fontSize: fontSize)
+        }
     }
 
-    private func isDotted(_ absDur: Double) -> Bool {
-        // A dotted value has the form (2^n - 1) / 2^(n-1).  In practice: 3/4, 3/8, 3/16 …
-        // Equivalently, when rounded to the nearest power of two, the "plain" duration differs.
-        // Simple check: absDur * 4 is an integer of the form 4k+2 (i.e. odd when halved).
-        // Handles 3/4 (dotted half), 3/8 (dotted quarter), 3/16 (dotted eighth), 3/32 (dotted 16th).
-        let scaled = absDur * 64.0
-        let rounded = Int(scaled.rounded())
-        // A dotted note: numerator = 3 * 2^k for some k ≥ 0  →  rounded % 3 == 0 but not a plain 2^n.
-        guard rounded > 0 else { return false }
-        if (rounded & (rounded - 1)) == 0 { return false }  // plain power of two → not dotted
-        return rounded % 3 == 0
+    /// How many augmentation dots `duration` is drawn with, judged on its absolute value so
+    /// that any `L:` gives the same answer.
+    private func augmentationDots(_ duration: Fraction, unitNoteLength: Fraction) -> Int {
+        ColumnMetrics.augmentationDots(Fraction(
+            numerator: duration.numerator * unitNoteLength.numerator,
+            denominator: duration.denominator * unitNoteLength.denominator))
     }
 
     /// - Parameter direction: The direction resolved for this note's voice — its own
@@ -1916,6 +2011,7 @@ struct SVGEmitter: Sendable {
     /// is where it always was.
     private func emitStem(staffPos: Int, noteheadY: Double, x: Double, notehead: SMuFLGlyph,
                            absDur: Double, beamState: BeamState, direction: StemDirection,
+                           tipNoteheadY: Double? = nil,
                            builder: inout SVGBuilder) -> StemInfo {
         let s            = config.staffSize
         let stemUp       = stemsUp(direction, staffPos: staffPos)
@@ -1928,12 +2024,14 @@ struct SVGEmitter: Sendable {
         let stemTop: Double
         let stemBottom: Double
 
+        // A chord's stem is measured from its other outer notehead, not the one it leaves.
+        let tipFromY   = tipNoteheadY ?? noteheadY
         if stemUp {
-            stemTop    = noteheadY - stemLength
+            stemTop    = tipFromY - stemLength
             stemBottom = stemBaseY
         } else {
             stemTop    = stemBaseY
-            stemBottom = noteheadY + stemLength
+            stemBottom = tipFromY + stemLength
         }
 
         // Only draw the stem immediately for unbeamed notes.
@@ -2387,5 +2485,11 @@ struct SVGEmitter: Sendable {
     private func noteheadWidth() -> Double {
         metadata.glyphBBoxes["noteheadBlack"].map { $0.width * config.staffSize }
             ?? config.staffSize * 1.2
+    }
+
+    /// Matches ``ColumnMetrics/augmentationDotStep()``, which reserves the room.
+    private func augmentationDotStep() -> Double {
+        (metadata.glyphBBoxes["augmentationDot"].map { $0.width * config.staffSize }
+            ?? config.staffSize * 0.4) + noteheadWidth() * 0.2
     }
 }

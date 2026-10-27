@@ -153,7 +153,7 @@ enum VoiceAligner {
                         duration: Fraction(numerator: 1, denominator: 1),
                         decorations: [], source: source)
         let filler = Measure(openingBar: bar, events: [.rest(rest)], closingBar: bar,
-                             endingNumber: nil, source: source,
+                             source: source,
                              unitNoteLength: unitNoteLength)
         return measures + Array(repeating: filler, count: width - measures.count)
     }

@@ -61,6 +61,14 @@ public enum DiagnosticCode: String, Codable, Sendable {
     /// ``AnnotationPosition/chordLine``, and never played or transposed; `"^…"` says the
     /// same thing without relying on the guess.
     case unrecognisedChordSymbol
+    /// An information field written where ABC v2.2 does not allow it — any field between
+    /// tunes, which §2.2.2 does not count as the file header, or a field such as `T:` that the
+    /// file header may not hold.  It is ignored.
+    case misplacedField
+    /// A `!beambr1!` or `!beambr2!` written on something other than a note or chord — a
+    /// rest, say — where there is no beam for it to break.  It is dropped, as abcm2ps
+    /// drops it.
+    case misplacedBeamBreak
     // Fields
     case unknownField
     case malformedFieldPayload
@@ -108,6 +116,10 @@ public enum DiagnosticCode: String, Codable, Sendable {
     /// A `%%newpage` stands after the last tune in the file, so there is nothing left for it
     /// to move onto a fresh page.  It is dropped.
     case pageBreakAfterLastTune
+    /// A stylesheet directive stands after the last tune in the file.  A directive written
+    /// between tunes governs the tunes that follow it (issue #257), and none does, so it is
+    /// dropped.
+    case directiveAfterLastTune
     /// A `%%landscape` was written where no `%%newpage` breaks, so there is no page boundary
     /// for the new orientation to start at.  A page size cannot change part-way down a page,
     /// so the directive is dropped rather than reaching forward to some later break the

@@ -10,10 +10,15 @@ struct SemanticPass {
     func build() -> (Score, [Diagnostic]) {
         var diagnostics = file.diagnostics
 
-        // Process file-preamble directives: collect ceolkit directives to promote to first tune.
-        // filePreamble contains both the initial preamble and any inter-tune gaps (lines between
-        // tunes that fall outside any tune header), so scanning it here covers both.
+        // Process file-preamble directives.  filePreamble contains both the file header and
+        // any inter-tune gaps (lines between tunes that fall outside any tune header), so
+        // scanning it here covers both — but they are attached differently.  The file header's
+        // are promoted to the first tune; one written in a gap is attached to the tune that
+        // follows it, because it governs that tune and the ones after it, never the ones
+        // before (issue #257).  Both are at ``Scope/fileGlobal``: a renderer carries them
+        // forward from the tune they are attached to.
         var preambleCeolKitDirectives: [CeolKitDirectiveScope] = []
+        var gapCeolKitDirectives: [CeolKitDirectiveScope] = []
         // `%%newpage` met outside any tune, in source order.  Unlike everything else in the
         // preamble these are *not* promoted to the first tune: a break written in the gap
         // between two tunes belongs to the one that follows it, so each is matched to its
@@ -76,6 +81,10 @@ struct SemanticPass {
                         // the break in front of the tune that follows it (issue #158).
                         outsideOrientations.append(
                             OrientationRequest(landscape: on, stave: 0, source: src))
+                    } else if src.line > firstTuneLine {
+                        gapCeolKitDirectives.append(
+                            CeolKitDirectiveScope(directive: d, scope: .fileGlobal, source: src)
+                        )
                     } else {
                         preambleCeolKitDirectives.append(
                             CeolKitDirectiveScope(directive: d, scope: .fileGlobal, source: src)
@@ -107,6 +116,40 @@ struct SemanticPass {
 
         let fileSource = file.tunes.first?.source ?? .emptySourceRange
 
+        // The information fields of the file header are the defaults every tune starts from
+        // (§2.2.2; #254, #256).  A tune overrides them for itself alone, and the next tune
+        // starts again from the file header.  `I:` is a directive there and is read with the
+        // `%%` lines above; `r:` is a remark.  A field the file header may not hold, or any
+        // field written between tunes — §2.2.2 has the file header only at the start of the
+        // file — is ignored with a warning.
+        var fileHeader = TuneContext()
+        for line in file.filePreamble {
+            guard case .informationField(let code, let payload, let src) = line,
+                  !"Ir".contains(code) else { continue }
+            if src.line > firstTuneLine {
+                diagnostics.append(Diagnostic(
+                    severity: .warning, code: .misplacedField,
+                    message: "\(code): between tunes is ignored; it is allowed only in the file "
+                        + "header, before the first tune, or in a tune",
+                    source: src
+                ))
+                continue
+            }
+            let (field, fieldDiags) = parseField(code: code, payload: payload, source: src)
+            diagnostics += fieldDiags
+            if case .unknown = field { continue }
+            if Self.fileHeaderFieldCodes.contains(code) {
+                applyHeaderField(field, to: &fileHeader, diagnostics: &diagnostics)
+            } else {
+                diagnostics.append(Diagnostic(
+                    severity: .warning, code: .misplacedField,
+                    message: "\(code): is not allowed in the file header and is ignored",
+                    source: src
+                ))
+            }
+        }
+        fileHeader.inherited = TuneContext.repeatableFields
+
         // The footer the *file header* states: the last one written before any tune began.
         // A file with no tunes has nothing but a file header, so every one of them counts.
         let fileFooter = outsideFooters.last { $0.line < firstTuneLine }?.template
@@ -130,7 +173,8 @@ struct SemanticPass {
             let ownedBreaks = preambleBreaks.filter {
                 $0.source.line > previousTuneLine && $0.source.line < tuneLine
             }
-            let (tune, tuneDiags, tuneOrientations) = buildTune(abcTune, dialect: dialect)
+            let (tune, tuneDiags, tuneOrientations) = buildTune(abcTune, dialect: dialect,
+                                                                fileHeader: fileHeader)
             diagnostics += tuneDiags
             // Every `%%landscape` this tune can be asked to honour, in source order: the ones
             // written in the gap in front of it — which break before its first stave, exactly
@@ -138,11 +182,14 @@ struct SemanticPass {
             let gapOrientations = outsideOrientations.filter {
                 $0.source.line > previousTuneLine && $0.source.line < tuneLine
             }
+            let gapDirectives = gapCeolKitDirectives.filter {
+                $0.source.line > previousTuneLine && $0.source.line < tuneLine
+            }
             previousTuneLine = tuneLine
             let breaks = resolvingOrientations(gapOrientations + tuneOrientations,
                                                against: ownedBreaks + tune.pageBreaks,
                                                into: &diagnostics)
-            let extraDirectives = idx == 0 ? preambleCeolKitDirectives : []
+            let extraDirectives = (idx == 0 ? preambleCeolKitDirectives : []) + gapDirectives
             let filePlans = fileStaffPlans(
                 for: tune,
                 from: outsidePlans.last { $0.line < tuneLine }?.plan,
@@ -178,6 +225,15 @@ struct SemanticPass {
             diagnostics.append(Diagnostic(
                 severity: .info, code: .pageBreakAfterLastTune,
                 message: "%%newpage after the last tune has nothing to break before; ignored",
+                source: orphan.source
+            ))
+        }
+
+        // Nor has any other directive past the last tune a tune left to govern.
+        for orphan in gapCeolKitDirectives where orphan.source.line > previousTuneLine {
+            diagnostics.append(Diagnostic(
+                severity: .info, code: .directiveAfterLastTune,
+                message: "Directive after the last tune has no tune left to apply to; ignored",
                 source: orphan.source
             ))
         }
@@ -320,10 +376,18 @@ struct SemanticPass {
 
     // MARK: - Tune builder
 
-    private func buildTune(_ abcTune: ABCTune, dialect: Dialect)
+    /// The fields ABC v2.2 §3 allows in the file header and that set a default for the tunes.
+    /// `I:` is allowed too, but is read as a directive; `r:` is a remark.
+    private static let fileHeaderFieldCodes: Set<Character> = [
+        "L", "M", "m", "U", "A", "B", "C", "D", "F", "G", "H", "N", "O", "R", "S", "Z",
+    ]
+
+    /// - Parameter fileHeader: The fields of the file header, which the tune starts from.
+    private func buildTune(_ abcTune: ABCTune, dialect: Dialect,
+                           fileHeader: TuneContext = TuneContext())
     -> (Tune, [Diagnostic], [OrientationRequest]) {
         var diagnostics: [Diagnostic] = []
-        var ctx = TuneContext()
+        var ctx = fileHeader
 
         for field in abcTune.headerFields {
             applyHeaderField(field, to: &ctx, diagnostics: &diagnostics)
@@ -448,24 +512,24 @@ struct SemanticPass {
         case .userSymbol(let ch, let d, _): ctx.userSymbols[ch] = d
         case .macro(let pat, let exp, let src):
             ctx.macros.append(MacroDefinition(pattern: pat, expansion: exp, source: src))
-        case .composer(let t):          ctx.composer.append(t)
+        case .composer(let t):          ctx.append(contentsOf: [t], to: \.composer)
         case .words(let t):             ctx.words.append(t)
         case .origin(let t):
             let parts = t.value.components(separatedBy: ";")
                 .map { $0.trimmingCharacters(in: .whitespaces) }
                 .filter { !$0.isEmpty }
-            ctx.origins.append(contentsOf: parts)
-        case .area(let t):              ctx.area.append(t)
-        case .book(let t):              ctx.book.append(t)
-        case .discography(let t):       ctx.discography.append(t)
+            ctx.append(contentsOf: parts, to: \.origins)
+        case .area(let t):              ctx.append(contentsOf: [t], to: \.area)
+        case .book(let t):              ctx.append(contentsOf: [t], to: \.book)
+        case .discography(let t):       ctx.append(contentsOf: [t], to: \.discography)
         case .fileUrl(let t):
-            if let url = URL(string: t.value) { ctx.fileURL.append(url) }
-        case .group(let t):             ctx.group.append(t)
-        case .history(let t):           ctx.history.append(t)
-        case .notes(let t):             ctx.notes.append(t)
-        case .sourceText(let t):        ctx.sourceText.append(t)
-        case .rhythm(let t):            ctx.rhythm.append(t)
-        case .transcription(let t):     ctx.transcription.append(t)
+            ctx.append(contentsOf: URL(string: t.value).map { [$0] } ?? [], to: \.fileURL)
+        case .group(let t):             ctx.append(contentsOf: [t], to: \.group)
+        case .history(let t):           ctx.append(contentsOf: [t], to: \.history)
+        case .notes(let t):             ctx.append(contentsOf: [t], to: \.notes)
+        case .sourceText(let t):        ctx.append(contentsOf: [t], to: \.sourceText)
+        case .rhythm(let t):            ctx.append(contentsOf: [t], to: \.rhythm)
+        case .transcription(let t):     ctx.append(contentsOf: [t], to: \.transcription)
         case .instruction(let t):
             let parts = t.value.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
             if parts.first?.lowercased() == "linebreak" {
@@ -702,9 +766,6 @@ struct SemanticPass {
         ctx: inout BodyContext,
         diagnostics: inout [Diagnostic]
     ) {
-        let prevWasSpace = ctx.lastElementWasSpace(in: voice)
-        ctx.setLastElementWasSpace(false, in: voice)
-
         switch elem {
         case .note(let tok):
             let event = buildNoteEvent(tok, voice: voice, ctx: &ctx)
@@ -716,7 +777,18 @@ struct SemanticPass {
 
         case .rest(let kind, let dur, let src):
             let duration = resolveDuration(dur)
-            let decorations = ctx.flushDecorations(in: voice, source: src)
+            var decorations = ctx.flushDecorations(in: voice, source: src)
+            // A beam break only means something on a note; abcm2ps reports one on a rest
+            // and ignores it (#243).
+            decorations.removeAll { decoration in
+                guard case .beamBreak(let n) = decoration else { return false }
+                diagnostics.append(Diagnostic(
+                    severity: .warning, code: .misplacedBeamBreak,
+                    message: "!beambr\(n)! must be written on a note; it is ignored on a rest",
+                    source: src
+                ))
+                return true
+            }
             let rest = Rest(kind: kind, duration: duration, decorations: decorations, source: src)
             ctx.emit(.rest(rest), in: voice)
 
@@ -740,14 +812,19 @@ struct SemanticPass {
             ctx.flushGrace(source: src, in: voice)
 
         case .decoration(let tok, let src):
-            let decoration = expandDecoration(tok, userSymbols: ctx.userSymbols)
-            // Post-note decoration: if preceded by a space and there's a note in currentEvents,
-            // apply retroactively to the preceding note.
-            if prevWasSpace && ctx.applyDecorationToLastNote(decoration, in: voice) {
-                // Applied retroactively
-            } else {
-                ctx.addPendingDecoration(decoration, in: voice, source: src)
+            guard let decoration = expandDecoration(tok, userSymbols: ctx.userSymbols) else {
+                // A symbol no `U:` defines: abcm2ps reports it as a bad character and ignores
+                // it, which is what a stray character gets here too.
+                if case .shortForm(let ch) = tok {
+                    handleUnknownCharacter(ch, source: src, voice: voice, ctx: &ctx,
+                                           diagnostics: &diagnostics,
+                                           message: "'\(ch)' is not a defined decoration symbol (U:); it is ignored")
+                }
+                break
             }
+            // A decoration belongs to the symbol after it (§4.14), space or no space, as
+            // abcm2ps reads it: `C TD` trills the D (#254).
+            ctx.addPendingDecoration(decoration, in: voice, source: src)
 
         case .annotation(let pos, let text, let src):
             ctx.addPendingAnnotation(Annotation(
@@ -801,7 +878,6 @@ struct SemanticPass {
 
         case .space(let src):
             ctx.emitSpaceBreak(source: src, in: voice)
-            ctx.setLastElementWasSpace(true, in: voice)
 
         case .voiceOverlay:
             break  // read as a run by `walkLine`, which never hands one down here
@@ -810,16 +886,31 @@ struct SemanticPass {
             break  // already handled in resolveBrokenRhythms pre-pass
 
         case .unknown(let ch, let src):
-            if ctx.linebreakChars.contains(ch) {
-                ctx.splitStave(in: voice.primary)
-            } else {
-                let severity: Diagnostic.Severity = options.strictRecovery ? .error : .warning
-                diagnostics.append(Diagnostic(
-                    severity: severity, code: .reservedCharacter,
-                    message: "Unknown element in music body",
-                    source: src
-                ))
-            }
+            handleUnknownCharacter(ch, source: src, voice: voice, ctx: &ctx,
+                                   diagnostics: &diagnostics,
+                                   message: "Unknown element in music body")
+        }
+    }
+
+    /// A character the music body gives no meaning to: an `I:linebreak` character, or else
+    /// something to report and skip.
+    private func handleUnknownCharacter(
+        _ ch: Character,
+        source: SourceRange,
+        voice: VoiceKey,
+        ctx: inout BodyContext,
+        diagnostics: inout [Diagnostic],
+        message: String
+    ) {
+        if ctx.linebreakChars.contains(ch) {
+            ctx.splitStave(in: voice.primary)
+        } else {
+            let severity: Diagnostic.Severity = options.strictRecovery ? .error : .warning
+            diagnostics.append(Diagnostic(
+                severity: severity, code: .reservedCharacter,
+                message: message,
+                source: source
+            ))
         }
     }
 
@@ -1078,7 +1169,8 @@ struct SemanticPass {
                 source: source))
         case "landscape", "flatbeams", "ceolkit:justifylast", "stretchlast", "stretchstaff",
              "ceolkit:scale",
-             "scale", "pagescale", "ceolkit:gracenotespacing", "ceolkit:fontlist", "writefields",
+             "scale", "pagescale", "ceolkit:gracenotespacing", "ceolkit:closevariants",
+             "ceolkit:fontlist", "writefields",
              "dateformat", "footer", "straightflags", "graceslurs",
              _ where TextFontRole(rawValue: name) != nil:
             var tempDiags: [Diagnostic] = []
@@ -1182,6 +1274,15 @@ struct SemanticPass {
                 duration: DurationToken(numerator: dur.numerator * mNum, denominator: dur.denominator * mDen),
                 source: src
             )
+        case .chord(let notes, let src):
+            // The parser has already folded a chord's own length (`[Bd]2`) into each of its
+            // notes, so every note takes the multiplier (#238).
+            return .chord(notes.map { tok in
+                guard case .note(let scaled) = applyDurationMultiplier(multiplier, to: .note(tok)) else {
+                    return tok
+                }
+                return scaled
+            }, source: src)
         default:
             return element
         }
@@ -1629,6 +1730,11 @@ struct SemanticPass {
             diagnostics.append(Diagnostic(severity: .warning, code: .invalidGraceNoteSpacing,
                 message: "%%ceolkit:gracenotespacing expects a number (got '\(trimmed)')", source: source))
             return nil
+        case "ceolkit:closevariants":
+            if let value = parseLogical(trimmed) { return .closeVariants(value) }
+            diagnostics.append(Diagnostic(severity: .warning, code: .unknownDirective,
+                message: "%%ceolkit:closevariants expects 'true' or 'false'", source: source))
+            return nil
         case "landscape":
             if let value = parseLogical(trimmed) { return .landscape(value) }
             diagnostics.append(Diagnostic(severity: .warning, code: .unknownDirective,
@@ -1845,6 +1951,8 @@ struct SemanticPass {
                     layers.append((overlay.source, overlayMeasures))
                 }
                 let barsWritten = measures.count
+                let voiceBreaks = accumulator.staveBreaks(
+                    closingOpenMeasure: barsWritten > accumulator.closedMeasures.count)
                 diagnostics += reconcileOverlays(
                     &measures, with: &layers, voiceId: voiceId,
                     unitNoteLength: accumulator.effectiveUnitNoteLength)
@@ -1852,8 +1960,8 @@ struct SemanticPass {
                 // They are that line's — the source wrote them there — so the boundary
                 // recorded at what used to be the end is no longer a boundary at all.
                 let breaks = measures.count > barsWritten
-                    ? accumulator.staveBreaks.filter { $0.measureIndex < barsWritten }
-                    : accumulator.staveBreaks
+                    ? voiceBreaks.filter { $0.measureIndex < barsWritten }
+                    : voiceBreaks
 
                 var start = 0
                 func appendStaff(through end: Int, evenIfEmpty: Bool = false) {
@@ -1964,7 +2072,6 @@ struct SemanticPass {
         return Measure(openingBar: previous?.closingBar,
                        events: [],
                        closingBar: BarLine(kind: .single, source: src),
-                       endingNumber: nil,
                        source: src,
                        meter: nil,
                        unitNoteLength: unitNoteLength)
@@ -1989,8 +2096,7 @@ struct SemanticPass {
             if !tempos.isEmpty {
                 measures[measures.count - 1] = Measure(
                     openingBar: last.openingBar, events: last.events + tempos,
-                    closingBar: last.closingBar, endingNumber: last.endingNumber,
-                    endingStartIndex: last.endingStartIndex, source: last.source,
+                    closingBar: last.closingBar, endings: last.endings, source: last.source,
                     meter: last.meter, key: last.key, unitNoteLength: last.unitNoteLength)
             }
         }
@@ -2027,7 +2133,7 @@ struct SemanticPass {
                 openingBar: acc.lastBarLine,
                 events: acc.currentEvents,
                 closingBar: finalBar,
-                endingNumber: nil,
+                endings: acc.pendingEndings,
                 source: src,
                 meter: acc.pendingMeter,
                 key: finalKey,
@@ -2073,8 +2179,7 @@ struct SemanticPass {
                 openingBar: m.openingBar,
                 events: resolvedEvents,
                 closingBar: m.closingBar,
-                endingNumber: m.endingNumber,
-                endingStartIndex: m.endingStartIndex,
+                endings: m.endings,
                 source: m.source,
                 meter: m.meter,
                 key: m.key,
@@ -2099,8 +2204,7 @@ struct SemanticPass {
                 openingBar: m.openingBar,
                 events: resolver.resolve(m.events),
                 closingBar: m.closingBar,
-                endingNumber: m.endingNumber,
-                endingStartIndex: m.endingStartIndex,
+                endings: m.endings,
                 source: m.source,
                 meter: m.meter,
                 key: m.key,
@@ -2211,6 +2315,25 @@ private struct TuneContext {
     // I:linebreak parsed per ABC 2.2 §9.2 — default is I:linebreak <EOL> $
     var linebreakChars: Set<Character> = ["$"] // $ and/or !
     var linebreakOnEOL: Bool = true            // <EOL> token
+    /// The repeatable text fields still holding the file header's lines (issue #256).  A
+    /// tune's first field of one of these kinds replaces the file header's lines and its
+    /// later ones add to it, as abcm2ps does: a tune with its own `C:` has its own composer.
+    var inherited: Set<PartialKeyPath<TuneContext>> = []
+
+    /// Every repeatable text field the file header may set.
+    static var repeatableFields: Set<PartialKeyPath<TuneContext>> {
+        [\TuneContext.composer, \TuneContext.origins, \TuneContext.area, \TuneContext.book,
+         \TuneContext.discography, \TuneContext.fileURL, \TuneContext.group,
+         \TuneContext.history, \TuneContext.notes, \TuneContext.sourceText,
+         \TuneContext.rhythm, \TuneContext.transcription]
+    }
+
+    /// Adds `values` to `field`, first dropping the file header's lines if they are still
+    /// standing there.
+    mutating func append<T>(contentsOf values: [T], to field: WritableKeyPath<TuneContext, [T]>) {
+        if inherited.remove(field) != nil { self[keyPath: field] = [] }
+        self[keyPath: field].append(contentsOf: values)
+    }
 }
 
 // MARK: - Orientation requests

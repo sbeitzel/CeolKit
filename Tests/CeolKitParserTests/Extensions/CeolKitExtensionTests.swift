@@ -85,6 +85,51 @@ struct CeolKitExtensionTests {
         }
     }
 
+    @Test("A directive between tunes is attached to the tune after it, not the first (#257)")
+    func gapDirectiveAttachesToFollowingTune() {
+        let abc = """
+        %%ceolkit:pipeformat true
+
+        X:1
+        K:C
+        CDEF|
+
+        %%ceolkit:pipeformat false
+
+        X:2
+        K:C
+        CDEF|
+
+        X:3
+        K:C
+        CDEF|
+        """
+        let tunes = parse(abc).score.tunes
+        let pipeFormats = tunes.map { tune in
+            tune.directives.compactMap { scope -> Bool? in
+                guard case .fileGlobal = scope.scope,
+                      case .pipeFormat(let on) = scope.directive else { return nil }
+                return on
+            }
+        }
+        #expect(pipeFormats == [[true], [false], []])
+    }
+
+    @Test("A directive after the last tune is dropped with an info diagnostic (#257)")
+    func directiveAfterLastTuneIsDropped() {
+        let abc = """
+        X:1
+        K:C
+        CDEF|
+
+        %%ceolkit:pipeformat true
+        """
+        let result = parse(abc)
+        let tune = result.score.firstTune
+        #expect(tune?.directives.isEmpty == true)
+        #expect(result.diagnostics.filter { $0.code == .directiveAfterLastTune }.count == 1)
+    }
+
     // MARK: %%ceolkit:pagenumber
 
     @Test("%%ceolkit:pagenumber 3 attaches pageNumber(3) directive")
@@ -551,6 +596,62 @@ struct CeolKitExtensionTests {
                     "expected invalidGraceNoteSpacing for payload '\(payload)'")
             #expect(graceNoteSpacing(in: result) == nil)
         }
+    }
+
+    // MARK: %%ceolkit:closevariants (issue #237)
+
+    /// The `.closeVariants` directives on every tune, with their scopes, in order.
+    private func closeVariants(in result: ParseResult) -> [(Bool, Scope)] {
+        result.score.tunes.flatMap(\.directives).compactMap {
+            if case .closeVariants(let on) = $0.directive { return (on, $0.scope) }
+            return nil
+        }
+    }
+
+    @Test("%%ceolkit:closevariants in a tune header attaches at tune scope")
+    func closeVariantsInTuneHeader() {
+        let abc = "X:1\nT:T\nM:4/4\nL:1/4\n%%ceolkit:closevariants true\nK:C\nC|"
+        let found = closeVariants(in: parse(abc))
+        #expect(found.count == 1)
+        #expect(found.first?.0 == true)
+        if let scope = found.first?.1, case .tuneGlobal = scope {} else {
+            Issue.record("Expected .tuneGlobal scope, got \(String(describing: found.first?.1))")
+        }
+    }
+
+    @Test("%%ceolkit:closevariants in the file preamble is file-global")
+    func closeVariantsInPreamble() {
+        let abc = "%%ceolkit:closevariants 1\n\nX:1\nT:T\nM:4/4\nL:1/4\nK:C\nC|"
+        let found = closeVariants(in: parse(abc))
+        #expect(found.count == 1)
+        #expect(found.first?.0 == true)
+        if let scope = found.first?.1, case .fileGlobal = scope {} else {
+            Issue.record("Expected .fileGlobal scope, got \(String(describing: found.first?.1))")
+        }
+    }
+
+    @Test("%%ceolkit:closevariants false is kept, so a tune can override the file setting")
+    func closeVariantsFalse() {
+        let abc = "X:1\nT:T\nM:4/4\nL:1/4\n%%ceolkit:closevariants false\nK:C\nC|"
+        #expect(closeVariants(in: parse(abc)).map(\.0) == [false])
+    }
+
+    @Test("%%ceolkit:closevariants in the tune body applies to the tune, not reported as unknown")
+    func closeVariantsInBody() {
+        let abc = "X:1\nT:T\nM:4/4\nL:1/4\nK:C\nCDEC|\n%%ceolkit:closevariants true\nCDEC|"
+        let result = parse(abc)
+        #expect(closeVariants(in: result).map(\.0) == [true])
+        #expect(!result.score.diagnostics.contains { $0.code == .unknownDirective })
+    }
+
+    @Test("%%ceolkit:closevariants with a bad value warns and is dropped")
+    func closeVariantsBadValue() {
+        let abc = "X:1\nT:T\nM:4/4\nL:1/4\n%%ceolkit:closevariants maybe\nK:C\nC|"
+        let result = parse(abc)
+        #expect(closeVariants(in: result).isEmpty)
+        #expect(result.score.diagnostics.contains {
+            $0.severity == .warning && $0.message.contains("closevariants")
+        })
     }
 
     // MARK: %%ceolkit:label (issue #168)

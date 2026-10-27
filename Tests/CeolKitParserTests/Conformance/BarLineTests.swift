@@ -83,7 +83,7 @@ struct BarLineTests {
     func firstEnding() {
         let result = parse(barTune("|:CDEF|1CDEF:|2GABC:|"))
         let measures = result.score.firstTune?.singleVoiceMeasures ?? []
-        let ending1 = measures.first(where: { $0.endingNumber?.contains(1) == true })
+        let ending1 = measures.first(where: { m in m.endings.contains { $0.numbers.contains(1) } })
         #expect(ending1 != nil)
     }
 
@@ -91,7 +91,7 @@ struct BarLineTests {
     func secondEnding() {
         let result = parse(barTune("|:CDEF|1CDEF:|2GABC:|"))
         let measures = result.score.firstTune?.singleVoiceMeasures ?? []
-        let ending2 = measures.first(where: { $0.endingNumber?.contains(2) == true })
+        let ending2 = measures.first(where: { m in m.endings.contains { $0.numbers.contains(2) } })
         #expect(ending2 != nil)
     }
 
@@ -99,7 +99,7 @@ struct BarLineTests {
     func bracketFirstEnding() {
         let result = parse(barTune("|:CDEF[1CDEF:|[2GABC:|"))
         let measures = result.score.firstTune?.singleVoiceMeasures ?? []
-        let ending1 = measures.first(where: { $0.endingNumber?.contains(1) == true })
+        let ending1 = measures.first(where: { m in m.endings.contains { $0.numbers.contains(1) } })
         #expect(ending1 != nil)
     }
 
@@ -111,12 +111,12 @@ struct BarLineTests {
         let result = parse(barTune("CDEF|GABC|1CDEF:|2GABC|]"))
         let measures = result.score.firstTune?.singleVoiceMeasures ?? []
         #expect(measures.count == 4)
-        #expect(measures.count(where: { $0.endingNumber != nil }) == 2)
+        #expect(measures.count(where: { !$0.endings.isEmpty }) == 2)
         // The bar that the ending number followed keeps its own closing bar line.
         guard measures.count == 4 else { return }
         #expect(measures[1].closingBar.kind == .single)
-        #expect(measures[1].endingNumber == nil)
-        #expect(measures[2].endingNumber?.contains(1) == true)
+        #expect(measures[1].endings.isEmpty)
+        #expect(measures[2].endings.map(\.numbers) == [[1]])
     }
 
     @Test("|1,2 and |1-3 keep their bar line and their whole list")
@@ -124,7 +124,7 @@ struct BarLineTests {
         for (body, expected) in [("CDEF|1,2 GABC|]", [1, 2]), ("CDEF|1-3 GABC|]", [1, 2, 3])] {
             let measures = parse(barTune(body)).score.firstTune?.singleVoiceMeasures ?? []
             #expect(measures.count == 2, "\(body) gave \(measures.count) measures")
-            #expect(measures.last?.endingNumber == expected)
+            #expect(measures.last?.endings.map(\.numbers) == [expected])
         }
     }
 
@@ -137,9 +137,9 @@ struct BarLineTests {
             .singleVoiceMeasures ?? []
         #expect(measures.count == 3)
         guard measures.count == 3 else { return }
-        #expect(measures[1].endingNumber == [1])
+        #expect(measures[1].endings.map(\.numbers) == [[1]])
         // `G`, `A` — then the ending, which opens at the space before `B`.
-        let start = measures[1].endingStartIndex
+        let start = measures[1].endings.first?.startIndex
         #expect(start == 2)
         let firstNote = measures[1].events.dropFirst(start ?? 0).first {
             if case .note = $0 { return true }
@@ -151,8 +151,7 @@ struct BarLineTests {
             Issue.record("no note after the ending start")
         }
         // `[2` written against the bar line starts where `:|2` would: at the bar.
-        #expect(measures[2].endingNumber == [2])
-        #expect(measures[2].endingStartIndex == nil)
+        #expect(measures[2].endings == [VariantEnding(numbers: [2], startIndex: nil)])
     }
 
     @Test("Endings written at a bar line start at the bar", arguments: [
@@ -162,17 +161,64 @@ struct BarLineTests {
     ])
     func barLineEndingsHaveNoStartIndex(body: String) {
         let measures = parse(barTune(body)).score.firstTune?.singleVoiceMeasures ?? []
-        let endings = measures.filter { $0.endingNumber != nil }
+        let endings = measures.flatMap(\.endings)
         #expect(endings.count == 2)
-        #expect(endings.allSatisfy { $0.endingStartIndex == nil })
+        #expect(endings.allSatisfy { $0.startIndex == nil })
     }
 
-    @Test("Measures without ending numbers have nil endingNumber")
+    /// A bar whose variants differ only in its second half: the music before `[1` is
+    /// played every time, and each ending runs on to the next — one measure, two endings.
+    @Test("Two endings in one bar are both kept, each where it starts")
+    func twoEndingsInOneMeasure() {
+        let body = "|{gcd}c2{g}B<{d}A [1 {g}B2{g}c<e [2 {g}B>e{g}A>B |"
+        let measures = parse(barTune(body)).score.firstTune?.singleVoiceMeasures ?? []
+        #expect(measures.count == 1)
+        guard let measure = measures.first else { return }
+        #expect(measure.endings.map(\.numbers) == [[1], [2]])
+        let starts = measure.endings.compactMap(\.startIndex)
+        #expect(starts.count == 2)
+        guard starts.count == 2 else { return }
+        // Each ending starts at the grace group before its `B`.
+        for start in starts {
+            if case .grace? = measure.events.dropFirst(start).first(where: {
+                if case .spacer = $0 { return false }
+                return true
+            }) {} else {
+                Issue.record("ending at \(start) does not start at a grace group")
+            }
+        }
+        #expect(starts[0] < starts[1])
+    }
+
+    @Test("A second ending with no music since the first replaces it", arguments: [
+        "|:CDEF|[1 [2 GABc|]",
+        "|:CDEF|GA [1 [2 Bc|]",
+    ])
+    func emptyEndingIsReplaced(body: String) {
+        let measures = parse(barTune(body)).score.firstTune?.singleVoiceMeasures ?? []
+        #expect(measures.last?.endings.map(\.numbers) == [[2]])
+    }
+
+    /// The voice's last bar is closed by the end of the music rather than a bar line, and
+    /// used to be built with no endings at all (#246).
+    @Test("An ending in a last bar with no closing bar line is kept", arguments: [
+        ("|:CDEF|1GABc:|2CDEF", [[2]], false),
+        ("|:CDEF|GA [1 Bc:|[2 CDEF", [[2]], false),
+        ("|:CDEF|GA [1 Bc [2 dc", [[1], [2]], true),
+    ])
+    func endingInUnclosedLastBar(body: String, numbers: [[Int]], midBar: Bool) {
+        let measures = parse(barTune(body)).score.firstTune?.singleVoiceMeasures ?? []
+        let endings = measures.last?.endings ?? []
+        #expect(endings.map(\.numbers) == numbers, "\(body)")
+        #expect(endings.allSatisfy { ($0.startIndex != nil) == midBar }, "\(body)")
+    }
+
+    @Test("Measures without ending numbers have no endings")
     func noEndingNumber() {
         let result = parse(barTune("CDEF|GABC|"))
         let measures = result.score.firstTune?.singleVoiceMeasures ?? []
         for measure in measures {
-            #expect(measure.endingNumber == nil)
+            #expect(measure.endings.isEmpty)
         }
     }
 

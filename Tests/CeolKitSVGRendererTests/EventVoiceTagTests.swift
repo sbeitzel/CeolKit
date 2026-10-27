@@ -45,7 +45,7 @@ struct EventVoiceTagTests {
     @Test("A hand-built SizedMeasure gets a table parallel to its offsets")
     func handBuiltMeasureIsStillParallel() {
         let sized = SizedMeasure(measure: Measure(openingBar: nil, events: [], closingBar: dummyBar,
-                                                  endingNumber: nil, source: dummyRange,
+                                                  source: dummyRange,
                                                   unitNoteLength: Fraction(numerator: 1, denominator: 8)),
                                  naturalWidth: 100, eventOffsets: [0, 10, 20])
         #expect(sized.eventVoiceIndices == [0, 0, 0])

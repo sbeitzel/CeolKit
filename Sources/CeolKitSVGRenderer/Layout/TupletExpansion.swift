@@ -35,9 +35,9 @@ enum TupletExpansion {
 
         var events: [Event] = []
         var tuplets: [TupletSpan] = []
-        var endingStartIndex: Int?
+        var moved: [Int: Int] = [:]
         for (index, event) in measure.events.enumerated() {
-            if index == measure.endingStartIndex { endingStartIndex = events.count }
+            moved[index] = events.count
             guard case .tuplet(let t) = event else {
                 events.append(event)
                 continue
@@ -49,11 +49,11 @@ enum TupletExpansion {
                                           p: t.p, q: t.q))
             }
         }
-        if measure.endingStartIndex == measure.events.count { endingStartIndex = events.count }
+        moved[measure.events.count] = events.count
 
         return (Measure(openingBar: measure.openingBar, events: events,
-                        closingBar: measure.closingBar, endingNumber: measure.endingNumber,
-                        endingStartIndex: endingStartIndex, source: measure.source,
+                        closingBar: measure.closingBar,
+                        endings: measure.endings(movedBy: moved), source: measure.source,
                         meter: measure.meter, key: measure.key,
                         unitNoteLength: measure.unitNoteLength),
                 tuplets)

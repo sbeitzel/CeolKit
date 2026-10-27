@@ -315,6 +315,10 @@ public struct TuneBlock: Sendable {
     /// Whether this tune's grace groups are slurred to the notes they decorate, from
     /// `%%graceslurs`.  Scoped and carried exactly like ``straightFlags`` (issue #156).
     public let graceSlurs: Bool?
+    /// Whether every one of this tune's variant-ending brackets is hooked at its end, from
+    /// `%%ceolkit:closevariants` (issue #237).  `nil` leaves the layout engine's own
+    /// ``SVGRenderConfig/closeVariants`` standing.
+    public let closeVariants: Bool?
     /// The `%%newpage` breaks this tune asks for, in system order (issue #140).  Empty for
     /// almost every tune, and an empty list is the pagination this engine has always done.
     public let pageBreaks: [ForcedPageBreak]
@@ -332,12 +336,14 @@ public struct TuneBlock: Sendable {
                 stemDirection: StemDirection? = nil,
                 straightFlags: Bool? = nil,
                 graceSlurs: Bool? = nil,
+                closeVariants: Bool? = nil,
                 pageBreaks: [ForcedPageBreak] = [],
                 words: [String] = []) {
         self.init(systemGroups: systemGroups, titleRows: titleRows,
                   titleBlockHeight: titleBlockHeight, scale: scale,
                   graceNoteSpacing: graceNoteSpacing, stemDirection: stemDirection,
                   straightFlags: straightFlags, graceSlurs: graceSlurs,
+                  closeVariants: closeVariants,
                   pageBreaks: pageBreaks, words: words, textStyles: nil)
     }
 
@@ -347,6 +353,7 @@ public struct TuneBlock: Sendable {
                 stemDirection: StemDirection? = nil,
                 straightFlags: Bool? = nil,
                 graceSlurs: Bool? = nil,
+                closeVariants: Bool? = nil,
                 pageBreaks: [ForcedPageBreak] = [],
                 words: [String] = [],
                 textStyles: TextStyles?) {
@@ -358,6 +365,7 @@ public struct TuneBlock: Sendable {
         self.stemDirection = stemDirection
         self.straightFlags = straightFlags
         self.graceSlurs = graceSlurs
+        self.closeVariants = closeVariants
         self.pageBreaks = pageBreaks
         self.words = words
         self.textStyles = textStyles
@@ -370,12 +378,14 @@ public struct TuneBlock: Sendable {
                 stemDirection: StemDirection? = nil,
                 straightFlags: Bool? = nil,
                 graceSlurs: Bool? = nil,
+                closeVariants: Bool? = nil,
                 pageBreaks: [ForcedPageBreak] = []) {
         self.init(systemGroups: systems.map { JustifiedSystemGroup(staves: [$0]) },
                   titleRows: titleRows, titleBlockHeight: titleBlockHeight,
                   scale: scale, graceNoteSpacing: graceNoteSpacing,
                   stemDirection: stemDirection, straightFlags: straightFlags,
-                  graceSlurs: graceSlurs, pageBreaks: pageBreaks)
+                  graceSlurs: graceSlurs, closeVariants: closeVariants,
+                  pageBreaks: pageBreaks)
     }
 }
 

@@ -87,29 +87,21 @@ public struct SVGRenderer: CeolKitRenderer {
             pageSize.width - effectiveConfig.margins.left - effectiveConfig.margins.right
         }
 
-        // File-preamble directives are promoted to the first tune by the parser.
-        // Build a file-level WriteFieldsConfig from those file-global-scoped directives
-        // so each tune can start from that baseline and layer its own on top.
-        let fileWriteFields: WriteFieldsConfig = {
-            var wf = WriteFieldsConfig.default
-            for scope in score.tunes.first?.directives ?? [] {
-                guard case .fileGlobal = scope.scope else { continue }
-                wf.apply(scope.directive)
-            }
-            return wf
-        }()
+        // File-header directives are promoted to the first tune by the parser, and one written
+        // between tunes is attached to the tune after it, all at file-global scope.  Each
+        // governs from its tune to the end of the file (issue #257), so the baseline a tune
+        // starts from is threaded through the tunes in order: every tune's file-global
+        // directives are folded into it before the tune layers its own on top.
+        var fileWriteFields = WriteFieldsConfig.default
 
-        // The four layout values `%%ceolkit:*` can move, resolved from the file-global
-        // directives alone: a preamble value governs the document, so this is the baseline
-        // every tune starts from.  It is *not* what any tune ends up with — see below.
-        let fileLayout: LayoutDirectives = {
-            var resolved = LayoutDirectives(config: effectiveConfig)
-            for scope in score.tunes.first?.directives ?? [] {
-                guard case .fileGlobal = scope.scope else { continue }
-                resolved.apply(scope.directive, source: scope.source)
-            }
-            return resolved
-        }()
+        // The layout values the directives can move, resolved from the file-global directives
+        // alone.  It is *not* what any tune ends up with — see below.
+        var fileLayout = LayoutDirectives(config: effectiveConfig)
+        // The document's own baseline, from the file header: the first tune's file-global
+        // directives and nothing later.  Taken in the loop, once the first tune is folded in.
+        var documentLayout = fileLayout
+        // The baseline each tune started from, for the footers stamped on after layout.
+        var tuneBaselines: [LayoutDirectives] = []
 
         var tuneBlocks: [TuneBlock] = []
         var fontReports: [TuneFontReport] = []
@@ -127,6 +119,13 @@ public struct SVGRenderer: CeolKitRenderer {
             let pageSizes = Self.pageSizePlan(for: tune, inherited: runningPageSize,
                                               portrait: config.pageSize)
             runningPageSize = pageSizes.closing
+            for scope in tune.directives {
+                guard case .fileGlobal = scope.scope else { continue }
+                fileWriteFields.apply(scope.directive)
+                fileLayout.apply(scope.directive, source: scope.source)
+            }
+            if tuneIndex == 0 { documentLayout = fileLayout }
+            tuneBaselines.append(fileLayout)
             // Resolved per tune, from the file baseline rather than from the tune before it:
             // a tune header applies to its own tune (ABC v2.2 §4.23), so a `%%scale`
             // in tune 1's header must not still be in force in tune 2 (issue #153).
@@ -163,7 +162,7 @@ public struct SVGRenderer: CeolKitRenderer {
             fontReports.append(TuneFontReport(tuneIndex: tuneIndex, roles: report))
             diagnostics += Self.fontListDiagnostics(
                 for: tune, tuneReport: report, config: effectiveConfig,
-                fileReport: {
+                fileReport: { [fileLayout] in
                     TextStyles.resolve(
                         fileLayout.fonts, sources: fileLayout.fontSources, provider: fontProvider,
                         staffSize: effectiveConfig.scaled(by: fileLayout.scale).staffSize
@@ -482,6 +481,7 @@ public struct SVGRenderer: CeolKitRenderer {
                                         stemDirection: layout.stemDirection,
                                         straightFlags: layout.straightFlags,
                                         graceSlurs: layout.graceSlurs,
+                                        closeVariants: layout.closeVariants,
                                         pageBreaks: Self.forcedPageBreaks(
                                             tune.pageBreaks, staveOfGroup: staveOfGroup,
                                             portrait: config.pageSize),
@@ -495,12 +495,13 @@ public struct SVGRenderer: CeolKitRenderer {
         // The document's own answer, for a system that states none of its own — which is
         // every system of a `ResolvedLayout` assembled by hand rather than by the loop above.
         let emitter = SVGEmitter(config: effectiveConfig, metadata: metadata,
-                                 stemDirection: fileLayout.stemDirection,
+                                 stemDirection: documentLayout.stemDirection,
                                  firstPageNumber: firstPageNumber)
         let (layout, placements) = engine.layoutDocument(tuneBlocks,
                                                           firstPageNumber: firstPageNumber)
         let finalLayout = attachFooters(layout, score: score, config: effectiveConfig,
-                                        firstPageNumber: firstPageNumber, fileLayout: fileLayout)
+                                        firstPageNumber: firstPageNumber,
+                                        documentLayout: documentLayout, tuneBaselines: tuneBaselines)
         // One `TuneBlock` is built per tune above, so a block's index is its tune's index.
         return RenderedDocument(pages: try emitter.emit(finalLayout), layout: finalLayout,
                                 placements: placements, fonts: fontReports)
@@ -654,7 +655,8 @@ public struct SVGRenderer: CeolKitRenderer {
     /// A page that names no tune — a layout assembled by hand — falls back to the document's
     /// own footer, which is what it has always got.
     private func attachFooters(_ layout: ResolvedLayout, score: Score, config: SVGRenderConfig,
-                               firstPageNumber: Int, fileLayout: LayoutDirectives) -> ResolvedLayout {
+                               firstPageNumber: Int, documentLayout: LayoutDirectives,
+                               tuneBaselines: [LayoutDirectives]) -> ResolvedLayout {
         // Nothing anywhere in the document asks for a footer: the whole pass is skipped, and
         // no page gains an empty footer row it did not have before.
         guard Self.hasFooter(score) else { return layout }
@@ -678,7 +680,8 @@ public struct SVGRenderer: CeolKitRenderer {
                     // both orientations at once (issue #158), so the row is laid out on the
                     // page's own size rather than the document's.
                     pageSize: page.pageSize ?? layout.pageSize,
-                    directives: tune.map { fileLayout.layering($0) } ?? fileLayout)
+                    directives: page.openingTuneIndex.map { tuneBaselines[$0].layering(score.tunes[$0]) }
+                        ?? documentLayout)
             } else {
                 rows = []
             }

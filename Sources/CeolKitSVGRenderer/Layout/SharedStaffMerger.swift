@@ -104,8 +104,6 @@ struct SharedStaffMerger: Sendable {
         var offsets: [Double] = []
         var voiceTags: [Int] = []
         var graceEventIndices: Set<Int> = []
-        // The primary voice's ending start, moved to where its event lands in the merge.
-        var endingStartIndex: Int?
         // Where each voice's events land in the merge, so its tuplets can follow them.
         var mergedIndex: [Int: [Int: Int]] = [:]
 
@@ -163,10 +161,6 @@ struct SharedStaffMerger: Sendable {
                     if run.pairedGraceOffsets.contains(j) {
                         graceEventIndices.insert(offsets.count)
                     }
-                    if run.voice.part.voiceIndex == primary.voiceIndex,
-                       eventIndex == primary.measure.endingStartIndex {
-                        endingStartIndex = mergedEvents.count
-                    }
                     mergedIndex[run.voice.part.voiceIndex, default: [:]][eventIndex] = mergedEvents.count
                     mergedEvents.append(run.voice.part.measure.events[eventIndex])
                     offsets.append(subX[first + j])
@@ -189,8 +183,9 @@ struct SharedStaffMerger: Sendable {
         return SizedMeasure(
             measure: Measure(openingBar: primary.measure.openingBar, events: mergedEvents,
                              closingBar: primary.measure.closingBar,
-                             endingNumber: primary.measure.endingNumber,
-                             endingStartIndex: endingStartIndex,
+                             // The primary voice's endings start where its events landed.
+                             endings: primary.measure.endings(
+                                 movedBy: mergedIndex[primary.voiceIndex] ?? [:]),
                              source: primary.measure.source, meter: primary.measure.meter,
                              key: primary.measure.key,
                              unitNoteLength: unitNoteLength),
@@ -210,8 +205,7 @@ struct SharedStaffMerger: Sendable {
     /// The measure a fully padded bar keeps: its own furniture, and no music at all.
     private func emptyMeasure() -> Measure {
         let bar = BarLine(kind: .single, source: .emptySourceRange)
-        return Measure(openingBar: nil, events: [], closingBar: bar, endingNumber: nil,
-                       source: .emptySourceRange,
+        return Measure(openingBar: nil, events: [], closingBar: bar, source: .emptySourceRange,
                        unitNoteLength: Fraction(numerator: 1, denominator: 8))
     }
 
@@ -329,7 +323,7 @@ struct SharedStaffMerger: Sendable {
                     voiceIndex: voice.part.voiceIndex,
                     staffPos: CollisionHead.staffPosition(of: note.pitch),
                     glyph: .notehead(absoluteDuration: duration),
-                    isDotted: metrics.isDottedDuration(note.duration),
+                    dots: metrics.augmentationDots(note.duration),
                     accidental: note.displayedAccidental,
                     stemUp: voice.part.voiceIndex == 0)
             }

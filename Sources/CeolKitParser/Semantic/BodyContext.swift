@@ -12,6 +12,11 @@ struct StaveBreak {
     /// tune's stave numbering (#102); an ordinary break that happens to close no measures is
     /// not one of these, and still collapses away when the staves are sliced.
     var isEmptyStave = false
+    /// How much music the bar still open at the break already held.  A bar the source goes
+    /// on writing after the break ends on the next stave, because its music ends there; one
+    /// it never adds to — the last bar of a voice with no closing bar line — stays on the
+    /// stave it was written on (#249).
+    var openMusicalEventCount = 0
 }
 
 struct VoiceAccumulator {
@@ -37,6 +42,11 @@ struct VoiceAccumulator {
     // Set by VoiceState after a barline when the tune's meter has moved on since this voice
     // last reported it; consumed by the next closeWith to tag that measure for renderers.
     var pendingMeter: Meter? = nil
+    /// The variant endings opened in the bar being written — see `Measure.endings`.
+    ///
+    /// Kept here rather than on the voice so that the voice's last bar keeps them when no
+    /// bar line closes it: `finaliseAccumulator` sees only the accumulator (#246).
+    var pendingEndings: [VariantEnding] = []
     /// An `L:` that moved the unit note length part way through the voice, paired with the
     /// number of musical events the measure then being written already held.
     ///
@@ -136,7 +146,6 @@ struct VoiceAccumulator {
             openingBar: lastBarLine,
             events: [],
             closingBar: BarLine(kind: .single, source: source),
-            endingNumber: nil,
             source: source,
             meter: nil,
             unitNoteLength: effectiveUnitNoteLength
@@ -157,7 +166,23 @@ struct VoiceAccumulator {
         }
         pendingEmptyStaves = 0
         if idx > resume { completedStaveCount += 1 }
-        staveBreaks.append(StaveBreak(measureIndex: idx))
+        staveBreaks.append(StaveBreak(measureIndex: idx, openMusicalEventCount: musicalEventCount))
+    }
+
+    /// The stave breaks once the bar left open at the end of the voice is closed as its last
+    /// measure (`closingOpenMeasure`).
+    ///
+    /// A break recorded while that bar stood open falls before it.  Where nothing was written
+    /// into the bar after the break, it belongs to the stave before the break instead (#249).
+    func staveBreaks(closingOpenMeasure: Bool) -> [StaveBreak] {
+        var breaks = staveBreaks
+        if closingOpenMeasure, let last = breaks.last,
+           last.measureIndex == closedMeasures.count,
+           last.openMusicalEventCount > 0,
+           last.openMusicalEventCount == musicalEventCount {
+            breaks[breaks.count - 1].measureIndex += 1
+        }
+        return breaks
     }
 
     /// Records the end of a line-set — one system of the source — for this voice.
@@ -174,7 +199,9 @@ struct VoiceAccumulator {
         }
     }
 
-    mutating func closeWith(barLine: BarLine, endingNumber: [Int]?, endingStartIndex: Int? = nil) {
+    mutating func closeWith(barLine: BarLine) {
+        let endings = pendingEndings
+        pendingEndings = []
         // A tempo change after the bar's last note governs the music of the next bar and is
         // drawn over its first note, so it is carried over the bar line rather than closing
         // a bar of its own or standing against this one's end (#234).
@@ -191,7 +218,7 @@ struct VoiceAccumulator {
             if case .spacer = $0 { return false }
             return true
         }
-        guard hasMusicalContent || endingNumber != nil else {
+        guard hasMusicalContent || !endings.isEmpty else {
             currentEvents = []
             lastBarLine = barLine
             // Nothing was written, so nothing can have followed the change: it still belongs
@@ -229,8 +256,7 @@ struct VoiceAccumulator {
             openingBar: lastBarLine,
             events: currentEvents,
             closingBar: barLine,
-            endingNumber: endingNumber,
-            endingStartIndex: endingStartIndex,
+            endings: endings,
             source: src,
             meter: meterTag,
             key: keyTag,
@@ -328,10 +354,6 @@ struct VoiceState {
     var pendingDecorations: [Decoration] = []
     var pendingAnnotations: [Annotation] = []
     var pendingChordSymbol: ChordSymbol? = nil
-    var pendingEndingNumber: [Int]? = nil
-    /// Where in the open measure's events `pendingEndingNumber` was met, or `nil` where it
-    /// was met before any music in the bar — see `Measure.endingStartIndex`.
-    var pendingEndingStartIndex: Int? = nil
 
     // Slur state
     var openSlurs: Int = 0
@@ -347,9 +369,6 @@ struct VoiceState {
     /// music line are its verses, in source order, and `recordLyricAnchors` resets this
     /// wherever a new music line resets the anchor they align against.
     var lyricVerse: Int = 0
-
-    /// Space tracking for post-note decoration.
-    var lastElementWasSpace: Bool = false
 
     /// Which `[M:]` this voice last reported, as a generation counter rather than a value: a
     /// restated `[M:4/4]` in a 4/4 tune is still an event a renderer wants tagged, and `Meter`
@@ -436,10 +455,7 @@ struct VoiceState {
     }
 
     mutating func closeMeasure(barLine: BarLine, currentMeter: Meter, generation: Int) {
-        accumulator.closeWith(barLine: barLine, endingNumber: pendingEndingNumber,
-                              endingStartIndex: pendingEndingStartIndex)
-        pendingEndingNumber = nil
-        pendingEndingStartIndex = nil
+        accumulator.closeWith(barLine: barLine)
         // Tag the measure *after* this bar line, matching where a tune-wide [M:] takes effect.
         if generation != lastTaggedMeterGeneration {
             accumulator.pendingMeter = currentMeter
@@ -452,14 +468,23 @@ struct VoiceState {
     /// An ending met before any music in the bar begins at its opening bar line; one met
     /// after some begins at the next event, which lands at the current end of the open
     /// measure (#172).  Spacers do not count as music, so `| [1` and `|[1` are the same.
+    ///
+    /// A bar may open several, one after another: `| ab [1 cd [2 ef |`.  Two with no music
+    /// between them would give the first nothing to cover, so the later one replaces it.
     mutating func setPendingEndingNumber(_ numbers: [Int]) {
-        pendingEndingNumber = numbers
         let events = accumulator.currentEvents
-        let hasMusic = events.contains {
-            if case .spacer = $0 { return false }
-            return true
+        func hasMusic(_ slice: ArraySlice<Event>) -> Bool {
+            slice.contains {
+                if case .spacer = $0 { return false }
+                return true
+            }
         }
-        pendingEndingStartIndex = hasMusic ? events.count : nil
+        if let last = accumulator.pendingEndings.last,
+           !hasMusic(events[(last.startIndex ?? 0)...]) {
+            accumulator.pendingEndings.removeLast()
+        }
+        let startIndex = hasMusic(events[...]) ? events.count : nil
+        accumulator.pendingEndings.append(VariantEnding(numbers: numbers, startIndex: startIndex))
     }
 
     // MARK: Grace groups
@@ -539,8 +564,7 @@ struct VoiceState {
                 openingBar: m.openingBar,
                 events: newEvents,
                 closingBar: m.closingBar,
-                endingNumber: m.endingNumber,
-                endingStartIndex: m.endingStartIndex,
+                endings: m.endings,
                 source: m.source,
                 meter: m.meter,
                 key: m.key,
@@ -552,36 +576,6 @@ struct VoiceState {
     }
 
     // MARK: Retroactive edits to the last event
-
-    /// Retroactively applies a decoration to the last note in currentEvents (skipping spacers).
-    /// Returns true if successfully applied.
-    mutating func applyDecorationToLastNote(_ decoration: Decoration) -> Bool {
-        for i in stride(from: accumulator.currentEvents.count - 1, through: 0, by: -1) {
-            switch accumulator.currentEvents[i] {
-            case .spacer:
-                continue
-            case .note(let n):
-                accumulator.currentEvents[i] = .note(Note(
-                    pitch: n.pitch,
-                    writtenAccidental: n.writtenAccidental,
-                    displayedAccidental: n.displayedAccidental,
-                    duration: n.duration,
-                    ties: n.ties,
-                    slurs: n.slurs,
-                    decorations: n.decorations + [decoration],
-                    chordSymbol: n.chordSymbol,
-                    annotations: n.annotations,
-                    beam: n.beam,
-                    lyrics: n.lyrics,
-                    source: n.source
-                ))
-                return true
-            default:
-                return false
-            }
-        }
-        return false
-    }
 
     /// Retroactively increments the `slurs.closes` count on the last note in
     /// `currentEvents` (skipping spacers).  Returns true if a note was found and updated.
@@ -1064,11 +1058,6 @@ struct BodyContext {
         voices[voice]?.applyLyrics(tokens)
     }
 
-    mutating func applyDecorationToLastNote(_ decoration: Decoration, in voice: VoiceKey) -> Bool {
-        guard voices[voice] != nil else { return false }
-        return voices[voice]!.applyDecorationToLastNote(decoration)
-    }
-
     mutating func addSlurCloseToLastNote(in voice: VoiceKey) -> Bool {
         guard voices[voice] != nil else { return false }
         return voices[voice]!.addSlurCloseToLastNote()
@@ -1112,15 +1101,6 @@ struct BodyContext {
 
     mutating func flushChordSymbol(in voice: VoiceKey, source: SourceRange) -> ChordSymbol? {
         withVoice(voice, source: source) { $0.flushChordSymbol() }
-    }
-
-    func lastElementWasSpace(in voice: VoiceKey) -> Bool {
-        voices[voice]?.lastElementWasSpace ?? false
-    }
-
-    mutating func setLastElementWasSpace(_ value: Bool, in voice: VoiceKey) {
-        // Only meaningful once the voice exists; a voice with no state has nothing to decorate.
-        voices[voice]?.lastElementWasSpace = value
     }
 
     // MARK: Voice overlay (§7.4)

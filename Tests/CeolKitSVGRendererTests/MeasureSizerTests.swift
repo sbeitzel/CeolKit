@@ -33,7 +33,6 @@ private func measure(events: [Event]) -> Measure {
         openingBar: nil,
         events: events,
         closingBar: dummyBar,
-        endingNumber: nil,
         source: dummyRange,
         unitNoteLength: unitNoteLength
     )

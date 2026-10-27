@@ -88,16 +88,22 @@ enum EndingBracketBand {
         let firstMeasure: Int
         let lastMeasure: Int
         /// Where in `firstMeasure`'s events the bracket begins, or `nil` where it begins at
-        /// the measure's left edge: ``Measure/endingStartIndex`` for an ending that opens
+        /// the measure's left edge: ``VariantEnding/startIndex`` for an ending that opens
         /// part way through a bar (#172), and `nil` on every continuation.
         let startEvent: Int?
+        /// Where in `lastMeasure`'s events the bracket stops, or `nil` where it runs to the
+        /// measure's right edge: the start of the next ending, where that opens part way
+        /// through the bar this one ends in — `| ab [1 cd [2 ef |`.
+        let endEvent: Int?
         /// Whether the rule turns down at its left end.  False exactly where the ending was
         /// carried over a system break.
         let hasStartHook: Bool
         /// Whether the rule turns down at its right end: it does at the repeat bar that
         /// sends the player back, and does not where the music runs on — into the next
-        /// ending, past a final bar line, or over a system break.
-        let hasEndHook: Bool
+        /// ending, past a final bar line, or over a system break.  Under
+        /// `%%ceolkit:closevariants` it does wherever the ending itself ends, and still not
+        /// where it only breaks across systems (issue #237).
+        var hasEndHook: Bool
     }
 
     /// The runs of every staff of every system of one tune, indexed `[system][staff]`.
@@ -105,35 +111,66 @@ enum EndingBracketBand {
     /// Walked in system order per staff so that an ending crossing a line break is carried:
     /// the continuation draws a bracket with no left hook and no label, which is what says
     /// it is the same ending rather than a new one.
-    static func runs(in groups: [JustifiedSystemGroup]) -> [[[Run]]] {
+    ///
+    /// - Parameter closeAll: `%%ceolkit:closevariants` — hook every bracket at the end of
+    ///   its ending, not only at a repeat bar.  Where an ending is left open at a system break
+    ///   it is only the next system, or the end of the tune, that says whether the ending
+    ///   stopped there, so those pieces are closed here rather than by the per-system walk.
+    static func runs(in groups: [JustifiedSystemGroup], closeAll: Bool = false) -> [[[Run]]] {
         // What each staff has left open at the end of the system just walked.
         var carried: [Int: [Int]] = [:]
         var result: [[[Run]]] = []
         result.reserveCapacity(groups.count)
+
+        func closeLast(system: Int, staff: Int) {
+            guard let last = result[system][staff].indices.last else { return }
+            result[system][staff][last].hasEndHook = true
+        }
+
         for group in groups {
             var perStaff: [[Run]] = []
             perStaff.reserveCapacity(group.staves.count)
             for (index, staff) in group.staves.enumerated() {
+                let measures = staff.measures.map(\.source.measure)
+                // A carried ending that this system replaces at its first bar line ended at
+                // the break, so the piece left open on the system before is its end.
+                if closeAll, carried[index] != nil,
+                   let opening = measures.first?.endings.first, opening.startIndex == nil {
+                    closeLast(system: result.count - 1, staff: index)
+                }
                 let (runs, trailing) = self.runs(
-                    in: staff.measures.map(\.source.measure), continuing: carried[index])
+                    in: measures, continuing: carried[index], closeAll: closeAll)
                 carried[index] = trailing
                 perStaff.append(runs)
             }
+            result.append(perStaff)
             // A `%%score` in the tune body can change the staff count part-way through
             // (`PlanRegions`); an ending left open on a staff the next region does not print
             // has nothing to continue onto.
+            if closeAll {
+                for staff in carried.keys where staff >= group.staves.count {
+                    closeLast(system: result.count - 2, staff: staff)
+                }
+            }
             carried = carried.filter { $0.key < group.staves.count }
-            result.append(perStaff)
+        }
+        // Whatever is still open at the end of the tune ends there.
+        if closeAll {
+            for staff in carried.keys { closeLast(system: result.count - 1, staff: staff) }
         }
         return result
     }
 
     /// The runs of one staff-system, and the ending it leaves open for the next one.
     ///
-    /// - Parameter continuing: the ending running into this system from the previous one,
-    ///   `nil` where none is.
-    static func runs(in measures: [Measure],
-                     continuing: [Int]?) -> (runs: [Run], trailing: [Int]?) {
+    /// - Parameters:
+    ///   - continuing: the ending running into this system from the previous one, `nil`
+    ///     where none is.
+    ///   - closeAll: `%%ceolkit:closevariants` — hook every ending that ends in this system,
+    ///     not only one at a repeat bar.  The piece left open at the system's end is never
+    ///     hooked here; see ``runs(in:closeAll:)``.
+    static func runs(in measures: [Measure], continuing: [Int]?,
+                     closeAll: Bool = false) -> (runs: [Run], trailing: [Int]?) {
         struct Open {
             let numbers: [Int]
             let first: Int
@@ -147,18 +184,26 @@ enum EndingBracketBand {
             open = Open(numbers: continuing, first: 0, startEvent: nil, startHook: false)
         }
 
-        func close(_ o: Open, at last: Int, endHook: Bool) -> Run {
+        func close(_ o: Open, at last: Int, endEvent: Int? = nil, endHook: Bool) -> Run {
             Run(label: o.startHook ? label(for: o.numbers) : nil,
                 firstMeasure: o.first, lastMeasure: last, startEvent: o.startEvent,
-                hasStartHook: o.startHook, hasEndHook: endHook)
+                endEvent: endEvent, hasStartHook: o.startHook, hasEndHook: endHook)
         }
 
         for (i, measure) in measures.enumerated() {
-            if let numbers = measure.endingNumber {
-                // The next ending begins.  Anything still open ends at the measure before it,
-                // unhooked: the music runs straight on into the new ending.
-                if let o = open, i > o.first { runs.append(close(o, at: i - 1, endHook: false)) }
-                open = Open(numbers: numbers, first: i, startEvent: measure.endingStartIndex,
+            for ending in measure.endings {
+                // The next ending begins.  Anything still open ends where it does, unhooked
+                // (unless `closeAll`): the music runs straight on into the new ending.  That is the measure
+                // before this one where the new ending opens at the bar line, and part way
+                // through this one where it opens after some music.
+                if let o = open {
+                    if let start = ending.startIndex {
+                        runs.append(close(o, at: i, endEvent: start, endHook: closeAll))
+                    } else if i > o.first {
+                        runs.append(close(o, at: i - 1, endHook: closeAll))
+                    }
+                }
+                open = Open(numbers: ending.numbers, first: i, startEvent: ending.startIndex,
                             startHook: true)
             }
             guard let o = open else { continue }
@@ -170,8 +215,9 @@ enum EndingBracketBand {
                 open = nil
             case .final, .double, .start, .sectionRepeatStart, .repeatStart:
                 // The section is over — the last ending of a repeat ends here — but nothing
-                // is being repeated from this bar, so the bracket is left open.
-                runs.append(close(o, at: i, endHook: false))
+                // is being repeated from this bar, so the bracket is left open (unless
+                // `closeAll`).
+                runs.append(close(o, at: i, endHook: closeAll))
                 open = nil
             case .single, .dotted:
                 break  // the ending runs on into the next measure
@@ -204,10 +250,15 @@ enum EndingBracketBand {
             let startX = run.startEvent.flatMap {
                 self.startX(at: $0, in: first, staffSize: staffSize, metadata: metadata)
             } ?? first.origin.x
+            // An ending that gives way to another part way through a bar stops where that
+            // one's bracket starts, so the two meet as abcm2ps draws them.
+            let endX = run.endEvent.flatMap {
+                self.startX(at: $0, in: last, staffSize: staffSize, metadata: metadata)
+            } ?? last.origin.x + last.width
             return EndingBracket(
                 label: run.label,
                 startX: startX,
-                endX: last.origin.x + last.width,
+                endX: endX,
                 ruleY: ruleY,
                 hasStartHook: run.hasStartHook,
                 hasEndHook: run.hasEndHook)
@@ -253,5 +304,16 @@ enum EndingBracketBand {
             x = max(x, (previous.origin.x + noteheadWidth + left) / 2)
         }
         return max(measure.origin.x, x)
+    }
+}
+
+extension Measure {
+    /// `endings` with each start index carried through `moved` — old event index to new —
+    /// for a pass that rebuilds the measure's events.  An ending whose event `moved` has no
+    /// entry for starts at the bar line instead.
+    func endings(movedBy moved: [Int: Int]) -> [VariantEnding] {
+        endings.map {
+            VariantEnding(numbers: $0.numbers, startIndex: $0.startIndex.flatMap { moved[$0] })
+        }
     }
 }

@@ -11,17 +11,13 @@ public struct Measure: Sendable {
     public let openingBar: BarLine?              // bar before first event (e.g. anacrusis end)
     public let events: [Event]                   // notes, rests, chords, grace groups, ties, …
     public let closingBar: BarLine               // bar at end; may carry repeat info
-    public let endingNumber: [Int]?              // |1, |2, [1,2 variant endings
-    /// Where in `events` the variant ending this measure opens begins, or `nil` where it
-    /// begins at the measure's opening bar line — as `|1`, `:|2`, and a `[1` written against
-    /// a bar line all do.
+    /// The variant endings (`|1`, `:|2`, `[1,2`, `[1-3`) this measure opens, in the order
+    /// they were written; empty where it opens none.
     ///
-    /// ABC v2.2 §4.10 ties only the *end* of an ending to a bar line: a bare `[N` may stand
-    /// part way through a bar, as a pickup that differs between the first and second time
-    /// through is usually written (#172).  This is then the index of the first event after
-    /// it, and a renderer starts the ending's bracket there rather than at the bar line.
-    /// Always `nil` where `endingNumber` is.
-    public let endingStartIndex: Int?
+    /// A measure usually opens at most one.  More than one means a bar whose variants differ
+    /// only part way through, written `| ab [1 cd [2 ef |`: the music before the first `[N`
+    /// is common to every pass, and each ending runs on to the next.
+    public let endings: [VariantEnding]
     /// The text this measure occupies: from its first event that has a position
     /// in the source through the end of `closingBar`.
     ///
@@ -71,8 +67,7 @@ public struct Measure: Sendable {
         openingBar: BarLine?,
         events: [Event],
         closingBar: BarLine,
-        endingNumber: [Int]?,
-        endingStartIndex: Int? = nil,
+        endings: [VariantEnding] = [],
         source: SourceRange,
         meter: Meter? = nil,
         key: KeySignature? = nil,
@@ -81,11 +76,33 @@ public struct Measure: Sendable {
         self.openingBar = openingBar
         self.events = events
         self.closingBar = closingBar
-        self.endingNumber = endingNumber
-        self.endingStartIndex = endingNumber == nil ? nil : endingStartIndex
+        self.endings = endings
         self.source = source
         self.meter = meter
         self.key = key
         self.unitNoteLength = unitNoteLength
+    }
+}
+
+/// One variant ending opened in a measure: the passes it is played on, and where in the
+/// measure it begins.
+public struct VariantEnding: Sendable, Equatable, Hashable {
+    /// The passes this ending is played on — `[1]` for `|1`, `[1, 2, 3]` for `[1-3` or
+    /// `[1,2,3`.  The semantic pass keeps no record of whether a range was written.
+    public let numbers: [Int]
+    /// Where in the measure's `events` the ending begins, or `nil` where it begins at the
+    /// measure's opening bar line — as `|1`, `:|2`, and a `[1` written against a bar line
+    /// all do.
+    ///
+    /// ABC v2.2 §4.10 ties only the *end* of an ending to a bar line: a bare `[N` may stand
+    /// part way through a bar, as a pickup that differs between the first and second time
+    /// through is usually written (#172), or as the second half of a bar whose variants
+    /// differ only there.  This is then the index of the first event after it, and a
+    /// renderer starts the ending's bracket there rather than at the bar line.
+    public let startIndex: Int?
+
+    public init(numbers: [Int], startIndex: Int? = nil) {
+        self.numbers = numbers
+        self.startIndex = startIndex
     }
 }

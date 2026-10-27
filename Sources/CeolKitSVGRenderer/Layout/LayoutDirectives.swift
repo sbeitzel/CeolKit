@@ -30,6 +30,9 @@ struct LayoutDirectives {
     var straightFlags: Bool
     /// Whether a grace group is slurred to the note it decorates, from `%%graceslurs`.
     var graceSlurs: Bool
+    /// Whether every variant-ending bracket is hooked at its end, from
+    /// `%%ceolkit:closevariants`.
+    var closeVariants: Bool
     /// `strftime` pattern for the `$D`/`$d` marks of a `%%footer`, from `%%dateformat`.
     /// `nil` leaves the renderer's own default date format standing.  Scoped like the rest:
     /// one in a tune header dates that tune's pages and no others (issue #155).
@@ -57,6 +60,7 @@ struct LayoutDirectives {
         graceNoteSpacing = config.graceNoteSpacing
         straightFlags = config.straightFlags
         graceSlurs = config.graceSlurs
+        closeVariants = config.closeVariants
     }
 
     mutating func apply(_ directive: CeolKitDirective, source: SourceRange? = nil) {
@@ -74,6 +78,7 @@ struct LayoutDirectives {
         case .graceNoteSpacing(let step): graceNoteSpacing = step
         case .straightFlags(let on):      straightFlags = on
         case .graceSlurs(let on):         graceSlurs = on
+        case .closeVariants(let on):      closeVariants = on
         case .dateFormat(let pattern):    dateFormat = pattern
         case .label(let text):            label = text
         default: break
@@ -83,9 +88,10 @@ struct LayoutDirectives {
     /// This baseline with `tune`'s own directives layered on top.
     ///
     /// Every directive the tune carries is applied, file-global ones included: the parser
-    /// folds the preamble into the first tune's list ahead of that tune's own entries, so
-    /// re-applying them here lands on the value they already put in the baseline, and every
-    /// later tune carries none of them at all.  ``WriteFieldsConfig`` is layered the same way.
+    /// puts them ahead of the tune's own entries — the file header's on the first tune, a
+    /// gap's on the tune after it — and the renderer folds them into the baseline before
+    /// layering, so re-applying them here lands on the value they already put there.
+    /// ``WriteFieldsConfig`` is layered the same way.
     func layering(_ tune: Tune) -> LayoutDirectives {
         var resolved = self
         for scope in tune.directives { resolved.apply(scope.directive, source: scope.source) }

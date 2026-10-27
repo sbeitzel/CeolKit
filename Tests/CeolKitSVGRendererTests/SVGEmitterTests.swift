@@ -909,6 +909,45 @@ private let quarterUNL = Fraction(numerator: 1, denominator: 4)
         #expect(svg.contains(String(SMuFLGlyph.augmentationDot.character)))
     }
 
+    /// A double or triple broken rhythm (`B2<<A2`, `B2>>>A/`) writes its long note with as many
+    /// dots as the `<` / `>` run is long (issue #236).  UNL = 1/8.
+    @Test(arguments: [
+        (Fraction(numerator: 2, denominator: 1), 0),    // quarter
+        (Fraction(numerator: 3, denominator: 1), 1),    // dotted quarter
+        (Fraction(numerator: 7, denominator: 2), 2),    // double-dotted quarter, `B2<<A2`
+        (Fraction(numerator: 7, denominator: 4), 2),    // double-dotted eighth, `B<<A`
+        (Fraction(numerator: 15, denominator: 4), 3),   // triple-dotted quarter, `B2>>>A2`
+        (Fraction(numerator: 5, denominator: 1), 0),    // 5/8: no dots write it
+    ])
+    func noteDrawsOneAugmentationDotPerDot(duration: Fraction, dots: Int) throws {
+        let note = Note(
+            pitch: Pitch(step: .c, alteration: .natural, octave: 5),
+            writtenAccidental: nil, displayedAccidental: nil,
+            duration: duration,
+            ties: .none, slurs: .none, decorations: [],
+            chordSymbol: nil, annotations: [],
+            beam: .single, lyric: nil, source: dummyRange
+        )
+        let event = ResolvedEvent(origin: Point(x: 60, y: 100), kind: .note(note))
+        let measure = ResolvedMeasure(
+            origin: Point(x: 60, y: 50), width: 150,
+            events: [event], openingBar: nil,
+            closingBar: ResolvedBarLine(x: 210, kind: .single),
+            unitNoteLength: eighthUNL
+        )
+        let svgs = try emitter.emit(layout(systems: [system(measures: [measure])]))
+        let svg  = try #require(svgs.first)
+        let drawn = svg.components(separatedBy: String(SMuFLGlyph.augmentationDot.character)).count - 1
+        #expect(drawn == dots)
+    }
+
+    @Test func augmentationDotsAreJudgedOnTheReducedValue() {
+        // 9/6 is the dotted 3/2; `Fraction` does not reduce itself.
+        #expect(ColumnMetrics.augmentationDots(Fraction(numerator: 9, denominator: 6)) == 1)
+        #expect(ColumnMetrics.augmentationDots(Fraction(numerator: 14, denominator: 32)) == 2)
+        #expect(ColumnMetrics.augmentationDots(Fraction(numerator: 1, denominator: 3)) == 0)
+    }
+
     // MARK: - Ties
 
     /// Helper: builds a note with the given tie state and duration (in units of `eighthUNL`).

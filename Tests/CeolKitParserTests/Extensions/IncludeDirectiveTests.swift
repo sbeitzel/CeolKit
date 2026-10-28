@@ -232,6 +232,71 @@ struct IncludeDirectiveTests {
         }
     }
 
+    // MARK: - Placement of included lines (#261)
+
+    /// The directives of an included file, each on its own line, as a `ckstyle.abh` might be.
+    private let styleSheet = """
+        %%writefields TRCQ true
+        %%straightflags false
+        %%graceslurs false
+        %%dateformat "%e %B %Y"
+        %%ceolkit:gracenotespacing 1.5
+        %%ceolkit:closevariants true
+        %%ceolkit:pipeformat true
+        """
+
+    @Test("Directives from an include longer than the file header all govern the first tune (#261)")
+    func includeLongerThanFileHeaderGovernsFirstTune() throws {
+        try withTempDir { dir in
+            // X:1 is on line 3, so the include's lines 4–7 used to count as after the tune.
+            let abc = "I:abc-include style.abh\n\nX:1\nT:T\nK:C\nCDEF|\n"
+            let result = CeolKitParser(for: dir, fileResolver: { _ in
+                Data(styleSheet.utf8)
+            }).parse(abc, options: .default)
+
+            #expect(result.diagnostics.filter { $0.code == .directiveAfterLastTune }.isEmpty)
+            let directives = result.score.tunes.first?.directives.map(\.directive) ?? []
+            #expect(directives.contains(.graceNoteSpacing(1.5)))
+            #expect(directives.contains(.closeVariants(true)))
+            #expect(directives.contains(.pipeFormat(true)))
+        }
+    }
+
+    @Test("Directives from an include between tunes govern only the tunes after it (#261)")
+    func includeBetweenTunesGovernsFollowingTune() throws {
+        try withTempDir { dir in
+            // The included line is line 1 of its file, ahead of X:1 by line number alone.
+            let abc = "X:1\nK:C\nCDEF|\n\nI:abc-include gap.abh\n\nX:2\nK:C\nCDEF|\n"
+            let result = CeolKitParser(for: dir, fileResolver: { _ in
+                Data("%%ceolkit:pipeformat true\n".utf8)
+            }).parse(abc, options: .default)
+
+            let pipeFormats = result.score.tunes.map { tune in
+                tune.directives.compactMap { scope -> Bool? in
+                    guard case .pipeFormat(let on) = scope.directive else { return nil }
+                    return on
+                }
+            }
+            #expect(pipeFormats == [[], [true]])
+        }
+    }
+
+    @Test("A diagnostic in an included file reports that file and its own line number (#261)")
+    func includedDiagnosticKeepsIncludedLocation() throws {
+        try withTempDir { dir in
+            let includeURL = dir.appendingPathComponent("style.abh").standardized
+            let abc = "I:abc-include style.abh\n\nX:1\nT:T\nK:C\nCDEF|\n"
+            let result = CeolKitParser(for: dir, fileResolver: { _ in
+                Data((styleSheet + "\n%%nosuchdirective 1\n").utf8)
+            }).parse(abc, options: .default)
+
+            let unknown = result.diagnostics.filter { $0.code == .unknownDirective }
+            #expect(unknown.count == 1)
+            #expect(unknown.first?.source.file?.path == includeURL.path)
+            #expect(unknown.first?.source.line == 8)
+        }
+    }
+
     // MARK: - Inline I:abc-include
 
     @Test("Inline [I:abc-include] in music body emits includeIgnoredInline warning")

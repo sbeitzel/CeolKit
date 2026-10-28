@@ -13,7 +13,7 @@ struct ABCFileBuilder {
 
     func build() -> ABCFile {
         var versionLine: String? = nil
-        var filePreamble: [LogicalLine] = []
+        var filePreamble: [PreambleLine] = []
         var tunes: [ABCTune] = []
         var diagnostics = preDiagnostics
 
@@ -21,6 +21,7 @@ struct ABCFileBuilder {
         var tuneDirectives: [StylesheetDirective] = []
         var tuneMusicBody: [[MusicElement]] = []
         var tuneStartSource: SourceRange? = nil
+        var tuneStartPosition = 0
         var missingRefNumber = false
 
         enum State { case preamble, header, body }
@@ -33,6 +34,7 @@ struct ABCFileBuilder {
                 musicBody: tuneMusicBody,
                 headerDirectives: tuneDirectives,
                 source: start,
+                position: tuneStartPosition,
                 missingReferenceNumber: missingRefNumber
             ))
             tuneHeader = []
@@ -42,17 +44,17 @@ struct ABCFileBuilder {
             missingRefNumber = false
         }
 
-        func startImplicitTune(source: SourceRange) {
+        func startImplicitTune(source: SourceRange, position: Int) {
             // Called when a K: or music line appears without a preceding X:.
             // The block of lines just above it is the tune's header; promote its fields.
             // A block before that, set off by a blank line, is the file header, and stays
             // in the preamble to be the default for every tune (issue #256).
-            let blockStart = (filePreamble.lastIndex { line in
-                if case .empty = line { return true }
+            let blockStart = (filePreamble.lastIndex { entry in
+                if case .empty = entry.line { return true }
                 return false
             }).map { $0 + 1 } ?? filePreamble.startIndex
-            let promotableFields = filePreamble[blockStart...].compactMap { line -> InformationField? in
-                guard case .informationField(let c, let p, let s) = line,
+            let promotableFields = filePreamble[blockStart...].compactMap { entry -> InformationField? in
+                guard case .informationField(let c, let p, let s) = entry.line,
                       !"XK".contains(c) else { return nil }
                 let (field, _) = parseField(code: c, payload: p, source: s)
                 return field
@@ -65,10 +67,11 @@ struct ABCFileBuilder {
                 return stylesheetDirective(fromInstruction: text)
             }
             tuneStartSource = source
+            tuneStartPosition = position
             missingRefNumber = true
             // The block's fields are consumed into the header; keep its other entries
-            filePreamble = filePreamble[..<blockStart] + filePreamble[blockStart...].filter { line in
-                if case .informationField = line { return false }
+            filePreamble = filePreamble[..<blockStart] + filePreamble[blockStart...].filter { entry in
+                if case .informationField = entry.line { return false }
                 return true
             }
             diagnostics.append(Diagnostic(
@@ -79,22 +82,23 @@ struct ABCFileBuilder {
             ))
         }
 
-        for line in lines {
+        for (position, line) in lines.enumerated() {
             switch state {
             case .preamble:
                 switch line {
                 case .versionLine(let v, _):
                     versionLine = v
-                    filePreamble.append(line)
+                    filePreamble.append(PreambleLine(line: line, position: position))
                 case .informationField(let code, let payload, let source) where code == "X":
                     let (field, diags) = parseField(code: code, payload: payload, source: source)
                     diagnostics += diags
                     tuneHeader = [field]
                     tuneStartSource = source
+                    tuneStartPosition = position
                     state = .header
                 case .informationField(let code, let payload, let source) where code == "K":
                     // Recovery: K: without X: — start implicit tune from preamble fields
-                    startImplicitTune(source: source)
+                    startImplicitTune(source: source, position: position)
                     let (keyField, kDiags) = parseField(code: code, payload: payload, source: source)
                     diagnostics += kDiags
                     tuneHeader.append(keyField)
@@ -102,7 +106,7 @@ struct ABCFileBuilder {
                 case .musicLine(let text, let source):
                     // Recovery: music line without any header — start implicit tune
                     if tuneStartSource == nil {
-                        startImplicitTune(source: source)
+                        startImplicitTune(source: source, position: position)
                     }
                     let parser = MusicLineParser(text: text, lineRange: source)
                     let (elements, diags) = parser.parse()
@@ -110,7 +114,7 @@ struct ABCFileBuilder {
                     tuneMusicBody.append(elements)
                     state = .body
                 default:
-                    filePreamble.append(line)
+                    filePreamble.append(PreambleLine(line: line, position: position))
                 }
 
             case .header:
@@ -125,6 +129,7 @@ struct ABCFileBuilder {
                         diagnostics += diags
                         tuneHeader = [field]
                         tuneStartSource = source
+                        tuneStartPosition = position
                     } else {
                         let (field, diags) = parseField(code: code, payload: payload, source: source)
                         diagnostics += diags
@@ -154,6 +159,7 @@ struct ABCFileBuilder {
                     diagnostics += diags
                     tuneHeader = [field]
                     tuneStartSource = source
+                    tuneStartPosition = position
                     state = .header
                 case .musicLine(let text, let source):
                     let parser = MusicLineParser(text: text, lineRange: source)

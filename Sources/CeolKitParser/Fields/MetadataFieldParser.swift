@@ -109,8 +109,8 @@ enum MetadataFieldParser {
         case "trill":                   return .trill
         case "trill(":                  return .trillStart
         case "trill)":                  return .trillEnd
-        case "mordent":                 return .mordent
-        case "pralltriller":            return .pralltriller
+        case "mordent", "lowermordent": return .mordent
+        case "pralltriller", "uppermordent": return .pralltriller
         case "roll":                    return .roll
         case "turn":                    return .turn
         case "invertedturn":            return .invertedTurn

@@ -35,8 +35,8 @@ public enum Decoration: Hashable, Sendable {
     case trill                  // !trill! / T
     case trillStart             // !trill(!
     case trillEnd               // !trill)!
-    case mordent                // !mordent! / M
-    case pralltriller           // !pralltriller! / P
+    case mordent                // !mordent! / !lowermordent! / M
+    case pralltriller           // !pralltriller! / !uppermordent! / P
     case roll                   // !roll! / ~
     case turn                   // !turn!
     case invertedTurn           // !invertedturn!

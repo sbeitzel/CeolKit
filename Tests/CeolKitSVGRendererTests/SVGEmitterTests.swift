@@ -682,8 +682,8 @@ private let quarterUNL = Fraction(numerator: 1, denominator: 4)
 
     @Test func fermataIsAboveGraceBeamWhenGraceBeamIsHigher() throws {
         // Grace group {ag} (A4 + G4, beamed) whose clamped beam tip rises above the default
-        // "one space above top staff line" fermata position.  The emitter must push the fermata
-        // higher so its bottom clears the grace-note beam.
+        // "one space above top staff line" fermata position.  The fermata's bottom must clear
+        // both the grace-note beam and the main note's own stem (#264), by half a space.
         //
         // This mirrors the {ag}Ha2 fragment from "L:1/8 {g}de {g}Hf2 {ag}Ha2".
         let topStaffY    = 100.0
@@ -728,11 +728,15 @@ private let quarterUNL = Fraction(numerator: 1, denominator: 4)
         let rawBeamY     = highestNHY - stemLength                 // 102.8
         let graceStemTipY = min(rawBeamY, topStaffY - 3.0 * beamStep)  // clamped: 90.55
 
-        // fermataY = min(one-space-above-staff, graceBeamY - gap - fermata-descent)
+        // The main note, A4 (staffPos 3) as well, stems up a full 3.5 spaces.
+        let mainStemTipY = highestNHY - 3.5 * s
+
+        // Its bottom at whichever is higher: a space over the staff, or half a space over
+        // the highest thing the note reaches.
         let faBBox      = try #require(metadata.glyphBBoxes["fermataAbove"])
         let descent     = abs(faBBox.swY) * s
         let gap         = 0.5 * s
-        let expectedY   = min(topStaffY - s, graceStemTipY - gap - descent)
+        let expectedY   = min(topStaffY - s, min(graceStemTipY, mainStemTipY) - gap) - descent
         let b = SVGBuilder()
         #expect(svg.contains("y=\"\(b.fmt(expectedY))\""))
         // The fermata must genuinely be above the grace beam (smaller SVG y = higher).
@@ -859,9 +863,11 @@ private let quarterUNL = Fraction(numerator: 1, denominator: 4)
 
     @Test func fermataIsAboveTopStaffLine() throws {
         // topStaffY = system.origin.y + staffOrigin = 50 + 50 = 100
-        // fermata Y = topStaffY - staffSize = 100 - 7 = 93
+        // The fermata's bottom one space over the top line (#264): its baseline is that
+        // less the glyph's small descent.
         let topStaffY  = 100.0
-        let expectedY  = topStaffY - config.staffSize
+        let faBBox     = try #require(metadata.glyphBBoxes["fermataAbove"])
+        let expectedY  = topStaffY - config.staffSize + faBBox.swY * config.staffSize
 
         let note = Note(
             pitch: Pitch(step: .c, alteration: .natural, octave: 5),

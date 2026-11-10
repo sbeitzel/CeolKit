@@ -54,8 +54,14 @@ private struct MarkColumn {
     let nextBelow: Double
     /// The part's marks go under the staff (see ``DecorationStack/Side/stemSide``).
     let flipped: Bool
+    /// The staff is shared, so the part's own side decides where its dynamics go.
+    let shared: Bool
     let opensTrill: Bool
     let closesTrill: Bool
+    /// The dynamics written on the note, and the hairpins it ends and starts (#264).
+    let dynamics: [SMuFLGlyph]
+    let hairpinEnds: [DynamicsBand.Hairpin]
+    let hairpinStarts: [DynamicsBand.Hairpin]
 }
 
 /// Pending tie: records where a tied note's arc must start so the arc can be drawn
@@ -190,6 +196,8 @@ struct SVGEmitter: Sendable {
         // And the extended trills (`!trill(!` … `!trill)!`) left open, by part: `true` once
         // one is still open at the end of a system it carries on into the next, as a tie does.
         var pendingTrills: Set<PartKey> = []
+        // And the hairpins, by part, for the same reason (#264).
+        var pendingHairpins: [PartKey: [DynamicsBand.Hairpin]] = [:]
         // Likewise threaded: the way each part's last stem went, which settles a beam group
         // that sits evenly about the middle line (#218) even where the stem before it was
         // in the previous bar, system or page.
@@ -205,6 +213,7 @@ struct SVGEmitter: Sendable {
                                      embeddedFaces: embeddedFaces, fonts: fonts,
                                      pendingTies: &pendingTies, pendingSlurs: &pendingSlurs,
                                      pendingTrills: &pendingTrills,
+                                     pendingHairpins: &pendingHairpins,
                                      lastStemUp: &lastStemUp)
             documents.append(document)
         }
@@ -217,6 +226,7 @@ struct SVGEmitter: Sendable {
                            embeddedFaces: EmbeddedFaces?, fonts: FontProvider?,
                            pendingTies: inout [TieAnchor], pendingSlurs: inout [SlurAnchor],
                            pendingTrills: inout Set<PartKey>,
+                           pendingHairpins: inout [PartKey: [DynamicsBand.Hairpin]],
                            lastStemUp: inout [PartKey: Bool]) -> String {
         var builder = SVGBuilder(textRendering: config.textRendering, fonts: fonts)
         emitScrollSyncMetadata(for: page, pageNumber: pageNumber, builder: &builder)
@@ -228,6 +238,7 @@ struct SVGEmitter: Sendable {
             configured(for: system)
                 .emitSystem(system, pendingTies: &pendingTies, pendingSlurs: &pendingSlurs,
                             pendingTrills: &pendingTrills,
+                            pendingHairpins: &pendingHairpins,
                             lastStemUp: &lastStemUp,
                             builder: &builder)
         }
@@ -511,6 +522,7 @@ struct SVGEmitter: Sendable {
     private func emitSystem(_ system: ResolvedSystem,
                              pendingTies: inout [TieAnchor], pendingSlurs: inout [SlurAnchor],
                              pendingTrills: inout Set<PartKey>,
+                             pendingHairpins: inout [PartKey: [DynamicsBand.Hairpin]],
                              lastStemUp: inout [PartKey: Bool],
                              builder: inout SVGBuilder) {
         emitStaffLines(system, builder: &builder)
@@ -551,6 +563,8 @@ struct SVGEmitter: Sendable {
         }
         emitExtendedTrills(markColumns, system: system, staffIndex: staffIndex,
                            pendingTrills: &pendingTrills, builder: &builder)
+        emitDynamics(markColumns, system: system, staffIndex: staffIndex,
+                     pendingHairpins: &pendingHairpins, builder: &builder)
         emitLyrics(system, builder: &builder)
         emitAnnotations(system, builder: &builder)
 
@@ -2501,6 +2515,20 @@ struct SVGEmitter: Sendable {
             case .chord(let c):
                 notes = c.notes
                 decorations = c.decorations + c.notes.flatMap(\.decorations)
+            case .rest(let r) where DynamicsBand.touches(r.decorations):
+                // A rest can carry a dynamic or a hairpin's end; nothing else is set on it.
+                let shared = staffVoiceCount > 1
+                columns.append(MarkColumn(
+                    part: PartKey(staff: staffIndex, voice: event.voiceIndex),
+                    centerX: event.origin.x + nhCenterX,
+                    nextAbove: topStaffY - DecorationStack.staffGap * s,
+                    nextBelow: bottomStaffY + DecorationStack.staffGap * s,
+                    flipped: shared && resolvedStemDirection(forVoice: event.voiceIndex) == .down,
+                    shared: shared, opensTrill: false, closesTrill: false,
+                    dynamics: r.decorations.compactMap(DynamicsBand.glyph(for:)),
+                    hairpinEnds: DynamicsBand.ends(in: r.decorations),
+                    hairpinStarts: DynamicsBand.starts(in: r.decorations)))
+                continue
             default:
                 continue
             }
@@ -2541,9 +2569,12 @@ struct SVGEmitter: Sendable {
             columns.append(MarkColumn(
                 part: PartKey(staff: staffIndex, voice: event.voiceIndex),
                 centerX: centerX, nextAbove: page(plan.nextAbove), nextBelow: page(plan.nextBelow),
-                flipped: column.flipped,
+                flipped: column.flipped, shared: shared,
                 opensTrill: decorations.contains(.trillStart),
-                closesTrill: decorations.contains(.trillEnd)))
+                closesTrill: decorations.contains(.trillEnd),
+                dynamics: decorations.compactMap(DynamicsBand.glyph(for:)),
+                hairpinEnds: DynamicsBand.ends(in: decorations),
+                hairpinStarts: DynamicsBand.starts(in: decorations)))
         }
         return columns
     }
@@ -2639,6 +2670,131 @@ struct SVGEmitter: Sendable {
             } else {
                 pendingTrills.remove(part)
             }
+        }
+    }
+
+    /// Draws the staff's dynamics and hairpins (#264) on the band the layout made for them —
+    /// over the staff, under it, or both on a shared staff — each side on one line, as
+    /// abcm2ps's `%%dynalign` sets them.  The line is the layout's, moved further out only
+    /// where a column it passes reaches further than the layout could tell (a beam a lower
+    /// note drags down).  A hairpin still open at the end of the system runs to its edge
+    /// and on from the start of the next, as a tie does.
+    private func emitDynamics(_ columns: [MarkColumn], system: ResolvedSystem, staffIndex: Int,
+                              pendingHairpins: inout [PartKey: [DynamicsBand.Hairpin]],
+                              builder: inout SVGBuilder) {
+        let s = config.staffSize
+        let topY = system.origin.y + system.staffOrigin
+        let bottomY = topY + system.staffHeight
+        guard let lastMeasure = system.measures.last else { return }
+        let leftEdge = system.measures.first?.origin.x ?? system.origin.x
+        let rightEdge = lastMeasure.origin.x + lastMeasure.width
+        let floors = system.annotationFloors
+        // A staff of one voice sets its dynamics on the one side the layout chose.
+        let singleAbove = floors?.dynamicsAbove != nil && floors?.dynamicsBelow == nil
+        func above(_ c: MarkColumn) -> Bool { c.shared ? !c.flipped : singleAbove }
+        func above(_ part: PartKey) -> Bool {
+            if let c = columns.first(where: { $0.part == part }) { return above(c) }
+            return staffVoiceCount > 1
+                ? resolvedStemDirection(forVoice: part.voice) != .down : singleAbove
+        }
+
+        // The hairpins, as spans of column indices: no start where one runs on from the
+        // system before, no end where it runs on into the next.
+        struct Span { let part: PartKey; let kind: DynamicsBand.Hairpin; let start: Int?; let end: Int? }
+        var spans: [Span] = []
+        let parts = Set(columns.map(\.part)).union(pendingHairpins.keys.filter { $0.staff == staffIndex })
+        for part in parts.sorted(by: { ($0.staff, $0.voice) < ($1.staff, $1.voice) }) {
+            var open: [(kind: DynamicsBand.Hairpin, start: Int?)] =
+                (pendingHairpins[part] ?? []).map { ($0, nil) }
+            for (index, column) in columns.enumerated() where column.part == part {
+                for kind in column.hairpinEnds {
+                    if let i = open.lastIndex(where: { $0.kind == kind }) {
+                        spans.append(Span(part: part, kind: kind, start: open[i].start, end: index))
+                        open.remove(at: i)
+                    }
+                }
+                for kind in column.hairpinStarts { open.append((kind, index)) }
+            }
+            for hairpin in open {
+                spans.append(Span(part: part, kind: hairpin.kind, start: hairpin.start, end: nil))
+            }
+            pendingHairpins[part] = open.isEmpty ? nil : open.map(\.kind)
+        }
+
+        // The line each side: as far out as every column it passes needs, and no nearer
+        // than the layout put it.
+        var onBand = Set(columns.indices.filter { !columns[$0].dynamics.isEmpty })
+        for span in spans {
+            let from = span.start ?? 0, to = span.end ?? (columns.count - 1)
+            guard from <= to else { continue }
+            onBand.formUnion((from...to).filter { columns[$0].part == span.part })
+        }
+        let gap = DynamicsBand.centre * s
+        var lineAbove = floors?.dynamicsAbove.map { topY - $0 }
+        var lineBelow = floors?.dynamicsBelow.map { bottomY + $0 }
+        for index in onBand {
+            let c = columns[index]
+            if above(c) {
+                lineAbove = min(lineAbove ?? .infinity, c.nextAbove - gap)
+            } else {
+                lineBelow = max(lineBelow ?? -.infinity, c.nextBelow + gap)
+            }
+        }
+        func line(above: Bool) -> Double {
+            above
+                ? lineAbove ?? topY - (DecorationStack.staffGap + DynamicsBand.centre) * s
+                : lineBelow ?? bottomY + (DecorationStack.staffGap + DynamicsBand.centre) * s
+        }
+
+        // The dynamics, centred on their note, side by side where a note has several.
+        let fontSize = 4.0 * s
+        var extents: [Int: (left: Double, right: Double)] = [:]
+        for (index, column) in columns.enumerated() where !column.dynamics.isEmpty {
+            let boxes = column.dynamics.map { metadata.glyphBBoxes[$0.rawValue] }
+            let widths = boxes.map { (($0?.neX ?? 1.5) - ($0?.swX ?? 0)) * s }
+            let spacing = 0.3 * s
+            let total = widths.reduce(0, +) + spacing * Double(widths.count - 1)
+            var x = column.centerX - total / 2
+            let baseline = line(above: above(column)) + DynamicsBand.baselineOffset * s
+            for (glyph, (box, width)) in zip(column.dynamics, zip(boxes, widths)) {
+                builder.text(String(glyph.character), x: x - (box?.swX ?? 0) * s, y: baseline,
+                             fontFamily: "Bravura", fontSize: fontSize)
+                x += width + spacing
+            }
+            extents[index] = (column.centerX - total / 2, column.centerX + total / 2)
+        }
+
+        // The hairpins.
+        for span in spans {
+            var x1: Double
+            if let start = span.start {
+                x1 = columns[start].centerX + DynamicsBand.startInset * s
+                if let dynamic = extents[start] { x1 = max(x1, dynamic.right + DynamicsBand.dynamicGap * s) }
+            } else {
+                x1 = leftEdge
+            }
+            var x2: Double
+            if let end = span.end {
+                x2 = columns[end].centerX - DynamicsBand.endInset * s
+                if let dynamic = extents[end] { x2 = min(x2, dynamic.left - DynamicsBand.dynamicGap * s) }
+            } else {
+                x2 = rightEdge
+            }
+            let least = DynamicsBand.shortest * s
+            if x2 - x1 < least {
+                x1 -= (least - (x2 - x1)) / 2
+                x2 = x1 + least
+            }
+            let full = DynamicsBand.opening * s, part = DynamicsBand.continuedOpening * s
+            let (open1, open2): (Double, Double) = span.kind == .crescendo
+                ? (span.start == nil ? part : 0, full)
+                : (full, span.end == nil ? part : 0)
+            let y = line(above: above(span.part))
+            let thickness = DynamicsBand.thickness * s
+            builder.line(x1: x1, y1: y - open1 / 2, x2: x2, y2: y - open2 / 2,
+                         stroke: "black", strokeWidth: thickness)
+            builder.line(x1: x1, y1: y + open1 / 2, x2: x2, y2: y + open2 / 2,
+                         stroke: "black", strokeWidth: thickness)
         }
     }
 

@@ -60,12 +60,16 @@ public struct VerticalLayoutEngine: Sendable {
         let endingRuns = EndingBracketBand.runs(
             in: systems.map { JustifiedSystemGroup(staves: [$0]) },
             closeAll: config.closeVariants)
+        let openHairpins = DynamicsBand.openAtStart(of: systems.map { JustifiedSystemGroup(staves: [$0]) })
+        let lyricStaves = DynamicsBand.staffHasLyrics(in: systems.map { JustifiedSystemGroup(staves: [$0]) })
 
         for (index, jsystem) in systems.enumerated() {
             let runs = endingRuns[index][0]
             let extent = verticalExtent(of: jsystem, staffSize: config.staffSize,
                                         styles: .standard(staffSize: config.staffSize),
-                                        hasEndingBracket: !runs.isEmpty)
+                                        hasEndingBracket: !runs.isEmpty,
+                                        dynamicsOverStaff: lyricStaves.contains(0),
+                                        openHairpins: openHairpins[index][0])
             let (extraAbove, extraBelow) = (extent.extraAbove, extent.extraBelow)
             let totalHeight = extraAbove + staffHeight + extraBelow
 
@@ -210,6 +214,10 @@ public struct VerticalLayoutEngine: Sendable {
             // placement that follows it, so the space reserved is the space drawn into.
             let endingRuns = EndingBracketBand.runs(
                 in: groups, closeAll: block.closeVariants ?? config.closeVariants)
+            // Likewise for the dynamics (#264): a hairpin can run past a line break, and
+            // whether a voice's dynamics go over the staff depends on the whole tune's words.
+            let openHairpins = DynamicsBand.openAtStart(of: groups)
+            let lyricStaves = DynamicsBand.staffHasLyrics(in: groups)
             // The page scale (`%%scale`) sizes this tune's music, text and the gaps derived
             // from staffSize. Page size and margins stay absolute.
             let tuneConfig  = config.scaled(by: block.scale)
@@ -250,7 +258,9 @@ public struct VerticalLayoutEngine: Sendable {
 
             for (gi, group) in groups.enumerated() {
                 let metrics = groupMetrics(of: group, config: tuneConfig, styles: styles,
-                                           endingRuns: endingRuns[gi])
+                                           endingRuns: endingRuns[gi],
+                                           lyricStaves: lyricStaves,
+                                           openHairpins: openHairpins[gi])
 
                 // The tune's own breaks, resolved to the system each stands in front of.
                 // Group 0 was dealt with above, before the title block was placed.
@@ -360,9 +370,14 @@ public struct VerticalLayoutEngine: Sendable {
         let labels: VoiceLabelGutter
     }
 
+    /// - Parameters:
+    ///   - lyricStaves: the staves whose voice has lyrics somewhere in the tune.
+    ///   - openHairpins: per staff, the hairpins each voice has open as the group begins.
     private func groupMetrics(of group: JustifiedSystemGroup,
                               config: SVGRenderConfig, styles: TextStyles,
-                              endingRuns: [[EndingBracketBand.Run]]) -> GroupMetrics {
+                              endingRuns: [[EndingBracketBand.Run]],
+                              lyricStaves: Set<Int> = [],
+                              openHairpins: [[Int: [DynamicsBand.Hairpin]]] = []) -> GroupMetrics {
         // Parallel to `group.staves` by construction: `EndingBracketBand.runs(in:)` walks
         // the very groups this is being called for, one entry per staff of each.
         let staffSize = config.staffSize
@@ -377,7 +392,9 @@ public struct VerticalLayoutEngine: Sendable {
         for (i, staff) in group.staves.enumerated() {
             let extent = verticalExtent(
                 of: staff, staffSize: staffSize, styles: styles,
-                hasEndingBracket: !endingRuns[i].isEmpty)
+                hasEndingBracket: !endingRuns[i].isEmpty,
+                dynamicsOverStaff: lyricStaves.contains(i),
+                openHairpins: i < openHairpins.count ? openHairpins[i] : [:])
             let (extraAbove, extraBelow) = (extent.extraAbove, extent.extraBelow)
             staves.append((extraAbove, extraBelow, offset + extraAbove, extent.annotationFloors))
             offset += extraAbove + staffHeight + extraBelow
@@ -500,9 +517,12 @@ public struct VerticalLayoutEngine: Sendable {
         let tuneConfig = config.scaled(by: block.scale)
         let styles = block.textStyles ?? .standard(staffSize: tuneConfig.staffSize)
         var h = block.titleBlockHeight
+        let openHairpins = DynamicsBand.openAtStart(of: block.systemGroups)
+        let lyricStaves = DynamicsBand.staffHasLyrics(in: block.systemGroups)
         for (i, group) in block.systemGroups.enumerated() {
             h += groupMetrics(of: group, config: tuneConfig, styles: styles,
-                              endingRuns: endingRuns[i]).totalHeight
+                              endingRuns: endingRuns[i],
+                              lyricStaves: lyricStaves, openHairpins: openHairpins[i]).totalHeight
             if i < block.systemGroups.count - 1 { h += tuneConfig.systemGap }
         }
         return h + WordsBlock.height(lines: block.words.count, style: styles.words)
@@ -554,10 +574,16 @@ public struct VerticalLayoutEngine: Sendable {
     /// The chord symbols and annotations are stacked the same way, beyond the ledger lines
     /// and grace stems on their side of the staff, so the floor they stand on is returned
     /// with the extent for the emitter to find them again (issue #171).
+    /// - Parameters:
+    ///   - dynamicsOverStaff: the staff's voice has lyrics somewhere in the tune, so — on a
+    ///     staff of its own — its dynamics go over it (#264).
+    ///   - openHairpins: the hairpins each voice of the staff has open as the system begins.
     private func verticalExtent(of system: JustifiedSystem,
                                 staffSize: Double,
                                 styles: TextStyles,
-                                hasEndingBracket: Bool
+                                hasEndingBracket: Bool,
+                                dynamicsOverStaff: Bool = false,
+                                openHairpins: [Int: [DynamicsBand.Hairpin]] = [:]
     ) -> (extraAbove: Double, extraBelow: Double, annotationFloors: AnnotationFloors) {
         var maxLedgerAbove = 0
         var maxLedgerBelow = 0
@@ -567,6 +593,23 @@ public struct VerticalLayoutEngine: Sendable {
         var tupletAbove = 0.0
         var tupletBelow = 0.0
         var marks = MarkReach()
+        marks.openHairpins = openHairpins
+        // A hairpin running on from the system before is drawn from this one's start.
+        for voice in openHairpins.keys {
+            let voicing = markVoicings(voice: voice, of: system)
+            for (flipped, _) in voicing.options {
+                if MarkReach.dynamicsOver(flipped: flipped, shared: voicing.shared,
+                                          overStaff: dynamicsOverStaff) {
+                    marks.dynamicsAbove = true
+                    marks.dynamicsReachAbove = max(marks.dynamicsReachAbove,
+                                                   DecorationStack.staffGap * staffSize)
+                } else {
+                    marks.dynamicsBelow = true
+                    marks.dynamicsReachBelow = max(marks.dynamicsReachBelow,
+                                                   DecorationStack.staffGap * staffSize)
+                }
+            }
+        }
 
         var clef = system.clef
         for jm in system.measures {
@@ -579,7 +622,9 @@ public struct VerticalLayoutEngine: Sendable {
             for (index, event) in jm.source.measure.events.enumerated() {
                 if case .clefChange(let change) = event { clef = change }
                 let voice = index < jm.eventVoiceIndices.count ? jm.eventVoiceIndices[index] : 0
-                marks.scan(event, clef: clef, voicing: markVoicings(voice: voice, of: system),
+                marks.scan(event, clef: clef, voice: voice,
+                           voicing: markVoicings(voice: voice, of: system),
+                           dynamicsOverStaff: dynamicsOverStaff,
                            staffSize: staffSize, metadata: metadata)
                 if let t = tupletOf[index] {
                     switch event {
@@ -626,21 +671,42 @@ public struct VerticalLayoutEngine: Sendable {
         // A tempo change stands over the note after it, so it clears everything that note
         // reaches up to: beyond the chord symbols and annotations where the staff has any,
         // otherwise beyond the floor they would stand on (#234).
-        let tempoFloor = lines.above > 0 ? baseAbove : floorAbove + floor
+        //
+        // The dynamics stand beyond the chord symbols and annotations on their side, as
+        // abcm2ps sets them after its guitar chords, and on one line along the staff
+        // (`%%dynalign`) as far out as the notes they pass over need (#264).  A tempo
+        // change stands beyond them in turn.
+        var aboveEdge = baseAbove
+        var dynamicsAbove: Double?
+        if marks.dynamicsAbove {
+            let inner = max(marks.dynamicsReachAbove, lines.above > 0 ? baseAbove : 0)
+            dynamicsAbove = inner + DynamicsBand.centre * s
+            aboveEdge = max(baseAbove, inner + DynamicsBand.height * s)
+        }
+        var tempoFloor = lines.above > 0 ? baseAbove : floorAbove + floor
+        if marks.dynamicsAbove { tempoFloor = max(tempoFloor, aboveEdge) }
         let tempoBaseline = tempoFloor + AnnotationBand.padRatio * s + styles.tempoChange.descent
         var extraAbove = hasTempoChanges
-            ? max(baseAbove, tempoBaseline + styles.tempoChange.ascent) : baseAbove
+            ? max(aboveEdge, tempoBaseline + styles.tempoChange.ascent) : aboveEdge
         if hasEndingBracket { extraAbove += EndingBracketBand.height(staffSize: s) }
         // The verses hang below the ledger lines and the annotations, so the three are added
         // rather than maxed: a low note and what is written under it need the space each of
         // them asked for.
-        let extraBelow = floorBelow
+        // The dynamics come between the annotations and the verses.
+        var belowEdge = floorBelow
             + AnnotationBand.height(lines: lines.below, metrics: AnnotationBand.belowMetrics(styles),
                                     staffSize: s)
-            + LyricBand.height(verses: verses, style: styles.vocal)
+        var dynamicsBelow: Double?
+        if marks.dynamicsBelow {
+            let inner = max(marks.dynamicsReachBelow, lines.below > 0 ? belowEdge : 0)
+            dynamicsBelow = inner + DynamicsBand.centre * s
+            belowEdge = max(belowEdge, inner + DynamicsBand.height * s)
+        }
+        let extraBelow = belowEdge + LyricBand.height(verses: verses, style: styles.vocal)
         return (extraAbove, extraBelow,
                 AnnotationFloors(above: floorAbove, below: floorBelow,
-                                 tempoBaseline: hasTempoChanges ? tempoBaseline : nil))
+                                 tempoBaseline: hasTempoChanges ? tempoBaseline : nil,
+                                 dynamicsAbove: dynamicsAbove, dynamicsBelow: dynamicsBelow))
     }
 
     /// How far beyond the staff a tuplet's number reaches, on the side the emitter sets it:
@@ -699,7 +765,24 @@ public struct VerticalLayoutEngine: Sendable {
         private var highestColumn = 0.0
         private var hasExtendedTrill = false
 
-        mutating func scan(_ event: Event, clef: ClefSpec, voicing: Voicing,
+        /// Whether the staff's dynamics band is wanted over it and under it, and how far
+        /// out the notes it passes over reach on that side (#264): it stands beyond them.
+        var dynamicsAbove = false
+        var dynamicsBelow = false
+        var dynamicsReachAbove = 0.0
+        var dynamicsReachBelow = 0.0
+        /// The hairpins each voice has open.
+        var openHairpins: [Int: [DynamicsBand.Hairpin]] = [:]
+
+        /// A voice that sets its dynamics over the staff: abcm2ps's `up_p`.  On a shared
+        /// staff every part but the one stemmed down; on a staff of its own, a voice with
+        /// lyrics.
+        static func dynamicsOver(flipped: Bool, shared: Bool, overStaff: Bool) -> Bool {
+            shared ? !flipped : overStaff
+        }
+
+        mutating func scan(_ event: Event, clef: ClefSpec, voice: Int, voicing: Voicing,
+                           dynamicsOverStaff: Bool,
                            staffSize s: Double, metadata: BravuraMetadata) {
             let positions: [Int]
             let decorations: [Decoration]
@@ -712,7 +795,8 @@ public struct VerticalLayoutEngine: Sendable {
                 decorations = c.decorations + c.notes.flatMap(\.decorations)
             case .tuplet(let t):
                 for inner in t.events {
-                    scan(inner, clef: clef, voicing: voicing, staffSize: s, metadata: metadata)
+                    scan(inner, clef: clef, voice: voice, voicing: voicing,
+                         dynamicsOverStaff: dynamicsOverStaff, staffSize: s, metadata: metadata)
                 }
                 return
             case .grace(let g):
@@ -720,12 +804,30 @@ public struct VerticalLayoutEngine: Sendable {
                 let high = g.notes.map { clef.staffPosition(of: $0.pitch) }.max()
                 graceTopY = high.map { Double(8 - $0) / 2 - 3.5 * 0.6 }
                 return
+            case .rest(let r):
+                // A rest can carry a dynamic or a hairpin's end, just outside the staff.
+                let inBand = DynamicsBand.touches(r.decorations) || !(openHairpins[voice] ?? []).isEmpty
+                DynamicsBand.apply(r.decorations, to: &openHairpins[voice, default: []])
+                guard inBand else { return }
+                for (flipped, _) in voicing.options {
+                    if Self.dynamicsOver(flipped: flipped, shared: voicing.shared,
+                                         overStaff: dynamicsOverStaff) {
+                        dynamicsAbove = true
+                        dynamicsReachAbove = max(dynamicsReachAbove, DecorationStack.staffGap * s)
+                    } else {
+                        dynamicsBelow = true
+                        dynamicsReachBelow = max(dynamicsReachBelow, DecorationStack.staffGap * s)
+                    }
+                }
+                return
             default:
                 return
             }
             defer { graceTopY = nil }
             guard let low = positions.min(), let high = positions.max() else { return }
             let headYs = positions.map { Double(8 - $0) / 2 }
+            let inBand = DynamicsBand.touches(decorations) || !(openHairpins[voice] ?? []).isEmpty
+            DynamicsBand.apply(decorations, to: &openHairpins[voice, default: []])
 
             for (flipped, direction) in voicing.options {
                 let stemUp: Bool
@@ -742,6 +844,16 @@ public struct VerticalLayoutEngine: Sendable {
                 if let top = plan.outerAbove { above = max(above, -top * s) }
                 if let bottom = plan.outerBelow { below = max(below, (bottom - 4) * s) }
                 if !flipped { highestColumn = max(highestColumn, -plan.nextAbove * s) }
+                if inBand {
+                    if Self.dynamicsOver(flipped: flipped, shared: voicing.shared,
+                                         overStaff: dynamicsOverStaff) {
+                        dynamicsAbove = true
+                        dynamicsReachAbove = max(dynamicsReachAbove, -plan.nextAbove * s)
+                    } else {
+                        dynamicsBelow = true
+                        dynamicsReachBelow = max(dynamicsReachBelow, (plan.nextBelow - 4) * s)
+                    }
+                }
             }
 
             if decorations.contains(.trillStart) || decorations.contains(.trillEnd) {

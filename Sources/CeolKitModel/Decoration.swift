@@ -55,10 +55,10 @@ public enum Decoration: Hashable, Sendable {
     case fingering(Int)         // !0! … !5!
 
     // Hairpins (single-event anchors)
-    case crescendoStart         // !<(!
-    case crescendoEnd           // !<)!
-    case decrescendoStart       // !>(!
-    case decrescendoEnd         // !>)!
+    case crescendoStart         // !<(! / !crescendo(!
+    case crescendoEnd           // !<)! / !crescendo)!
+    case decrescendoStart       // !>(! / !diminuendo(!
+    case decrescendoEnd         // !>)! / !diminuendo)!
 
     // Navigation / repeat signs
     case segno                  // !segno! / S

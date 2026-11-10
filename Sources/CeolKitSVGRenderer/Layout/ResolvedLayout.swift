@@ -789,11 +789,19 @@ public struct AnnotationFloors: Sendable, Equatable {
     /// Distance up from the top staff line to the baseline of the staff's tempo changes,
     /// which stand beyond its chord symbols and annotations (#234); `nil` where it has none.
     public let tempoBaseline: Double?
+    /// Distance up from the top staff line, and down from the bottom one, to the centre line
+    /// of the staff's dynamics and hairpins (#264); `nil` on a side where it has none.  A
+    /// staff of one voice sets them on one side only: over it where the voice has lyrics.
+    public let dynamicsAbove: Double?
+    public let dynamicsBelow: Double?
 
-    public init(above: Double, below: Double, tempoBaseline: Double? = nil) {
+    public init(above: Double, below: Double, tempoBaseline: Double? = nil,
+                dynamicsAbove: Double? = nil, dynamicsBelow: Double? = nil) {
         self.above = above
         self.below = below
         self.tempoBaseline = tempoBaseline
+        self.dynamicsAbove = dynamicsAbove
+        self.dynamicsBelow = dynamicsBelow
     }
 }
 

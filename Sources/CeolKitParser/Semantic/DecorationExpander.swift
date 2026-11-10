@@ -48,6 +48,8 @@ private func expandLong(_ text: String) -> Decoration {
     case "f":                return .f
     case "ff":               return .ff
     case "fff":              return .fff
+    case "pppp":             return .pppp
+    case "ffff":             return .ffff
     case "sfz":              return .sfz
     // Articulations
     case "staccato":         return .staccato

@@ -380,8 +380,9 @@ struct DecorationRenderingTests {
     }
 
     private func dynamicGlyphs(in svg: String) -> [Glyph] {
-        let all: Set<SMuFLGlyph> = [.dynamicPPP, .dynamicPP, .dynamicPiano, .dynamicMP, .dynamicMF,
-                                    .dynamicForte, .dynamicFF, .dynamicFFF, .dynamicSforzato]
+        let all: Set<SMuFLGlyph> = [.dynamicPPPP, .dynamicPPP, .dynamicPP, .dynamicPiano,
+                                    .dynamicMP, .dynamicMF, .dynamicForte, .dynamicFF,
+                                    .dynamicFFF, .dynamicFFFF, .dynamicSforzato]
         return glyphs(in: svg).filter { all.contains($0.glyph) }
     }
 
@@ -389,6 +390,7 @@ struct DecorationRenderingTests {
         ("!ppp!", SMuFLGlyph.dynamicPPP), ("!pp!", .dynamicPP), ("!p!", .dynamicPiano),
         ("!mp!", .dynamicMP), ("!mf!", .dynamicMF), ("!f!", .dynamicForte),
         ("!ff!", .dynamicFF), ("!fff!", .dynamicFFF), ("!sfz!", .dynamicSforzato),
+        ("!pppp!", .dynamicPPPP), ("!ffff!", .dynamicFFFF),
     ])
     func dynamicGlyph(mark: String, glyph: SMuFLGlyph) throws {
         let svg = try render(mark + "G4 z4 |]", key: "G").joined()

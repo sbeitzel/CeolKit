@@ -25,10 +25,10 @@ public enum Decoration: Hashable, Sendable {
 
     // Articulations
     case staccato               // !staccato! / .
-    case staccatissimo          // !staccatissimo!
+    case staccatissimo          // !staccatissimo! / !wedge!
     case tenuto                 // !tenuto!
-    case accent                 // !accent! / L
-    case strongAccent           // !>!
+    case accent                 // !>! / !accent! / !emphasis! / L
+    case strongAccent           // !^! / !marcato!  (marcato)
     case arpeggio               // !arpeggio!
 
     // Ornaments

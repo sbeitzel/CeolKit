@@ -101,10 +101,10 @@ enum MetadataFieldParser {
     static func decorationFromName(_ name: String) -> Decoration {
         switch name.lowercased() {
         case "staccato":                return .staccato
-        case "staccatissimo":           return .staccatissimo
+        case "staccatissimo", "wedge":  return .staccatissimo
         case "tenuto":                  return .tenuto
-        case "accent":                  return .accent
-        case "strongaccent", ">":       return .strongAccent
+        case "accent", ">", "emphasis": return .accent
+        case "strongaccent", "marcato", "^": return .strongAccent
         case "arpeggio":                return .arpeggio
         case "trill":                   return .trill
         case "trill(":                  return .trillStart

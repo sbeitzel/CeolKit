@@ -147,7 +147,11 @@ struct SharedStaffMerger: Sendable {
             if subColumnCount > 0 { subWidths[subColumnCount - 1] += extra.right }
 
             var subX = [Double](repeating: 0, count: subColumnCount)
-            var cursor = x + extra.left
+            // An arpeggio's room goes in front of the whole column, grace groups and all.
+            let lead = runs.compactMap { run in
+                run.slot.events.last.map { metrics.leadingRoom(for: run.voice.part.measure.events[$0]) }
+            }.max() ?? 0
+            var cursor = x + extra.left + lead
             for j in 0..<subColumnCount {
                 subX[j] = cursor
                 cursor += subWidths[j]

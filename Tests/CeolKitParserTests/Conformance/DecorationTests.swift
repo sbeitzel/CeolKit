@@ -99,6 +99,25 @@ struct DecorationTests {
         #expect(note?.decorations.contains(.accent) == true)
     }
 
+    /// §4.14 names one accent four ways and the strong accent (marcato) two; `!wedge!` is
+    /// the staccatissimo mark.  `!>!` used to be read as the strong accent (#264).
+    @Test("Every §4.14 spelling of an articulation names it", arguments: [
+        ("!>!C", Decoration.accent),
+        ("!accent!C", .accent),
+        ("!emphasis!C", .accent),
+        ("LC", .accent),
+        ("!^!C", .strongAccent),
+        ("!marcato!C", .strongAccent),
+        ("!wedge!C", .staccatissimo),
+        ("!lowermordent!C", .mordent),
+        ("!uppermordent!C", .pralltriller),
+    ])
+    func articulationSpellings(source: String, expected: Decoration) throws {
+        let result = parse(decTune(source))
+        let note = try #require(result.score.firstTune?.singleVoiceMeasures.first?.noteEvents.first)
+        #expect(note.decorations == [expected])
+    }
+
     // MARK: Long-form ornaments
 
     @Test("!trill! applies trill decoration")

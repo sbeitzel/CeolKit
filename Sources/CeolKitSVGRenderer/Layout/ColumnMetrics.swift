@@ -108,6 +108,23 @@ struct ColumnMetrics: Sendable {
         }
     }
 
+    /// The room `event` needs in front of its noteheads, beyond its column: an arpeggio's
+    /// (#264), which abcm2ps adds to the note's left width.  Zero for everything else.
+    func leadingRoom(for event: Event) -> Double {
+        let notes: [Note]
+        let decorations: [Decoration]
+        switch event {
+        case .note(let n):  (notes, decorations) = ([n], n.decorations)
+        case .chord(let c): (notes, decorations) = (c.notes, c.decorations + c.notes.flatMap(\.decorations))
+        default:            return 0
+        }
+        guard decorations.contains(.arpeggio) else { return 0 }
+        let accidentals = notes.map { accidentalMetrics.reservation(for: $0.displayedAccidental) }
+            .max() ?? 0
+        return DecorationStack.arpeggioLead(accidentalReservation: accidentals,
+                                            staffSize: config.staffSize)
+    }
+
     /// How much room the syllables at the two ends of one column need; see
     /// ``LyricBand/columnReservation(own:next:staffSize:)``.
     private func lyricReservation(_ lyrics: [LyricSyllable?], next: Event?) -> Double {

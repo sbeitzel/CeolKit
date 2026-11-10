@@ -579,7 +579,7 @@ public struct VerticalLayoutEngine: Sendable {
             for (index, event) in jm.source.measure.events.enumerated() {
                 if case .clefChange(let change) = event { clef = change }
                 let voice = index < jm.eventVoiceIndices.count ? jm.eventVoiceIndices[index] : 0
-                marks.scan(event, clef: clef, placements: markPlacements(voice: voice, of: system),
+                marks.scan(event, clef: clef, voicing: markVoicings(voice: voice, of: system),
                            staffSize: staffSize, metadata: metadata)
                 if let t = tupletOf[index] {
                     switch event {
@@ -663,40 +663,43 @@ public struct VerticalLayoutEngine: Sendable {
         }
     }
 
-    /// Whether voice `voice` of `system`'s staff sets its marks under the staff — the
-    /// emitter's rule, a part stemmed down on a shared staff — as the possibilities to
-    /// reserve room for.  A middle voice that states no direction follows the tune's, which
-    /// this pass is not told, so it is given room on both sides.
-    private func markPlacements(voice: Int, of system: JustifiedSystem) -> [Bool] {
+    /// How voice `voice` of `system`'s staff stems and sets its marks, as the possibilities
+    /// to reserve room for — the emitter's rule: on a shared staff the part stemmed down
+    /// sets them under the staff.  A middle voice that states no direction follows the
+    /// tune's, which this pass is not told, so it is given room on both sides.
+    private func markVoicings(voice: Int, of system: JustifiedSystem) -> MarkReach.Voicing {
         let count = system.voiceStemDirections.count
-        guard count > 1 else { return [false] }
         let own = voice < count ? system.voiceStemDirections[voice] : .auto
+        guard count > 1 else { return .init(shared: false, options: [(false, own)]) }
         switch own {
-        case .down: return [true]
-        case .up:   return [false]
+        case .down: return .init(shared: true, options: [(true, .down)])
+        case .up:   return .init(shared: true, options: [(false, .up)])
         case .auto:
-            if voice == 0 { return [false] }
-            if voice == count - 1 { return [true] }
-            return [false, true]
+            if voice == 0 { return .init(shared: true, options: [(false, .up)]) }
+            if voice == count - 1 { return .init(shared: true, options: [(true, .down)]) }
+            return .init(shared: true, options: [(false, .up), (true, .down)])
         }
     }
 
-    /// How far beyond the staff the marks ``DecorationStack`` stacks over and under notes
-    /// reach, measured as the emitter places them: from the note's outer head, or its stem
-    /// tip where the stem goes that way, or a grace group in front of it.  A part setting
-    /// its marks over the staff is taken to stem by pitch, and a beam to end where an
-    /// unbeamed stem would; that is where this can fall short.
+    /// How far beyond the staff the marks ``DecorationStack`` places on notes reach, by
+    /// the same plan the emitter draws them from.  The stem is taken to end where an
+    /// unbeamed one would, which a beam a lower note drags further can exceed.
     private struct MarkReach {
+        struct Voicing {
+            let shared: Bool
+            let options: [(flipped: Bool, stem: StemDirection)]
+        }
+
         var above = 0.0
         var below = 0.0
-        /// The reach, above the staff, of a grace group just scanned, for the note after it.
-        private var graceReach: Double?
+        /// The top of a grace group just scanned, for the note after it.
+        private var graceTopY: Double?
         /// How far the highest column so far reaches with its marks, and whether an
         /// extended trill runs over the system: the line clears every column it passes.
         private var highestColumn = 0.0
         private var hasExtendedTrill = false
 
-        mutating func scan(_ event: Event, clef: ClefSpec, placements: [Bool],
+        mutating func scan(_ event: Event, clef: ClefSpec, voicing: Voicing,
                            staffSize s: Double, metadata: BravuraMetadata) {
             let positions: [Int]
             let decorations: [Decoration]
@@ -709,50 +712,38 @@ public struct VerticalLayoutEngine: Sendable {
                 decorations = c.decorations + c.notes.flatMap(\.decorations)
             case .tuplet(let t):
                 for inner in t.events {
-                    scan(inner, clef: clef, placements: placements, staffSize: s, metadata: metadata)
+                    scan(inner, clef: clef, voicing: voicing, staffSize: s, metadata: metadata)
                 }
                 return
             case .grace(let g):
                 // A grace stem stands 3.5 spaces at grace scale over its head.
                 let high = g.notes.map { clef.staffPosition(of: $0.pitch) }.max()
-                graceReach = high.map { Double($0 - 8) / 2 * s + 3.5 * 0.6 * s }
+                graceTopY = high.map { Double(8 - $0) / 2 - 3.5 * 0.6 }
                 return
             default:
                 return
             }
-            defer { graceReach = nil }
+            defer { graceTopY = nil }
             guard let low = positions.min(), let high = positions.max() else { return }
+            let headYs = positions.map { Double(8 - $0) / 2 }
 
-            for flipped in placements {
-                // Distances beyond the top line (up) and the bottom line (down), as the
-                // emitter's `reachUp` / `reachDown` measure them.  A part setting its marks
-                // under the staff is one whose stems go down.
-                var up = Double(high - 8) / 2 * s + 0.5 * s
-                var down = Double(-low) / 2 * s + 0.5 * s
-                if !flipped && low + high - 8 <= 0 {
-                    up = max(up, Double(high + 7 - 8) / 2 * s)
-                } else {
-                    down = max(down, Double(-(low - 7)) / 2 * s)
+            for (flipped, direction) in voicing.options {
+                let stemUp: Bool
+                switch direction {
+                case .up:   stemUp = true
+                case .down: stemUp = false
+                case .auto: stemUp = (low + high) / 2 <= 4
                 }
-                if let grace = graceReach { up = max(up, grace) }
-
-                let first = { (reach: Double) in
-                    max(DecorationStack.staffGap * s, reach + DecorationStack.noteGap * s)
-                }
-                let stemSide = DecorationStack.marks(of: decorations, side: .stemSide, flipped: flipped)
-                let under = DecorationStack.marks(of: decorations, side: .below, flipped: flipped)
-                let aboveMarks = flipped ? [] : stemSide
-                let belowMarks = flipped ? stemSide + under : under
-                let aboveStack = DecorationStack.height(of: aboveMarks, metadata: metadata) * s
-                let belowStack = DecorationStack.height(of: belowMarks, metadata: metadata) * s
-                if !aboveMarks.isEmpty { above = max(above, first(up) + aboveStack) }
-                if !belowMarks.isEmpty { below = max(below, first(down) + belowStack) }
-
-                if !flipped {
-                    let gap = aboveMarks.isEmpty ? 0 : DecorationStack.markGap * s
-                    highestColumn = max(highestColumn, first(up) + aboveStack + gap)
-                }
+                let tip = stemUp ? Double(8 - high) / 2 - 3.5 : Double(8 - low) / 2 + 3.5
+                let column = DecorationStack.Column(
+                    headYs: headYs, stemUp: stemUp, stemTipY: tip, graceTopY: graceTopY,
+                    shared: voicing.shared, flipped: flipped)
+                let plan = DecorationStack.plan(decorations, column: column, metadata: metadata)
+                if let top = plan.outerAbove { above = max(above, -top * s) }
+                if let bottom = plan.outerBelow { below = max(below, (bottom - 4) * s) }
+                if !flipped { highestColumn = max(highestColumn, -plan.nextAbove * s) }
             }
+
             if decorations.contains(.trillStart) || decorations.contains(.trillEnd) {
                 hasExtendedTrill = true
             }
@@ -763,7 +754,6 @@ public struct VerticalLayoutEngine: Sendable {
             }
         }
     }
-
 
     private func scan(
         _ event: Event,

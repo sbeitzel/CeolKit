@@ -72,7 +72,8 @@ public struct MeasureSizer: Sendable {
                 // Grace + following note/chord/rest: treat as a combined unit so the pair
                 // moves together during justification.
                 let graceW = metrics.graceGroupWidth(g)
-                let gap    = metrics.graceNoteGap(for: g)
+                // An arpeggio stands between the grace group and its chord.
+                let gap    = metrics.graceNoteGap(for: g) + metrics.leadingRoom(for: measure.events[i + 1])
                 graceEventIndices.insert(offsets.count)  // record before appending
                 offsets.append(x)                        // grace event
                 offsets.append(x + graceW + gap)         // paired note/chord/rest
@@ -86,6 +87,7 @@ public struct MeasureSizer: Sendable {
                 offsets.append(x)
                 i += 1
             } else {
+                x += metrics.leadingRoom(for: event)
                 offsets.append(x)
                 x += metrics.columnWidth(
                     for: event, quarterInUnits: quarterInUnits,

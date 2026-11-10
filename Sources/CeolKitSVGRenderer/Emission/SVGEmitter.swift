@@ -1302,7 +1302,7 @@ struct SVGEmitter: Sendable {
             let members = pendingBeamMembers.removeValue(forKey: voice) ?? []
             if let beamY = emitBeamGroup(g, builder: &builder) {
                 for (member, entry) in zip(members, g) {
-                    stemEnds[member] = StemEnd(y: beamY, up: entry.stem.stemUp)
+                    stemEnds[member] = StemEnd(x: entry.stem.stemX, y: beamY, up: entry.stem.stemUp)
                 }
             }
         }
@@ -1340,7 +1340,7 @@ struct SVGEmitter: Sendable {
                                      builder: &builder)
             lastGraceBeamY[voice] = nil
             if let info = stemInfo {
-                stemEnds[index] = StemEnd(y: info.stemTipY, up: info.stemUp)
+                stemEnds[index] = StemEnd(x: info.stemX, y: info.stemTipY, up: info.stemUp)
             }
             if let info = stemInfo, let stemmed = stemmed(event) {
                 let bc = requiredBeamCount(absoluteDuration(stemmed.duration,
@@ -1439,6 +1439,7 @@ struct SVGEmitter: Sendable {
 
     /// Where a stem ends as drawn, and which way it went.
     private struct StemEnd {
+        let x: Double
         let y: Double
         let up: Bool
     }
@@ -2470,11 +2471,12 @@ struct SVGEmitter: Sendable {
         }
     }
 
-    // MARK: - Decorations stacked over a note
+    // MARK: - Decorations placed on a note
 
-    /// Draws the ornaments and fermatas of every note and chord in `measure`, each stacked
-    /// clear of what its note reaches (#264) — see ``DecorationStack`` — and returns where
-    /// each such column ended up, for an extended trill to be drawn over.
+    /// Draws the articulations, ornaments and fermatas of every note and chord in
+    /// `measure` where ``DecorationStack`` places them — clear of what each note reaches
+    /// (#264) — and returns where each such column ended up, for an extended trill to be
+    /// drawn over.
     private func emitStackedMarks(in measure: ResolvedMeasure, staffIndex: Int,
                                   placements: [Int: [HeadPlacement]], stemEnds: [Int: StemEnd],
                                   graceBeamBefore: [Int: Double],
@@ -2484,76 +2486,89 @@ struct SVGEmitter: Sendable {
         let fontSize = 4.0 * s
         let nhBBox = metadata.glyphBBoxes["noteheadBlack"]
         let nhCenterX = ((nhBBox?.swX ?? 0.0) + (nhBBox?.neX ?? 1.18)) / 2.0 * s
+        // Page y to staff spaces down from the top line, and back.
+        let local = { (y: Double) in (y - topStaffY) / s }
+        let page = { (y: Double) in topStaffY + y * s }
 
         var columns: [MarkColumn] = []
         for (index, event) in measure.events.enumerated() {
-            let pitches: [Pitch]
+            let notes: [Note]
             let decorations: [Decoration]
             switch event.kind {
             case .note(let n):
-                pitches = [n.pitch]
+                notes = [n]
                 decorations = n.decorations
             case .chord(let c):
-                pitches = c.notes.map(\.pitch)
+                notes = c.notes
                 decorations = c.decorations + c.notes.flatMap(\.decorations)
             default:
                 continue
             }
-            guard !pitches.isEmpty else { continue }
-            let ys = pitches.map { noteY(staffPos: staffPos(for: $0, clef: event.clef),
-                                         bottomStaffY: bottomStaffY) }
-            let centerX = event.origin.x + (placements[index]?.first?.dx ?? 0) + nhCenterX
+            let positions = notes.map { staffPos(for: $0.pitch, clef: event.clef) }
+            guard let low = positions.min(), let high = positions.max() else { continue }
+            let headX = event.origin.x + (placements[index]?.first?.dx ?? 0)
+            let centerX = headX + nhCenterX
+            if decorations.contains(.arpeggio) {
+                let accidentals = notes.map { accidentalMetrics.reservation(for: $0.displayedAccidental) }
+                    .max() ?? 0
+                emitArpeggio(
+                    rightX: headX - DecorationStack.arpeggioInset(accidentalReservation: accidentals,
+                                                                  staffSize: s),
+                    lowestHeadY: noteY(staffPos: low, bottomStaffY: bottomStaffY),
+                    highestHeadY: noteY(staffPos: high, bottomStaffY: bottomStaffY),
+                    fontSize: fontSize, builder: &builder)
+            }
             let stem = stemEnds[index]
+            let direction = resolvedStemDirection(forVoice: event.voiceIndex)
+            // abcm2ps sets the marks of a part whose stems go down on a shared staff under
+            // it, and those of every other part over it.
+            let shared = staffVoiceCount > 1
+            let column = DecorationStack.Column(
+                headYs: positions.map { local(noteY(staffPos: $0, bottomStaffY: bottomStaffY)) },
+                stemUp: stem?.up ?? stemsUp(direction, staffPos: (low + high) / 2),
+                stemTipY: stem.map { local($0.y) },
+                graceTopY: graceBeamBefore[index].map(local),
+                shared: shared,
+                flipped: shared && direction == .down)
+            let plan = DecorationStack.plan(decorations, column: column, metadata: metadata)
 
-            // How far the note reaches each way: its outer heads, its stem or beam on the
-            // side the stem goes, and a grace group drawn in front of it (whose stems
-            // always go up).
-            var reachUp = (ys.min() ?? topStaffY) - 0.5 * s
-            var reachDown = (ys.max() ?? bottomStaffY) + 0.5 * s
-            if let stem {
-                if stem.up { reachUp = min(reachUp, stem.y) } else { reachDown = max(reachDown, stem.y) }
-            }
-            if let graceY = graceBeamBefore[index] { reachUp = min(reachUp, graceY) }
-
-            // abcm2ps sets the ornaments of a part whose stems go down on a shared staff
-            // under it, and those of every other part over it.
-            let flipped = staffVoiceCount > 1 && resolvedStemDirection(forVoice: event.voiceIndex) == .down
-
-            var above = min(topStaffY - DecorationStack.staffGap * s, reachUp - DecorationStack.noteGap * s)
-            var below = max(bottomStaffY + DecorationStack.staffGap * s, reachDown + DecorationStack.noteGap * s)
-            let stemSide = DecorationStack.marks(of: decorations, side: .stemSide, flipped: flipped)
-            let under = DecorationStack.marks(of: decorations, side: .below, flipped: flipped)
-            for mark in stemSide {
-                if flipped {
-                    below = emitStackedMark(mark, centerX: centerX, base: below, upward: false,
-                                            fontSize: fontSize, builder: &builder)
-                } else {
-                    above = emitStackedMark(mark, centerX: centerX, base: above, upward: true,
-                                            fontSize: fontSize, builder: &builder)
-                }
-            }
-            for mark in under {
-                below = emitStackedMark(mark, centerX: centerX, base: below, upward: false,
-                                        fontSize: fontSize, builder: &builder)
+            for placed in plan.marks {
+                let x = placed.atStem ? (stem?.x ?? centerX) : centerX
+                emitMark(placed.mark, centerX: x, baseline: page(placed.baselineY),
+                         above: placed.above, fontSize: fontSize, builder: &builder)
             }
 
             columns.append(MarkColumn(
                 part: PartKey(staff: staffIndex, voice: event.voiceIndex),
-                centerX: centerX, nextAbove: above, nextBelow: below, flipped: flipped,
+                centerX: centerX, nextAbove: page(plan.nextAbove), nextBelow: page(plan.nextBelow),
+                flipped: column.flipped,
                 opensTrill: decorations.contains(.trillStart),
                 closesTrill: decorations.contains(.trillEnd)))
         }
         return columns
     }
 
-    /// Draws `mark` with its inner edge at `base` — its bottom when `upward`, its top
-    /// otherwise — and returns where the next mark beyond it starts.
-    private func emitStackedMark(_ mark: DecorationStack.Mark, centerX: Double, base: Double,
-                                 upward: Bool, fontSize: Double,
-                                 builder: inout SVGBuilder) -> Double {
+    /// The arpeggio's wavy line, its right edge at `rightX`, as abcm2ps's `d_arp` draws it:
+    /// periods of `wiggleArpeggiatoUp` run upward from half a space under the lowest head to
+    /// two thirds of a space over the highest, and never shorter than two spaces.
+    private func emitArpeggio(rightX: Double, lowestHeadY: Double, highestHeadY: Double,
+                              fontSize: Double, builder: inout SVGBuilder) {
         let s = config.staffSize
-        let (ascent, descent) = DecorationStack.extent(of: mark, metadata: metadata)
-        let baseline = upward ? base - descent * s : base + ascent * s
+        let bottom = lowestHeadY + 0.5 * s
+        let height = max(2 * s, bottom - (highestHeadY - 2.0 / 3.0 * s))
+        let count = Int((height / (DecorationStack.arpeggioAdvance * s)).rounded(.up))
+        let line = String(repeating: String(SMuFLGlyph.wiggleArpeggiatoUp.character), count: count)
+        // Turned a quarter-turn back about its start, the run goes up the page and its
+        // height lies to the left of `rightX`.
+        let b = builder
+        builder.group(transform: "rotate(-90 \(b.fmt(rightX)) \(b.fmt(bottom)))") { inner in
+            inner.text(line, x: rightX, y: bottom, fontFamily: "Bravura", fontSize: fontSize)
+        }
+    }
+
+    private func emitMark(_ mark: DecorationStack.Mark, centerX: Double, baseline: Double,
+                          above: Bool, fontSize: Double, builder: inout SVGBuilder) {
+        let s = config.staffSize
         switch mark {
         case .glyph(let glyph):
             let box = metadata.glyphBBoxes[glyph.rawValue]
@@ -2561,10 +2576,8 @@ struct SVGEmitter: Sendable {
             builder.text(String(glyph.character), x: centerX - glyphCenterX, y: baseline,
                          fontFamily: "Bravura", fontSize: fontSize)
         case .roll:
-            emitRoll(centerX: centerX, baseline: baseline, inverted: !upward, builder: &builder)
+            emitRoll(centerX: centerX, baseline: baseline, inverted: !above, builder: &builder)
         }
-        let gap = DecorationStack.markGap * s
-        return upward ? baseline - ascent * s - gap : baseline + descent * s + gap
     }
 
     /// The roll: a thin crescent arching over its baseline — under it, `inverted` — as

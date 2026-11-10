@@ -133,12 +133,17 @@ enum MetadataFieldParser {
         case "coda":                    return .coda
         case "fine":                    return .fine
         case "d.c.", "d.c":             return .dacapo
-        case "d.c.al fine":             return .dacapoAlFine
-        case "d.c.al coda":             return .dacapoAlCoda
+        case "d.c.alfine", "d.c.al fine": return .dacapoAlFine
+        case "d.c.alcoda", "d.c.al coda": return .dacapoAlCoda
         case "d.s.", "d.s":             return .dalsegno
-        case "d.s.al fine":             return .dalsegnoAlFine
-        case "d.s.al coda":             return .dalsegnoAlCoda
+        case "d.s.alfine", "d.s.al fine": return .dalsegnoAlFine
+        case "d.s.alcoda", "d.s.al coda": return .dalsegnoAlCoda
+        case "dacapo":                  return .dacapoWords
+        case "dacoda":                  return .dacoda
         case "breath":                  return .breath
+        case "shortphrase":             return .shortPhrase
+        case "mediumphrase":            return .mediumPhrase
+        case "longphrase":              return .longPhrase
         case "caesura":                 return .caesura
         case "beambr1":                 return .beamBreak(1)
         case "beambr2":                 return .beamBreak(2)

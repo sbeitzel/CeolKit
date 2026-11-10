@@ -10,7 +10,7 @@ import Foundation
 /// The resolved, normalised form of a decoration after the semantic pass.
 /// Short-form decorations (`. ~ H L M O P S T u v`) are expanded to their
 /// canonical cases during the semantic pass; consumers see only this type.
-public enum Decoration: Hashable, Sendable {
+public enum Decoration: Hashable, Codable, Sendable {
 
     // Dynamics
     case pppp                   // !pppp!
@@ -67,15 +67,25 @@ public enum Decoration: Hashable, Sendable {
     case coda                   // !coda! / O
     case fine                   // !fine!
     case dacapo                 // !D.C.!
-    case dacapoAlFine           // !D.C.al Fine!
-    case dacapoAlCoda           // !D.C.al Coda!
+    case dacapoAlFine           // !D.C.alfine!
+    case dacapoAlCoda           // !D.C.alcoda!
     case dalsegno               // !D.S.!
-    case dalsegnoAlFine         // !D.S.al Fine!
-    case dalsegnoAlCoda         // !D.S.al Coda!
+    case dalsegnoAlFine         // !D.S.alfine!
+    case dalsegnoAlCoda         // !D.S.alcoda!
+    /// `!dacapo!`: the words "Da Capo" in full, where ``dacapo`` is the letters "D.C.".
+    case dacapoWords            // !dacapo!
+    /// `!dacoda!`: the word "Da" followed by a coda sign.
+    case dacoda                 // !dacoda!
 
     // Breath / pause
     case breath                 // !breath!
     case caesura                // !caesura!
+    /// `!shortphrase!`: a short vertical line on the upper part of the staff.
+    case shortPhrase            // !shortphrase!
+    /// `!mediumphrase!`: the phrase line, down to the middle line.
+    case mediumPhrase           // !mediumphrase!
+    /// `!longphrase!`: the phrase line, three quarters of the way down the staff.
+    case longPhrase             // !longphrase!
 
     // Beaming (abcm2ps extensions; not drawn as a sign)
     /// `!beambr1!` / `!beambr2!` on a note: the beam group's beams below the first `n` stop
@@ -92,5 +102,22 @@ extension Decoration {
     /// `.beamBreak` in it names, since `!beambr1!` breaks everything `!beambr2!` does.
     static func beamBreak(in decorations: [Decoration]) -> Int? {
         decorations.compactMap { if case .beamBreak(let n) = $0 { n } else { nil } }.min()
+    }
+}
+
+extension Decoration {
+    /// A sign written in front of a bar line is drawn on it, not carried to the next note:
+    /// the segno and coda, the D.C./D.S./Fine instructions, the fermata (a pause over the
+    /// bar line), and the marks that stand between two notes — breath, caesura and phrase
+    /// marks.
+    public var isDrawnOnBarLine: Bool {
+        switch self {
+        case .segno, .coda, .fermata, .fine, .dacapo, .dacapoAlFine, .dacapoAlCoda, .dalsegno,
+             .dalsegnoAlFine, .dalsegnoAlCoda, .dacapoWords, .dacoda,
+             .breath, .caesura, .shortPhrase, .mediumPhrase, .longPhrase:
+            return true
+        default:
+            return false
+        }
     }
 }

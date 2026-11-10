@@ -13,6 +13,7 @@ import Foundation
 public enum Decoration: Hashable, Sendable {
 
     // Dynamics
+    case pppp                   // !pppp!
     case ppp                    // !ppp!
     case pp                     // !pp!
     case p                      // !p!
@@ -21,6 +22,7 @@ public enum Decoration: Hashable, Sendable {
     case f                      // !f!
     case ff                     // !ff!
     case fff                    // !fff!
+    case ffff                   // !ffff!
     case sfz                    // !sfz!
 
     // Articulations

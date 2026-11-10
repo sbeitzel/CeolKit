@@ -150,6 +150,8 @@ enum MetadataFieldParser {
         case "f":                       return .f
         case "ff":                      return .ff
         case "fff":                     return .fff
+        case "pppp":                    return .pppp
+        case "ffff":                    return .ffff
         case "sfz":                     return .sfz
         default:                        return .unknown(name)
         }

@@ -45,6 +45,7 @@ enum DynamicsBand {
     /// The glyph `decoration` draws, where it is a dynamic.
     static func glyph(for decoration: Decoration) -> SMuFLGlyph? {
         switch decoration {
+        case .pppp: return .dynamicPPPP
         case .ppp: return .dynamicPPP
         case .pp:  return .dynamicPP
         case .p:   return .dynamicPiano
@@ -53,6 +54,7 @@ enum DynamicsBand {
         case .f:   return .dynamicForte
         case .ff:  return .dynamicFF
         case .fff: return .dynamicFFF
+        case .ffff: return .dynamicFFFF
         case .sfz: return .dynamicSforzato
         default:   return nil
         }

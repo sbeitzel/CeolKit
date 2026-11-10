@@ -117,6 +117,8 @@ struct DecorationTests {
         ("!crescendo)!C", .crescendoEnd),
         ("!diminuendo(!C", .decrescendoStart),
         ("!diminuendo)!C", .decrescendoEnd),
+        ("!pppp!C", .pppp),
+        ("!ffff!C", .ffff),
     ])
     func articulationSpellings(source: String, expected: Decoration) throws {
         let result = parse(decTune(source))

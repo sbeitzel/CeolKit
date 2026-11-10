@@ -78,7 +78,7 @@ private func expandLong(_ text: String) -> Decoration {
     case "open":             return .open
     case "snap":             return .snap
     case "thumb":            return .thumb
-    case "+":                return .plus
+    case "+", "plus":        return .plus   // §4.14: !plus! is !+!
     // Fingering
     case "0": return .fingering(0)
     case "1": return .fingering(1)

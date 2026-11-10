@@ -9,10 +9,15 @@ import Foundation
 
 public struct BarLine: Hashable, Codable, Sendable {
     public let kind: BarLineKind
+    /// The signs written in front of the bar line that are drawn on it rather than on the
+    /// next note: the segno and coda, the D.C./D.S./Fine instructions, the fermata, and the
+    /// breath, caesura and phrase marks (issue #264).  `!segno!|` puts its segno here.
+    public let decorations: [Decoration]
     public let source: SourceRange
 
-    public init(kind: BarLineKind, source: SourceRange) {
+    public init(kind: BarLineKind, decorations: [Decoration] = [], source: SourceRange) {
         self.kind = kind
+        self.decorations = decorations
         self.source = source
     }
 }

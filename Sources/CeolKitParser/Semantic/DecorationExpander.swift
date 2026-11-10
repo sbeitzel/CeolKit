@@ -48,6 +48,8 @@ private func expandLong(_ text: String) -> Decoration {
     case "f":                return .f
     case "ff":               return .ff
     case "fff":              return .fff
+    case "pppp":             return .pppp
+    case "ffff":             return .ffff
     case "sfz":              return .sfz
     // Articulations
     case "staccato":         return .staccato
@@ -87,22 +89,30 @@ private func expandLong(_ text: String) -> Decoration {
     case "4": return .fingering(4)
     case "5": return .fingering(5)
     // Hairpins
-    case "<(":               return .crescendoStart
-    case "<)":               return .crescendoEnd
-    case ">(":               return .decrescendoStart
-    case ">)":               return .decrescendoEnd
+    // §4.14 spells each hairpin end two ways.
+    case "<(", "crescendo(":  return .crescendoStart
+    case "<)", "crescendo)":  return .crescendoEnd
+    case ">(", "diminuendo(": return .decrescendoStart
+    case ">)", "diminuendo)": return .decrescendoEnd
     // Navigation
     case "segno":            return .segno
     case "coda":             return .coda
     case "fine":             return .fine
     case "D.C.":             return .dacapo
-    case "D.C.al Fine":      return .dacapoAlFine
-    case "D.C.al Coda":      return .dacapoAlCoda
+    // §4.14 spells these without a space ("D.C.alfine"); the spaced, capitalised forms
+    // are kept as earlier CeolKit accepted them.
+    case "D.C.alfine", "D.C.al Fine": return .dacapoAlFine
+    case "D.C.alcoda", "D.C.al Coda": return .dacapoAlCoda
     case "D.S.":             return .dalsegno
-    case "D.S.al Fine":      return .dalsegnoAlFine
-    case "D.S.al Coda":      return .dalsegnoAlCoda
+    case "D.S.alfine", "D.S.al Fine": return .dalsegnoAlFine
+    case "D.S.alcoda", "D.S.al Coda": return .dalsegnoAlCoda
+    case "dacapo":           return .dacapoWords
+    case "dacoda":           return .dacoda
     // Breath
     case "breath":           return .breath
+    case "shortphrase":      return .shortPhrase
+    case "mediumphrase":     return .mediumPhrase
+    case "longphrase":       return .longPhrase
     case "caesura":          return .caesura
     // Beaming
     case "beambr1":          return .beamBreak(1)

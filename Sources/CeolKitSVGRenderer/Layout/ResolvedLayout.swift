@@ -789,11 +789,19 @@ public struct AnnotationFloors: Sendable, Equatable {
     /// Distance up from the top staff line to the baseline of the staff's tempo changes,
     /// which stand beyond its chord symbols and annotations (#234); `nil` where it has none.
     public let tempoBaseline: Double?
+    /// Distance up from the top staff line, and down from the bottom one, to the centre line
+    /// of the staff's dynamics and hairpins (#264); `nil` on a side where it has none.  A
+    /// staff of one voice sets them on one side only: over it where the voice has lyrics.
+    public let dynamicsAbove: Double?
+    public let dynamicsBelow: Double?
 
-    public init(above: Double, below: Double, tempoBaseline: Double? = nil) {
+    public init(above: Double, below: Double, tempoBaseline: Double? = nil,
+                dynamicsAbove: Double? = nil, dynamicsBelow: Double? = nil) {
         self.above = above
         self.below = below
         self.tempoBaseline = tempoBaseline
+        self.dynamicsAbove = dynamicsAbove
+        self.dynamicsBelow = dynamicsBelow
     }
 }
 
@@ -981,10 +989,23 @@ public struct ResolvedBarLine: Sendable {
     /// Absolute x coordinate in page coordinates.
     public let x: Double
     public let kind: BarLineKind
+    /// The signs written on it (`!segno!|`), drawn over and under it (issue #264).  Empty
+    /// for a bar restated at the start of a system: its signs went with the one that
+    /// closed the system before.
+    public let decorations: [Decoration]
+    /// Whether the breath, caesura and phrase marks on the last notes before this bar line
+    /// are drawn on this staff.  `false` on a staff whose bar lines are joined to the one
+    /// above: in a score, Gould draws marks over a bar line at the top of each section only,
+    /// where the bar line does not cut through them, and ``decorations`` of that staff's
+    /// bar line carries them there (#264).
+    public let drawsPausesBefore: Bool
 
-    public init(x: Double, kind: BarLineKind) {
+    public init(x: Double, kind: BarLineKind, decorations: [Decoration] = [],
+                drawsPausesBefore: Bool = true) {
         self.x = x
         self.kind = kind
+        self.decorations = decorations
+        self.drawsPausesBefore = drawsPausesBefore
     }
 }
 

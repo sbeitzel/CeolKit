@@ -36,6 +36,20 @@ struct UserSymbolTests {
         #expect(decs == [[.upbow], [], [], []])
     }
 
+    /// The names #264 taught the decoration table, which `U:` reads through its own.
+    @Test("U: knows every §4.14 name for a decoration", arguments: [
+        ("lowermordent", Decoration.mordent), ("uppermordent", .pralltriller),
+        ("emphasis", .accent), (">", .accent), ("marcato", .strongAccent), ("^", .strongAccent),
+        ("wedge", .staccatissimo), ("plus", .plus),
+        ("crescendo(", .crescendoStart), ("crescendo)", .crescendoEnd),
+        ("diminuendo(", .decrescendoStart), ("diminuendo)", .decrescendoEnd),
+        ("pppp", .pppp), ("ffff", .ffff),
+    ])
+    func definesEverySpecName(name: String, expected: Decoration) {
+        let decs = decorations(parse("X:1\nL:1/4\nU:W=!\(name)!\nK:C\nWC D E F|").score.firstTune)
+        #expect(decs == [[expected], [], [], []])
+    }
+
     @Test("A file-header U: holds for every tune; a tune's own U: ends with the tune")
     func scope() {
         let abc = """

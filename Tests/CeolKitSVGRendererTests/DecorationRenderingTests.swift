@@ -363,6 +363,163 @@ struct DecorationRenderingTests {
         #expect(abs(try ink(trill).bottom - (ink(bow).top - gap)) < tolerance)
     }
 
+    // MARK: - Dynamics and hairpins
+
+    /// Hairpin strokes, in drawing order: two per hairpin.  Bar lines and ledger lines are
+    /// as thick, but upright or level; only a hairpin's strokes slant.
+    private func hairpinLines(in svg: String) -> [(x1: Double, y1: Double, x2: Double, y2: Double)] {
+        let width = DynamicsBand.thickness * s
+        return svg.matches(
+            of: /<line x1="([-0-9.]+)" y1="([-0-9.]+)" x2="([-0-9.]+)" y2="([-0-9.]+)" stroke="black" stroke-width="([-0-9.]+)"\/>/
+        ).compactMap { m in
+            guard let x1 = Double(m.1), let y1 = Double(m.2), let x2 = Double(m.3),
+                  let y2 = Double(m.4), let w = Double(m.5), abs(w - width) < 0.01,
+                  x1 != x2, y1 != y2 else { return nil }
+            return (x1, y1, x2, y2)
+        }
+    }
+
+    private func dynamicGlyphs(in svg: String) -> [Glyph] {
+        let all: Set<SMuFLGlyph> = [.dynamicPPPP, .dynamicPPP, .dynamicPP, .dynamicPiano,
+                                    .dynamicMP, .dynamicMF, .dynamicForte, .dynamicFF,
+                                    .dynamicFFF, .dynamicFFFF, .dynamicSforzato]
+        return glyphs(in: svg).filter { all.contains($0.glyph) }
+    }
+
+    @Test("Each dynamic draws its own glyph", arguments: [
+        ("!ppp!", SMuFLGlyph.dynamicPPP), ("!pp!", .dynamicPP), ("!p!", .dynamicPiano),
+        ("!mp!", .dynamicMP), ("!mf!", .dynamicMF), ("!f!", .dynamicForte),
+        ("!ff!", .dynamicFF), ("!fff!", .dynamicFFF), ("!sfz!", .dynamicSforzato),
+        ("!pppp!", .dynamicPPPP), ("!ffff!", .dynamicFFFF),
+    ])
+    func dynamicGlyph(mark: String, glyph: SMuFLGlyph) throws {
+        let svg = try render(mark + "G4 z4 |]", key: "G").joined()
+        #expect(glyphs(glyph, in: svg).count == 1)
+    }
+
+    @Test("Dynamics stand under the staff on one line, beyond the lowest note they pass")
+    func dynamicsAlignUnderTheStaff() throws {
+        // The low B, sets the line for all three, as `%%dynalign` does in abcm2ps.
+        let svgs = try render("!p!G2 !mf!B,2 !f!d'2 c'2 |]", key: "G")
+        let svg = svgs.joined()
+        let staffBottom = try #require(try staffTops(in: svgs).first) + 4 * s
+        let dynamics = dynamicGlyphs(in: svg)
+        try #require(dynamics.count == 3)
+        #expect(Set(dynamics.map(\.y)).count == 1)
+        let lowHead = try #require(glyphs(.noteheadBlack, in: svg).max { $0.y < $1.y })
+        for dynamic in dynamics {
+            #expect(try ink(dynamic).top > ink(lowHead).bottom)
+            #expect(dynamic.y > staffBottom)
+        }
+    }
+
+    @Test("A dynamic is centred on its note")
+    func dynamicIsCentred() throws {
+        let svg = try render("!mf!G4 z4 |]", key: "G").joined()
+        let dynamic = try #require(glyphs(.dynamicMF, in: svg).first)
+        let head = try #require(glyphs(.noteheadHalf, in: svg).first)
+        #expect(abs(try centreX(dynamic) - centreX(head)) < tolerance)
+    }
+
+    @Test("A voice with lyrics sets its dynamics over the staff, beyond the chord symbols, on every line")
+    func dynamicsOverAVoiceWithWords() throws {
+        // The words are only under the second line; abcm2ps decides by the whole tune.
+        let svgs = try render("""
+            "G"!p!G4 A4 |
+            "D"!f!d4 e4 |]
+            w:la la
+            """, key: "G")
+        let svg = svgs.joined()
+        let tops = try staffTops(in: svgs)
+        try #require(tops.count == 2)
+        let dynamics = dynamicGlyphs(in: svg)
+        try #require(dynamics.count == 2)
+        let chordSymbols = svg.matches(of: /<text x="[-0-9.]+" y="([-0-9.]+)" font-family="Libertinus Serif"[^>]*>[GD]<\/text>/)
+            .compactMap { Double($0.1) }.sorted()
+        try #require(chordSymbols.count == 2)
+        for (line, dynamic) in dynamics.sorted(by: { $0.y < $1.y }).enumerated() {
+            #expect(dynamic.y < tops[line])
+            #expect(try ink(dynamic).bottom < chordSymbols[line] - 0.5 * s)
+        }
+    }
+
+    @Test("A crescendo opens from its start to short of the dynamic on its end note")
+    func crescendoShape() throws {
+        let svg = try render("!p!!<(!G2 A2 B2 !<)!!f!c2 |]", key: "G").joined()
+        let lines = hairpinLines(in: svg)
+        try #require(lines.count == 2)
+        let piano = try #require(glyphs(.dynamicPiano, in: svg).first)
+        let forte = try #require(glyphs(.dynamicForte, in: svg).first)
+        let (upper, lower) = lines[0].y2 < lines[1].y2 ? (lines[0], lines[1]) : (lines[1], lines[0])
+
+        // Closed at the left, open by the full opening at the right.
+        #expect(abs(upper.y1 - lower.y1) < tolerance)
+        #expect(abs((lower.y2 - upper.y2) - DynamicsBand.opening * s) < tolerance)
+        // Clear of both dynamics, on their line.
+        let pianoBox = try box(.dynamicPiano), forteBox = try box(.dynamicForte)
+        #expect(upper.x1 >= piano.x + pianoBox.neX * s)
+        #expect(upper.x2 <= forte.x + forteBox.swX * s)
+        #expect(abs((upper.y2 + lower.y2) / 2 - (piano.y - DynamicsBand.baselineOffset * s)) < tolerance)
+    }
+
+    @Test("A diminuendo closes at its right; !crescendo(! and !diminuendo(! spell the hairpins too")
+    func diminuendoShape() throws {
+        let svg = try render("!diminuendo(!G2 A2 B2 !diminuendo)!c2 !crescendo(!d2 e2 f2 !crescendo)!g2 |]",
+                             key: "G").joined()
+        let lines = hairpinLines(in: svg)
+        try #require(lines.count == 4)
+        let dim = lines.prefix(2), cresc = lines.suffix(2)
+        #expect(abs(dim.first!.y2 - dim.last!.y2) < tolerance)
+        #expect(abs(abs(dim.first!.y1 - dim.last!.y1) - DynamicsBand.opening * s) < tolerance)
+        #expect(abs(cresc.first!.y1 - cresc.last!.y1) < tolerance)
+    }
+
+    @Test("A hairpin is never shorter than abcm2ps's 20 points")
+    func shortestHairpin() throws {
+        let svg = try render("!<(!G !<)!A B2 c4 |]", key: "G").joined()
+        let line = try #require(hairpinLines(in: svg).first)
+        #expect(line.x2 - line.x1 >= DynamicsBand.shortest * s - tolerance)
+    }
+
+    @Test("A hairpin open at a line break runs to the end of the line and on, part open, from the next")
+    func hairpinAcrossLines() throws {
+        let svg = try render("G2 A2 !<(!B2 c2 |\nd2 e2 !<)!f4 |]", key: "G").joined()
+        let lines = hairpinLines(in: svg)
+        try #require(lines.count == 4)
+        let first = lines.prefix(2), second = lines.suffix(2)
+        // The first part closes at its start; the second starts part open.
+        #expect(abs(first.first!.y1 - first.last!.y1) < tolerance)
+        #expect(abs(abs(second.first!.y1 - second.last!.y1) - DynamicsBand.continuedOpening * s) < tolerance)
+    }
+
+    @Test("On a shared staff the upper part's dynamics go over it and the lower part's under it")
+    func dynamicsOnASharedStaff() throws {
+        let svgs = try render("""
+            [V:1] !f!d4 e4 |]
+            [V:2] !p!G4 A4 |]
+            """, header: "%%score (1 2)\nV:1\nV:2\n", key: "G")
+        let svg = svgs.joined()
+        let top = try #require(try staffTops(in: svgs).first)
+        let forte = try #require(glyphs(.dynamicForte, in: svg).first)
+        let piano = try #require(glyphs(.dynamicPiano, in: svg).first)
+        #expect(forte.y < top)
+        #expect(piano.y > top + 4 * s)
+    }
+
+    @Test("A dynamic on a rest is drawn")
+    func dynamicOnARest() throws {
+        let svg = try render("!p!z4 G4 |]", key: "G").joined()
+        #expect(glyphs(.dynamicPiano, in: svg).count == 1)
+    }
+
+    @Test("Room is made under the staff for its dynamics")
+    func dynamicsRoomIsReserved() throws {
+        let plain = try staffTops(in: render("G4 A4 |\nB4 c4 |]", key: "G"))
+        let marked = try staffTops(in: render("!p!G4 A4 |\nB4 c4 |]", key: "G"))
+        try #require(plain.count == 2 && marked.count == 2)
+        #expect(marked[1] - marked[0] > plain[1] - plain[0])
+    }
+
     // MARK: - Arpeggio
 
     private func arpeggios(in svg: String) -> [(x: Double, y: Double, count: Int)] {
@@ -414,4 +571,265 @@ struct DecorationRenderingTests {
         let arpeggiated = try headGap("c2 !arpeggio![ce]2 z4 |]")
         #expect(arpeggiated > plain)
     }
+
+    // MARK: - Repeat signs and instructions
+
+    private struct Words { let x, y, size: Double; let text: String }
+
+    /// The italic Libertinus Serif runs drawn: the D.C./D.S./Fine words.
+    private func words(in svg: String) -> [Words] {
+        svg.matches(of: /<text x="([-0-9.]+)" y="([-0-9.]+)" font-family="Libertinus Serif" font-size="([0-9.]+)" fill="black" font-style="italic">([^<]*)<\/text>/)
+            .compactMap { m in
+                guard let x = Double(m.1), let y = Double(m.2), let size = Double(m.3) else { return nil }
+                return Words(x: x, y: y, size: size, text: String(m.4))
+            }
+    }
+
+    private func width(of words: Words) -> Double {
+        TextStyle(size: words.size, italic: true).width(of: words.text)
+    }
+
+    private func systems(_ svgs: [String]) throws -> [SystemGeometry] {
+        try SVGGeometry.pages(from: svgs).flatMap(\.systems)
+    }
+
+    @Test("A segno or coda on a bar line is centred over it, above the staff")
+    func signOnABarLine() throws {
+        let svgs = try render("CDEF !segno!| GABc !coda!| defg |]", header: "L:1/4\n", key: "C")
+        let svg = svgs.joined()
+        let system = try #require(try systems(svgs).first)
+        try #require(system.barlineXs.count >= 2)
+        let segno = try #require(glyphs(.segno, in: svg).first)
+        let coda = try #require(glyphs(.coda, in: svg).first)
+        #expect(abs(try centreX(segno) - system.barlineXs[0]) < 0.01)
+        #expect(abs(try centreX(coda) - system.barlineXs[1]) < 0.01)
+        #expect(try ink(segno).bottom <= system.topY - DecorationStack.staffGap * s + tolerance)
+        #expect(try ink(coda).bottom <= system.topY - DecorationStack.staffGap * s + tolerance)
+    }
+
+    @Test("S and O on a note draw the segno and coda over it")
+    func signOnANote() throws {
+        let svgs = try render("Se4 Oe4 |]")
+        let svg = svgs.joined()
+        let top = try #require(try staffTops(in: svgs).first)
+        let heads = glyphs(.noteheadHalf, in: svg)
+        try #require(heads.count == 2)
+        let segno = try #require(glyphs(.segno, in: svg).first)
+        let coda = try #require(glyphs(.coda, in: svg).first)
+        #expect(abs(try centreX(segno) - centreX(heads[0])) < tolerance)
+        #expect(abs(try centreX(coda) - centreX(heads[1])) < tolerance)
+        #expect(try ink(segno).bottom < top)
+        #expect(try ink(coda).bottom < top)
+    }
+
+    @Test("Each repeat instruction is written out in italic, as Gould spells it", arguments: [
+        ("!fine!", "Fine"), ("!D.C.!", "D.C."), ("!D.C.alfine!", "D.C. al Fine"),
+        ("!D.C.alcoda!", "D.C. al Coda"), ("!D.S.!", "D.S."), ("!D.S.alfine!", "D.S. al Fine"),
+        ("!D.S.alcoda!", "D.S. al Coda"), ("!dacapo!", "Da Capo"),
+    ])
+    func instructionWords(mark: String, text: String) throws {
+        let svg = try render(mark + "e4 z4 |]").joined()
+        #expect(words(in: svg).map(\.text) == [text])
+    }
+
+    @Test("Words on a note are centred under it, below the staff")
+    func wordsOnANote() throws {
+        let svgs = try render("!D.C.alfine!e4 z4 |]")
+        let svg = svgs.joined()
+        let top = try #require(try staffTops(in: svgs).first)
+        let instruction = try #require(words(in: svg).first)
+        let head = try #require(glyphs(.noteheadHalf, in: svg).first)
+        #expect(abs(instruction.x + width(of: instruction) / 2 - (try centreX(head))) < 0.01)
+        let ascent = DecorationStack.wordsAscent * s
+        #expect(instruction.y - ascent >= top + (4 + DecorationStack.staffGap) * s - tolerance)
+    }
+
+    @Test("Words on a bar line end just short of it, below the staff")
+    func wordsOnABarLine() throws {
+        let svgs = try render("CDEF !fine!| GABc |]", header: "L:1/4\n", key: "C")
+        let svg = svgs.joined()
+        let system = try #require(try systems(svgs).first)
+        let bar = try #require(system.barlineXs.first)
+        let fine = try #require(words(in: svg).first)
+        #expect(fine.text == "Fine")
+        #expect(abs(fine.x + width(of: fine) - (bar - DecorationStack.pauseGap * s)) < 0.01)
+        #expect(fine.y > system.bottomY)
+    }
+
+    @Test("!D.C.! before the closing bar of the tune is drawn, not lost")
+    func wordsOnTheLastBarLine() throws {
+        let svg = try render("CDEF GABc !D.C.!|]", header: "L:1/4\n", key: "C").joined()
+        #expect(words(in: svg).map(\.text) == ["D.C."])
+    }
+
+    @Test("!dacoda! writes \"Da\" and a smaller coda sign after it, on one baseline")
+    func daCoda() throws {
+        let svg = try render("!dacoda!e4 z4 |]").joined()
+        let da = try #require(words(in: svg).first)
+        #expect(da.text == "Da")
+        let coda = try #require(glyphs(.coda, in: svg).first)
+        #expect(coda.y == da.y)
+        #expect(coda.x > da.x + width(of: da))
+    }
+
+    @Test("Room is made above the staff for a sign on a bar line")
+    func barSignRoomIsReserved() throws {
+        // On the second line, so the room is made between the two.
+        let plain = try staffTops(in: render("CDEF | GABc |\ncdef | cdef |]",
+                                             header: "L:1/4\n", key: "C"))
+        let marked = try staffTops(in: render("CDEF | GABc |\ncdef !segno!| cdef |]",
+                                              header: "L:1/4\n", key: "C"))
+        try #require(plain.count == 2 && marked.count == 2)
+        #expect(marked[1] - marked[0] > plain[1] - plain[0])
+    }
+
+    // MARK: - Breath, caesura and phrase marks
+
+    @Test("A caesura stands just before the next note, from the second line up past the top")
+    func caesuraPlacement() throws {
+        let svgs = try render("!caesura!c2 e2 z4 |]", key: "C")
+        let svg = svgs.joined()
+        let top = try #require(try staffTops(in: svgs).first)
+        let heads = glyphs(.noteheadBlack, in: svg)
+        try #require(heads.count == 2)
+        let caesura = try #require(glyphs(.caesura, in: svg).first)
+        let b = try box(.caesura)
+        #expect(abs(caesura.y - (top + s)) < tolerance)
+        #expect(abs(caesura.x + b.neX * s - (heads[1].x - DecorationStack.pauseGap * s)) < tolerance)
+        #expect(caesura.x > heads[0].x)
+    }
+
+    @Test("A breath mark on the last note of a bar stands just before the bar line, over the staff")
+    func breathBeforeTheBarLine() throws {
+        let svgs = try render("CDE !breath!F | GABc |]", header: "L:1/4\n", key: "C")
+        let svg = svgs.joined()
+        let system = try #require(try systems(svgs).first)
+        let bar = try #require(system.barlineXs.first)
+        let breath = try #require(glyphs(.breathMarkComma, in: svg).first)
+        let b = try box(.breathMarkComma)
+        #expect(abs(breath.x + b.neX * s - (bar - DecorationStack.pauseGap * s)) < tolerance)
+        #expect(abs(breath.y - (system.topY - DecorationStack.pauseClearance * s)) < tolerance)
+    }
+
+    @Test("The phrase marks reach down a quarter, a half and three quarters of the staff",
+          arguments: [("!shortphrase!", 1.0), ("!mediumphrase!", 2.0), ("!longphrase!", 3.0)])
+    func phraseMarkLength(mark: String, depth: Double) throws {
+        let svgs = try render(mark + "c2 e2 z4 |]", key: "C")
+        let svg = svgs.joined()
+        let top = try #require(try staffTops(in: svgs).first)
+        let width = DecorationStack.phraseStrokeWidth * s
+        let strokes = svg.matches(
+            of: /<line x1="([-0-9.]+)" y1="([-0-9.]+)" x2="[-0-9.]+" y2="([-0-9.]+)" stroke="black" stroke-width="([0-9.]+)"\/>/
+        ).filter { Double($0.4).map { abs($0 - width) < 0.01 } ?? false }
+        try #require(strokes.count == 1)
+        let y1 = try #require(Double(strokes[0].2)), y2 = try #require(Double(strokes[0].3))
+        #expect(abs(y1 - (top - DecorationStack.pauseClearance * s)) < tolerance)
+        #expect(abs(y2 - (top + depth * s)) < tolerance)
+    }
+
+    // MARK: - Marks at a bar line in a score
+
+    /// Three staves, S and A with their bar lines joined, B on its own: `%%score [S | A] B`.
+    private func renderScore(s sPart: String, a aPart: String, b bPart: String) throws -> [String] {
+        let abc = """
+            X:1
+            T:Score
+            M:4/4
+            L:1/4
+            %%score [S | A] B
+            K:C
+            V:S
+            \(sPart)
+            V:A
+            \(aPart)
+            V:B clef=bass
+            \(bPart)
+
+            """
+        let score = CeolKitParser().parse(abc, options: .default).score
+        return try textProbeRenderer().render(score)
+    }
+
+    /// The tops of the three staves, top to bottom.
+    private func scoreStaffTops(_ svgs: [String]) throws -> [Double] {
+        let tops = try staffTops(in: svgs).sorted()
+        try #require(tops.count == 3)
+        return tops
+    }
+
+    @Test("A breath mark before a joined bar line on a lower staff is drawn at the top of the section")
+    func breathAtBarLineMovesToSectionTop() throws {
+        let svgs = try renderScore(s: "cdef | gabc' |]", a: "CDE!breath!F | GABc |]",
+                                   b: "C,D,E,F, | G,A,B,C |]")
+        let tops = try scoreStaffTops(svgs)
+        let breaths = glyphs(.breathMarkComma, in: svgs.joined())
+        try #require(breaths.count == 1)
+        #expect(breaths[0].y < tops[0])
+    }
+
+    @Test("The same mark written at one bar line on two joined staves is drawn once")
+    func sharedBarMarkIsDrawnOnce() throws {
+        let svgs = try renderScore(s: "cdef !breath!| gabc' |]", a: "CDE!breath!F | GABc |]",
+                                   b: "C,D,E,F, | G,A,B,C |]")
+        #expect(glyphs(.breathMarkComma, in: svgs.joined()).count == 1)
+    }
+
+    @Test("A staff whose bar lines stand on their own keeps its mark at the bar line")
+    func separateStaffKeepsItsBarMark() throws {
+        let svgs = try renderScore(s: "cdef | gabc' |]", a: "CDEF | GABc |]",
+                                   b: "C,D,E,F, !fermata!| G,A,B,C |]")
+        let tops = try scoreStaffTops(svgs)
+        let fermatas = glyphs(.fermataAbove, in: svgs.joined())
+        try #require(fermatas.count == 1)
+        #expect(fermatas[0].y < tops[2] && fermatas[0].y > tops[1] + 4 * s)
+    }
+
+    @Test("A fermata on a joined bar line of a lower staff is drawn over the top of the section")
+    func fermataAtBarLineMovesToSectionTop() throws {
+        let svgs = try renderScore(s: "cdef | gabc' |]", a: "CDEF !fermata!| GABc |]",
+                                   b: "C,D,E,F, | G,A,B,C |]")
+        let tops = try scoreStaffTops(svgs)
+        let fermatas = glyphs(.fermataAbove, in: svgs.joined())
+        try #require(fermatas.count == 1)
+        #expect(fermatas[0].y < tops[0])
+    }
+
+    @Test("A breath mark in the middle of a bar stays over the staff it was written on")
+    func breathInsideABarStaysOnItsStaff() throws {
+        let svgs = try renderScore(s: "cdef | gabc' |]", a: "C!breath!DEF | GABc |]",
+                                   b: "C,D,E,F, | G,A,B,C |]")
+        let tops = try scoreStaffTops(svgs)
+        let breaths = glyphs(.breathMarkComma, in: svgs.joined())
+        try #require(breaths.count == 1)
+        #expect(breaths[0].y < tops[1] && breaths[0].y > tops[0] + 4 * s)
+    }
+
+    @Test("A segno on any staff's bar line is drawn over the system's top staff, once")
+    func segnoGoesToTheTopOfTheSystem() throws {
+        let svgs = try renderScore(s: "cdef | gabc' |]", a: "CDEF !segno!| GABc |]",
+                                   b: "C,D,E,F, !segno!| G,A,B,C |]")
+        let tops = try scoreStaffTops(svgs)
+        let segnos = glyphs(.segno, in: svgs.joined())
+        try #require(segnos.count == 1)
+        #expect(segnos[0].y < tops[0])
+    }
+
+    @Test("A sign the second voice on a shared staff writes on a bar line is drawn")
+    func sharedStaffSecondVoiceBarSign() throws {
+        let abc = "X:1\nT:Shared\nM:4/4\nL:1/4\n%%score (S A)\nK:C\nV:S\ncdef | gabc' |]\n"
+            + "V:A\nCDEF !segno!| GABc |]\n"
+        let svg = try textProbeRenderer().render(
+            CeolKitParser().parse(abc, options: .default).score).joined()
+        #expect(glyphs(.segno, in: svg).count == 1)
+    }
+
+    @Test("A breath mark after a note on a ledger line stands clear of the ledger line")
+    func breathClearsLedgerLines() throws {
+        let svgs = try render("CDE!breath!c' | GABc |]", header: "L:1/4\n", key: "C")
+        let top = try #require(try staffTops(in: svgs).first)
+        let breath = try #require(glyphs(.breathMarkComma, in: svgs.joined()).first)
+        // c' sits on the first ledger line, one space over the staff.
+        #expect(breath.y <= top - (1 + DecorationStack.pauseClearance) * s + tolerance)
+    }
 }
+

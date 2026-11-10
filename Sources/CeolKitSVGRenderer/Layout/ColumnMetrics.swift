@@ -46,6 +46,35 @@ struct ColumnMetrics: Sendable {
     ///     (§4.18); `nil` spaces the column for its own syllables alone.
     func columnWidth(for event: Event, durationUnits: Double? = nil,
                      quarterInUnits: Double, followedBy next: Event? = nil) -> Double {
+        max(spacedWidth(for: event, durationUnits: durationUnits,
+                        quarterInUnits: quarterInUnits, followedBy: next),
+            pauseRoom(for: event))
+    }
+
+    /// The column a note, chord or rest with a breath mark, caesura or phrase mark after it
+    /// needs at least (#264): its head, then the widest of them with a gap each side, so
+    /// the mark stands clear between it and what follows.  Zero for everything else.
+    func pauseRoom(for event: Event) -> Double {
+        let decorations: [Decoration]
+        switch event {
+        case .note(let n):  decorations = n.decorations
+        case .chord(let c): decorations = c.decorations + c.notes.flatMap(\.decorations)
+        case .rest(let r):  decorations = r.decorations
+        default:            return 0
+        }
+        guard let widest = widestPause(in: decorations) else { return 0 }
+        return noteheadWidth() + widest + 2 * DecorationStack.pauseGap * config.staffSize
+    }
+
+    /// How wide the widest pause mark in `decorations` is drawn, or `nil` for none.
+    private func widestPause(in decorations: [Decoration]) -> Double? {
+        decorations.compactMap(DecorationStack.pause(for:))
+            .map { DecorationStack.width(of: $0, metadata: metadata) * config.staffSize }
+            .max()
+    }
+
+    private func spacedWidth(for event: Event, durationUnits: Double?,
+                             quarterInUnits: Double, followedBy next: Event?) -> Double {
         let s = config.staffSize
         let minCol = s * 1.2
         let base   = s * 2.0
@@ -198,6 +227,13 @@ struct ColumnMetrics: Sendable {
     /// for the thin-thin double bar — so the padding must be large enough to keep it
     /// clear of the last note.
     func rightPadding(for measure: Measure) -> Double {
+        // A pause mark written on the bar line stands just in front of it (#264).
+        let pause = widestPause(in: measure.closingBar.decorations)
+            .map { $0 + DecorationStack.pauseGap * config.staffSize } ?? 0
+        return barPadding(for: measure) + pause
+    }
+
+    private func barPadding(for measure: Measure) -> Double {
         let s       = config.staffSize
         let sep     = metadata.engravingDefaults.barlineSeparation * s
         let wideSep = sep * 2.0

@@ -810,7 +810,9 @@ struct SemanticPass {
             }
             // Closes this bar for every `&` layer standing in it, not just the current one:
             // the bar line is the staff's, and §7.4 overlays share the bar it ends.
-            ctx.closeBar(barLine: BarLine(kind: kind, source: src), in: voice)
+            let decorations = ctx.takeBarLineDecorations(in: voice, source: src)
+            ctx.closeBar(barLine: BarLine(kind: kind, decorations: decorations, source: src),
+                         in: voice)
 
         case .inlineField(let field, let src):
             applyInlineField(field, source: src, voice: &voice, ctx: &ctx, diagnostics: &diagnostics)

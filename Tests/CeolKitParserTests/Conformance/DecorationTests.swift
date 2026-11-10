@@ -346,4 +346,54 @@ struct DecorationTests {
         #expect(note?.decorations.contains(.pp) == true)
         #expect(note?.decorations.contains(.trill) == true)
     }
+
+    // MARK: Navigation, phrase marks and bar lines (#264)
+
+    @Test("§4.14's spellings of the repeat instructions, and the spaced forms kept as aliases",
+          arguments: [
+              ("D.C.alfine", Decoration.dacapoAlFine), ("D.C.alcoda", .dacapoAlCoda),
+              ("D.S.alfine", .dalsegnoAlFine), ("D.S.alcoda", .dalsegnoAlCoda),
+              ("D.C.al Fine", .dacapoAlFine), ("D.S.al Coda", .dalsegnoAlCoda),
+              ("D.S.", .dalsegno), ("dacapo", .dacapoWords), ("dacoda", .dacoda),
+              ("shortphrase", .shortPhrase), ("mediumphrase", .mediumPhrase),
+              ("longphrase", .longPhrase),
+          ])
+    func navigationSpellings(name: String, decoration: Decoration) {
+        let result = parse(decTune("!\(name)!C"))
+        let note = result.score.firstTune?.singleVoiceMeasures.first?.noteEvents.first
+        let decorations = note?.decorations ?? []
+        #expect(decorations == [decoration])
+    }
+
+    @Test("A sign written before a bar line is the bar line's, not the next note's")
+    func signBeforeABarLine() throws {
+        let result = parse("X:1\nT:Test\nM:4/4\nL:1/4\nK:C\nCDEF !segno!| GABc !D.C.alfine!|]\n")
+        let measures = try #require(result.score.firstTune?.singleVoiceMeasures)
+        try #require(measures.count == 2)
+        #expect(measures[0].closingBar.decorations == [.segno])
+        #expect(measures[1].closingBar.decorations == [.dacapoAlFine])
+        let firstOfSecond = try #require(measures[1].noteEvents.first)
+        #expect(firstOfSecond.decorations.isEmpty)
+    }
+
+    @Test("A mark drawn on a note still waits over a bar line for the next one")
+    func noteMarkCarriesOverABarLine() throws {
+        let result = parse("X:1\nT:Test\nM:4/4\nL:1/4\nK:C\nCDEF !trill!!breath!| GABc|]\n")
+        let measures = try #require(result.score.firstTune?.singleVoiceMeasures)
+        try #require(measures.count == 2)
+        #expect(measures[0].closingBar.decorations == [.breath])
+        let firstOfSecond = try #require(measures[1].noteEvents.first)
+        #expect(firstOfSecond.decorations == [.trill])
+    }
+
+    @Test("A fermata written before a bar line is the bar line's: a pause over it")
+    func fermataBeforeABarLine() throws {
+        let result = parse("X:1\nT:Test\nM:4/4\nL:1/4\nK:C\nCDEF H| GABc|]\n")
+        let measures = try #require(result.score.firstTune?.singleVoiceMeasures)
+        try #require(measures.count == 2)
+        #expect(measures[0].closingBar.decorations == [.fermata])
+        let firstOfSecond = try #require(measures[1].noteEvents.first)
+        #expect(firstOfSecond.decorations.isEmpty)
+    }
 }
+

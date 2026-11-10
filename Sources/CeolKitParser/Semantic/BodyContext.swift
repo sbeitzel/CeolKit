@@ -1095,6 +1095,21 @@ struct BodyContext {
         withVoice(voice, source: source) { $0.flushDecorations() }
     }
 
+    /// Takes the pending decorations a bar line written next carries itself, leaving the rest
+    /// for the next note as before: the signs drawn on a bar line rather than a note (issue
+    /// #264).  abcm2ps centres `!segno!|` on the bar line, and Gould puts the segno and coda
+    /// over it; a D.C. or Fine written before the bar ends there.
+    mutating func takeBarLineDecorations(in voice: VoiceKey, source: SourceRange) -> [Decoration] {
+        guard voices[voice]?.pendingDecorations.contains(where: \.isDrawnOnBarLine) == true else {
+            return []
+        }
+        return withVoice(voice, source: source) { state in
+            let taken = state.pendingDecorations.filter(\.isDrawnOnBarLine)
+            state.pendingDecorations.removeAll(where: \.isDrawnOnBarLine)
+            return taken
+        }
+    }
+
     mutating func flushAnnotations(in voice: VoiceKey, source: SourceRange) -> [Annotation] {
         withVoice(voice, source: source) { $0.flushAnnotations() }
     }

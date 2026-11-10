@@ -1449,6 +1449,134 @@ struct SVGEmitter: Sendable {
                                         graceBeamBefore: graceBeamBefore,
                                         topStaffY: topY, bottomStaffY: bottomY,
                                         builder: &builder)
+        emitPauseMarks(in: measure, topStaffY: topY, builder: &builder)
+        if let opening = measure.openingBar {
+            emitBarMarks(opening, topStaffY: topY, builder: &builder)
+        }
+        // A breath mark on the closing bar line clears the ledger lines of the music just
+        // before it, of whichever part.
+        let lastColumn = measure.events.last { highestStaffPosition(of: $0) != nil }
+            .map(\.origin.x)
+        let highestBeforeBar = measure.events
+            .filter { $0.origin.x == lastColumn }
+            .compactMap(highestStaffPosition(of:)).max()
+        emitBarMarks(measure.closingBar, topStaffY: topY, highestBeforeBar: highestBeforeBar,
+                     builder: &builder)
+    }
+
+    /// The staff position of the highest head of a note or chord, `nil` for anything else.
+    private func highestStaffPosition(of event: ResolvedEvent) -> Int? {
+        switch event.kind {
+        case .note(let n):  return staffPos(for: n.pitch, clef: event.clef)
+        case .chord(let c): return c.notes.map { staffPos(for: $0.pitch, clef: event.clef) }.max()
+        default:            return nil
+        }
+    }
+
+    /// Draws the signs written on a bar line where ``DecorationStack/planBar(_:metadata:)``
+    /// places them, and a pause mark written on it just in front of it (#264).
+    private func emitBarMarks(_ bar: ResolvedBarLine, topStaffY: Double,
+                              highestBeforeBar: Int? = nil,
+                              builder: inout SVGBuilder) {
+        guard !bar.decorations.isEmpty else { return }
+        let s = config.staffSize
+        let plan = DecorationStack.planBar(bar.decorations, metadata: metadata)
+        for placed in plan.marks {
+            // Words end a little short of the bar line, clear of a thick one.
+            let x = placed.anchor == .end ? bar.x - DecorationStack.pauseGap * s : bar.x
+            emitMark(placed.mark, centerX: x, baseline: topStaffY + placed.baselineY * s,
+                     above: placed.above, fontSize: 4.0 * s, anchor: placed.anchor,
+                     builder: &builder)
+        }
+        for pause in bar.decorations.compactMap(DecorationStack.pause(for:))
+            .map({ DecorationStack.raised($0, overStaffPosition: highestBeforeBar) }) {
+            // A phrase mark stands off the bar line by a space, not to be read as a second.
+            let gap: Double
+            if case .stroke = pause { gap = DecorationStack.phraseBarGap } else {
+                gap = DecorationStack.pauseGap
+            }
+            emitPause(pause, rightX: bar.x - gap * s, topStaffY: topStaffY, builder: &builder)
+        }
+    }
+
+    /// Draws the breath, caesura and phrase marks of the notes and rests in `measure`.  The
+    /// breath mark and caesura go "just before a subsequent note or barline", as Gould places
+    /// them (*Behind Bars*): ending a little short of the next note of the same part — short
+    /// of its accidental, where it has one — or of the bar line, and centred in what room
+    /// there is where there is not enough for that.  A phrase mark is centred in that room.
+    private func emitPauseMarks(in measure: ResolvedMeasure, topStaffY: Double,
+                                builder: inout SVGBuilder) {
+        let s = config.staffSize
+        let headWidth = (metadata.glyphBBoxes["noteheadBlack"]?.neX ?? 1.18) * s
+        func isMusic(_ kind: ResolvedEventKind) -> Bool {
+            switch kind {
+            case .note, .chord, .rest: return true
+            default:                   return false
+            }
+        }
+        for (index, event) in measure.events.enumerated() {
+            let decorations: [Decoration]
+            switch event.kind {
+            case .note(let n):  decorations = n.decorations
+            case .chord(let c): decorations = c.decorations + c.notes.flatMap(\.decorations)
+            case .rest(let r):  decorations = r.decorations
+            default:            continue
+            }
+            let pauses = decorations.compactMap(DecorationStack.pause(for:))
+            guard !pauses.isEmpty else { continue }
+            let next = measure.events[(index + 1)...].first {
+                $0.voiceIndex == event.voiceIndex && isMusic($0.kind) && $0.origin.x > event.origin.x
+            }
+            // Before the bar line, on a staff joined to the one above, the mark is drawn at
+            // the top of the section instead (see ``BarMarkSections``).
+            if next == nil, !measure.closingBar.drawsPausesBefore { continue }
+            var nextLeft = next?.origin.x ?? measure.closingBar.x
+            if let next {
+                let notes: [Note]
+                switch next.kind {
+                case .note(let n):  notes = [n]
+                case .chord(let c): notes = c.notes
+                default:            notes = []
+                }
+                nextLeft -= notes.map { accidentalMetrics.reservation(for: $0.displayedAccidental) }
+                    .max() ?? 0
+            }
+            let noteRight = event.origin.x + headWidth
+            let highest = highestStaffPosition(of: event)
+            for pause in pauses.map({ DecorationStack.raised($0, overStaffPosition: highest) }) {
+                let width = DecorationStack.width(of: pause, metadata: metadata) * s
+                if case .stroke = pause {
+                    // Gould's rule is for the comma and caesura.  A phrase mark stands in the
+                    // middle of the room between the note and what follows — clear of a
+                    // stem, and not so near a bar line that it reads as a second one.
+                    let x = (noteRight + nextLeft) / 2
+                    emitPause(pause, rightX: x + width / 2, topStaffY: topStaffY, builder: &builder)
+                    continue
+                }
+                var right = nextLeft - DecorationStack.pauseGap * s
+                if right - width < noteRight + DecorationStack.pauseGap * s {
+                    right = (noteRight + nextLeft + width) / 2
+                }
+                emitPause(pause, rightX: right, topStaffY: topStaffY, builder: &builder)
+            }
+        }
+    }
+
+    /// Draws one pause mark with its right edge at `rightX`.
+    private func emitPause(_ pause: DecorationStack.Pause, rightX: Double, topStaffY: Double,
+                           builder: inout SVGBuilder) {
+        let s = config.staffSize
+        switch pause {
+        case .glyph(let glyph, let baselineY):
+            let neX = (metadata.glyphBBoxes[glyph.rawValue]?.neX ?? 1) * s
+            builder.text(String(glyph.character), x: rightX - neX,
+                         y: topStaffY + baselineY * s, fontFamily: "Bravura", fontSize: 4.0 * s)
+        case .stroke(let topY, let bottomY):
+            let width = DecorationStack.phraseStrokeWidth * s
+            builder.line(x1: rightX - width / 2, y1: topStaffY + topY * s,
+                         x2: rightX - width / 2, y2: topStaffY + bottomY * s,
+                         stroke: "black", strokeWidth: width)
+        }
     }
 
     /// Where a stem ends as drawn, and which way it went.
@@ -2598,17 +2726,44 @@ struct SVGEmitter: Sendable {
     }
 
     private func emitMark(_ mark: DecorationStack.Mark, centerX: Double, baseline: Double,
-                          above: Bool, fontSize: Double, builder: inout SVGBuilder) {
+                          above: Bool, fontSize: Double,
+                          anchor: DecorationStack.Anchor = .centre,
+                          builder: inout SVGBuilder) {
         let s = config.staffSize
+        // Where a mark `width` wide starts, for the anchor it is set against.
+        func left(_ width: Double) -> Double {
+            anchor == .centre ? centerX - width / 2 : centerX - width
+        }
         switch mark {
         case .glyph(let glyph):
             let box = metadata.glyphBBoxes[glyph.rawValue]
-            let glyphCenterX = ((box?.swX ?? 0) + (box?.neX ?? 2)) / 2.0 * s
-            builder.text(String(glyph.character), x: centerX - glyphCenterX, y: baseline,
+            let swX = (box?.swX ?? 0) * s, neX = (box?.neX ?? 2) * s
+            builder.text(String(glyph.character), x: left(neX - swX) - swX, y: baseline,
                          fontFamily: "Bravura", fontSize: fontSize)
         case .roll:
             emitRoll(centerX: centerX, baseline: baseline, inverted: !above, builder: &builder)
+        case .words(let words):
+            let style = repeatWordsStyle
+            builder.text(words, x: left(style.width(of: words)), y: baseline, style: style)
+        case .daCoda:
+            let style = repeatWordsStyle
+            let da = "Da"
+            let scale = DecorationStack.daCodaScale
+            let box = metadata.glyphBBoxes[SMuFLGlyph.coda.rawValue]
+            let swX = (box?.swX ?? 0) * s * scale, neX = (box?.neX ?? 3.8) * s * scale
+            let daWidth = style.width(of: da)
+            let gap = DecorationStack.daCodaGap * s
+            let x = left(daWidth + gap + neX - swX)
+            builder.text(da, x: x, y: baseline, style: style)
+            builder.text(String(SMuFLGlyph.coda.character), x: x + daWidth + gap - swX,
+                         y: baseline, fontFamily: "Bravura", fontSize: fontSize * scale)
         }
+    }
+
+    /// The D.C./D.S./Fine words: italic, as Gould sets them (*Behind Bars*, p. 240), at
+    /// abcm2ps's size for them.
+    private var repeatWordsStyle: TextStyle {
+        TextStyle(size: DecorationStack.wordsSize * config.staffSize, italic: true)
     }
 
     /// The roll: a thin crescent arching over its baseline — under it, `inverted` — as

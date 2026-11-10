@@ -989,10 +989,23 @@ public struct ResolvedBarLine: Sendable {
     /// Absolute x coordinate in page coordinates.
     public let x: Double
     public let kind: BarLineKind
+    /// The signs written on it (`!segno!|`), drawn over and under it (issue #264).  Empty
+    /// for a bar restated at the start of a system: its signs went with the one that
+    /// closed the system before.
+    public let decorations: [Decoration]
+    /// Whether the breath, caesura and phrase marks on the last notes before this bar line
+    /// are drawn on this staff.  `false` on a staff whose bar lines are joined to the one
+    /// above: in a score, Gould draws marks over a bar line at the top of each section only,
+    /// where the bar line does not cut through them, and ``decorations`` of that staff's
+    /// bar line carries them there (#264).
+    public let drawsPausesBefore: Bool
 
-    public init(x: Double, kind: BarLineKind) {
+    public init(x: Double, kind: BarLineKind, decorations: [Decoration] = [],
+                drawsPausesBefore: Bool = true) {
         self.x = x
         self.kind = kind
+        self.decorations = decorations
+        self.drawsPausesBefore = drawsPausesBefore
     }
 }
 

@@ -389,10 +389,12 @@ public struct VerticalLayoutEngine: Sendable {
         staves.reserveCapacity(group.staves.count)
         var offset = 0.0
         var startWidth = 0.0
+        let barMarks = barMarkSections(of: group)
         for (i, staff) in group.staves.enumerated() {
             let extent = verticalExtent(
                 of: staff, staffSize: staffSize, styles: styles,
                 hasEndingBracket: !endingRuns[i].isEmpty,
+                barMarks: (barMarks, i),
                 dynamicsOverStaff: lyricStaves.contains(i),
                 openHairpins: i < openHairpins.count ? openHairpins[i] : [:])
             let (extraAbove, extraBelow) = (extent.extraAbove, extent.extraBelow)
@@ -407,6 +409,15 @@ public struct VerticalLayoutEngine: Sendable {
                             columns: columns,
                             labels: VoiceLabelGutter(labels: group.staves.map(\.voiceLabel),
                                                      font: labelFont, staffSize: staffSize))
+    }
+
+    /// Which staff of `group` draws each mark that stands at a bar line (#264).
+    private func barMarkSections(of group: JustifiedSystemGroup) -> BarMarkSections {
+        BarMarkSections(
+            staves: group.staves.map { $0.measures.map { ($0.source.measure, $0.eventVoiceIndices) } },
+            joinsBelow: { i in
+                i + 1 < group.staves.count && (group.grouping?.barlineJoins.contains(i) ?? true)
+            })
     }
 
     /// Places every staff of one system, top to bottom, starting at `topY`.
@@ -452,6 +463,7 @@ public struct VerticalLayoutEngine: Sendable {
             }
         }
 
+        let barMarks = barMarkSections(of: group)
         return group.staves.enumerated().map { i, staff in
             let (extraAbove, extraBelow, staffTopOffset, annotationFloors) = metrics.staves[i]
             // `origin.y` is the top of the staff's own band; `staffOrigin` walks down from
@@ -462,7 +474,8 @@ public struct VerticalLayoutEngine: Sendable {
                 clef: staff.clef,
                 systemOrigin: systemOrigin,
                 extraAbove: extraAbove,
-                systemStartWidth: metrics.startWidth
+                systemStartWidth: metrics.startWidth,
+                barMarks: (barMarks, i)
             )
             let membership: StaffGroup? = isGrouped ? StaffGroup(
                 index: i,
@@ -582,6 +595,7 @@ public struct VerticalLayoutEngine: Sendable {
                                 staffSize: Double,
                                 styles: TextStyles,
                                 hasEndingBracket: Bool,
+                                barMarks: (sections: BarMarkSections, staff: Int)? = nil,
                                 dynamicsOverStaff: Bool = false,
                                 openHairpins: [Int: [DynamicsBand.Hairpin]] = [:]
     ) -> (extraAbove: Double, extraBelow: Double, annotationFloors: AnnotationFloors) {
@@ -612,13 +626,23 @@ public struct VerticalLayoutEngine: Sendable {
         }
 
         var clef = system.clef
-        for jm in system.measures {
+        for (m, jm) in system.measures.enumerated() {
             clef = jm.clef ?? clef
             var tupletOf: [Int: Int] = [:]
             for (t, tuplet) in jm.source.tuplets.enumerated() {
                 for index in tuplet.eventIndices { tupletOf[index] = t }
             }
             var tupletPositions = [[Int]](repeating: [], count: jm.source.tuplets.count)
+            if jm.source.ownsOpeningBar, let bar = jm.source.measure.openingBar {
+                marks.scanBar(barMarks.map { $0.sections.openingDecorations(staff: $0.staff,
+                                                                            measure: m) }
+                                  ?? bar.decorations,
+                              staffSize: staffSize, metadata: metadata)
+            }
+            marks.scanBar(barMarks.map { $0.sections.closingDecorations(staff: $0.staff, measure: m) }
+                              ?? jm.source.measure.closingBar.decorations,
+                          highest: highestBeforeClosingBar(jm, clef: clef),
+                          staffSize: staffSize, metadata: metadata)
             for (index, event) in jm.source.measure.events.enumerated() {
                 if case .clefChange(let change) = event { clef = change }
                 let voice = index < jm.eventVoiceIndices.count ? jm.eventVoiceIndices[index] : 0
@@ -709,6 +733,24 @@ public struct VerticalLayoutEngine: Sendable {
                                  dynamicsAbove: dynamicsAbove, dynamicsBelow: dynamicsBelow))
     }
 
+    /// The highest head among the last notes of each part of `measure`, which a breath mark
+    /// on its closing bar line stands clear of.  `clef` is the one the bar opens in.
+    private func highestBeforeClosingBar(_ measure: JustifiedMeasure, clef: ClefSpec) -> Int? {
+        var clef = clef
+        var last: [Int: Int] = [:]
+        for (index, event) in measure.source.measure.events.enumerated() {
+            if case .clefChange(let change) = event { clef = change }
+            let voice = index < measure.eventVoiceIndices.count ? measure.eventVoiceIndices[index] : 0
+            switch event {
+            case .note(let n):  last[voice] = clef.staffPosition(of: n.pitch)
+            case .chord(let c): last[voice] = c.notes.map { clef.staffPosition(of: $0.pitch) }.max()
+            case .rest:         last[voice] = nil
+            default:            break
+            }
+        }
+        return last.values.max()
+    }
+
     /// How far beyond the staff a tuplet's number reaches, on the side the emitter sets it:
     /// the side its stems go, decided as an unforced beam group decides it, and beyond a
     /// stem of full length (3½ spaces) from the outermost note.  Notes without a pitch — a
@@ -781,9 +823,41 @@ public struct VerticalLayoutEngine: Sendable {
             shared ? !flipped : overStaff
         }
 
+        /// The marks written on a bar line: the segno and coda over it, the words under it,
+        /// and a pause mark in front of it (#264).
+        mutating func scanBar(_ decorations: [Decoration], highest: Int? = nil,
+                              staffSize s: Double, metadata: BravuraMetadata) {
+            guard !decorations.isEmpty else { return }
+            let plan = DecorationStack.planBar(decorations, metadata: metadata)
+            if let top = plan.outerAbove { above = max(above, -top * s) }
+            if let bottom = plan.outerBelow { below = max(below, (bottom - 4) * s) }
+            scanPauses(decorations, highest: highest, staffSize: s, metadata: metadata)
+        }
+
+        /// The breath, caesura and phrase marks, which stand over the top line between two
+        /// notes rather than on either.
+        mutating func scanPauses(_ decorations: [Decoration], highest: Int? = nil,
+                                 staffSize s: Double, metadata: BravuraMetadata) {
+            for pause in decorations.compactMap(DecorationStack.pause(for:))
+                .map({ DecorationStack.raised($0, overStaffPosition: highest) }) {
+                above = max(above, DecorationStack.reachAbove(of: pause, metadata: metadata) * s)
+            }
+        }
+
         mutating func scan(_ event: Event, clef: ClefSpec, voice: Int, voicing: Voicing,
                            dynamicsOverStaff: Bool,
                            staffSize s: Double, metadata: BravuraMetadata) {
+            switch event {
+            case .note(let n):
+                scanPauses(n.decorations, highest: clef.staffPosition(of: n.pitch),
+                           staffSize: s, metadata: metadata)
+            case .chord(let c):
+                scanPauses(c.decorations + c.notes.flatMap(\.decorations),
+                           highest: c.notes.map { clef.staffPosition(of: $0.pitch) }.max(),
+                           staffSize: s, metadata: metadata)
+            case .rest(let r):  scanPauses(r.decorations, staffSize: s, metadata: metadata)
+            default:            break
+            }
             let positions: [Int]
             let decorations: [Decoration]
             switch event {
@@ -926,7 +1000,8 @@ public struct VerticalLayoutEngine: Sendable {
         clef systemClef: ClefSpec,
         systemOrigin: Point,
         extraAbove: Double,
-        systemStartWidth: Double
+        systemStartWidth: Double,
+        barMarks: (sections: BarMarkSections, staff: Int)? = nil
     ) -> [ResolvedMeasure] {
         var resolved: [ResolvedMeasure] = []
         var x = systemOrigin.x
@@ -985,11 +1060,15 @@ public struct VerticalLayoutEngine: Sendable {
             // shared: it is a second bar, drawn whole, as written, wherever it falls (issue
             // #212).  The sizer has said which it is, and kept the room it needs clear of
             // whatever stands before it: the lead.
+            func openingMarks(_ bar: BarLine) -> [Decoration] {
+                barMarks.map { $0.sections.openingDecorations(staff: $0.staff, measure: i) }
+                    ?? bar.decorations
+            }
             let openingBar: ResolvedBarLine? = {
                 guard let bar = jm.source.measure.openingBar else { return nil }
                 if jm.source.ownsOpeningBar {
                     return ResolvedBarLine(x: measureOrigin.x + jm.source.openingBarLead,
-                                           kind: bar.kind)
+                                           kind: bar.kind, decorations: openingMarks(bar))
                 }
                 guard i > 0 else {
                     switch bar.kind {
@@ -1002,7 +1081,8 @@ public struct VerticalLayoutEngine: Sendable {
                     }
                 }
                 guard bar != measures[i - 1].source.measure.closingBar else { return nil }
-                return ResolvedBarLine(x: measureOrigin.x, kind: bar.kind)
+                return ResolvedBarLine(x: measureOrigin.x, kind: bar.kind,
+                                       decorations: openingMarks(bar))
             }()
             // ...and at the end of a system a start-repeat draws as a plain bar line, and
             // `::` as its end-repeat half.  Drawn whole, either one's dots — and the thick
@@ -1018,7 +1098,14 @@ public struct VerticalLayoutEngine: Sendable {
             }()
             let closingBar = ResolvedBarLine(
                 x: measureOrigin.x + jm.finalWidth,
-                kind: closingKind
+                kind: closingKind,
+                decorations: barMarks.map { $0.sections.closingDecorations(staff: $0.staff,
+                                                                           measure: i) }
+                    ?? jm.source.measure.closingBar.decorations,
+                drawsPausesBefore: barMarks.map {
+                    $0.sections.drawsPausesAtBarLine.indices.contains($0.staff)
+                        ? $0.sections.drawsPausesAtBarLine[$0.staff] : true
+                } ?? true
             )
 
             resolved.append(ResolvedMeasure(

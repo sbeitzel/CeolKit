@@ -184,9 +184,24 @@ struct SharedStaffMerger: Sendable {
             }
         }
 
+        // The staff has one bar line, but every voice on it may have written a sign on it
+        // (#264): each is drawn once.
+        func bar(_ bar: BarLine, of written: (Measure) -> BarLine?) -> BarLine {
+            var decorations = bar.decorations
+            for part in sounding {
+                for decoration in written(part.measure)?.decorations ?? []
+                where !decorations.contains(decoration) {
+                    decorations.append(decoration)
+                }
+            }
+            return BarLine(kind: bar.kind, decorations: decorations, source: bar.source)
+        }
+        let closingBar = bar(primary.measure.closingBar, of: { $0.closingBar })
+        let openingBar = primary.measure.openingBar.map { bar($0, of: { $0.openingBar }) }
+
         return SizedMeasure(
-            measure: Measure(openingBar: primary.measure.openingBar, events: mergedEvents,
-                             closingBar: primary.measure.closingBar,
+            measure: Measure(openingBar: openingBar, events: mergedEvents,
+                             closingBar: closingBar,
                              // The primary voice's endings start where its events landed.
                              endings: primary.measure.endings(
                                  movedBy: mergedIndex[primary.voiceIndex] ?? [:]),

@@ -94,6 +94,18 @@ public enum SMuFLGlyph: String, Sendable, CaseIterable {
     case fermataAbove
     case fermataBelow
 
+    // Articulations (issue #264)
+    case articAccentAbove
+    case articAccentBelow
+    case articStaccatoAbove
+    case articStaccatoBelow
+    case articTenutoAbove
+    case articTenutoBelow
+    case articStaccatissimoWedgeAbove
+    case articStaccatissimoWedgeBelow
+    case articMarcatoAbove
+    case articMarcatoBelow
+
     // Ornaments (issue #264)
     case ornamentTrill
     case ornamentTurn
@@ -102,6 +114,8 @@ public enum SMuFLGlyph: String, Sendable, CaseIterable {
     case ornamentMordent
     /// One period of a trill's wavy line; repeated, the periods join into one line.
     case wiggleTrill
+    /// One period of an arpeggio's wavy line, drawn along the baseline: turned to run up.
+    case wiggleArpeggiatoUp
 
     // Staff brackets and braces
     case bracketTop
@@ -185,12 +199,23 @@ public enum SMuFLGlyph: String, Sendable, CaseIterable {
         case .repeatDot:                   return 0xE044
         case .fermataAbove:                return 0xE4C0
         case .fermataBelow:                return 0xE4C1
+        case .articAccentAbove:            return 0xE4A0
+        case .articAccentBelow:            return 0xE4A1
+        case .articStaccatoAbove:          return 0xE4A2
+        case .articStaccatoBelow:          return 0xE4A3
+        case .articTenutoAbove:            return 0xE4A4
+        case .articTenutoBelow:            return 0xE4A5
+        case .articStaccatissimoWedgeAbove: return 0xE4A8
+        case .articStaccatissimoWedgeBelow: return 0xE4A9
+        case .articMarcatoAbove:           return 0xE4AC
+        case .articMarcatoBelow:           return 0xE4AD
         case .ornamentTrill:               return 0xE566
         case .ornamentTurn:                return 0xE567
         case .ornamentTurnInverted:        return 0xE568
         case .ornamentShortTrill:          return 0xE56C
         case .ornamentMordent:             return 0xE56D
         case .wiggleTrill:                 return 0xEAA4
+        case .wiggleArpeggiatoUp:          return 0xEAA9
         case .bracketTop:                  return 0xE003
         case .bracketBottom:               return 0xE004
         case .csymAccidentalFlat:          return 0xED60

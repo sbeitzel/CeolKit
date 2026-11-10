@@ -4,12 +4,13 @@ import CeolKitParser
 import CeolKitSVGGeometry
 @testable import CeolKitSVGRenderer
 
-/// Issue #264: the ornaments are drawn, stacked with the fermata over the note as abcm2ps
-/// (8.14, `-g`) stacks them — clear of the note's stem, beam and grace group, nearest the
-/// note first in the order they were written, and under the staff for the part whose stems
-/// go down on a shared staff.
-@Suite("Ornaments (#264)")
-struct OrnamentRenderingTests {
+/// Issue #264: the decorations are drawn where abcm2ps (8.14, `-g`) draws them.  Staccato
+/// and tenuto against the notehead away from the stem; the accent outside the staff away
+/// from the stem; the ornaments, fermata, marcato and wedge over the note clear of its stem,
+/// beam and grace group, stacked in the order written; on a shared staff, the part stemmed
+/// down sets its marks under the staff.
+@Suite("Decorations (#264)")
+struct DecorationRenderingTests {
 
     private struct Glyph { let x, y: Double; let glyph: SMuFLGlyph }
 
@@ -22,8 +23,8 @@ struct OrnamentRenderingTests {
         metadata = try BravuraMetadata.load()
     }
 
-    private func render(_ body: String, header: String = "") throws -> [String] {
-        let abc = "X:1\nT:Ornaments\nM:4/4\nL:1/8\n\(header)K:D\n\(body)\n"
+    private func render(_ body: String, header: String = "", key: String = "D") throws -> [String] {
+        let abc = "X:1\nT:Decorations\nM:4/4\nL:1/8\n\(header)K:\(key)\n\(body)\n"
         let score = CeolKitParser().parse(abc, options: .default).score
         return try textProbeRenderer().render(score)
     }
@@ -53,6 +54,11 @@ struct OrnamentRenderingTests {
     private func ink(_ g: Glyph) throws -> (top: Double, bottom: Double) {
         let b = try box(g.glyph)
         return (g.y - b.neY * s, g.y - b.swY * s)
+    }
+
+    private func centreY(_ g: Glyph) throws -> Double {
+        let b = try box(g.glyph)
+        return g.y - (b.neY + b.swY) / 2 * s
     }
 
     private func centreX(_ g: Glyph) throws -> Double {
@@ -225,5 +231,144 @@ struct OrnamentRenderingTests {
         let plain = try #require(try staffTops(in: render("a'4 z4 |]")).first)
         let trilled = try #require(try staffTops(in: render("Ta'4 z4 |]")).first)
         #expect(trilled > plain)
+    }
+
+    // MARK: - Articulations
+
+    @Test("A staccato dot sits in the next space out from the head, away from the stem")
+    func staccatoAwayFromStem() throws {
+        // c (third space) stems down: dot in the top space.  A (second space) stems up: dot
+        // under the bottom line.  A note on a line half fills the space next to it, so the
+        // dot goes one further: G (second line) stems up, dot in the space under the staff;
+        // d (fourth line) stems down, dot in the space over it.
+        let svgs = try render(".c2 .A2 .G2 .d2 |]", key: "C")
+        let svg = svgs.joined()
+        let staffTop = try #require(try staffTops(in: svgs).first)
+        let dots = glyphs(in: svg).filter {
+            $0.glyph == .articStaccatoAbove || $0.glyph == .articStaccatoBelow
+        }
+        try #require(dots.count == 4)
+        let y = { (position: Int) in staffTop + Double(8 - position) / 2 * s }
+
+        #expect(dots[0].glyph == .articStaccatoAbove)
+        #expect(abs(try centreY(dots[0]) - y(7)) < tolerance)
+        #expect(dots[1].glyph == .articStaccatoBelow)
+        #expect(abs(try centreY(dots[1]) - y(1)) < tolerance)
+        #expect(dots[2].glyph == .articStaccatoBelow)
+        #expect(abs(try centreY(dots[2]) - y(-1)) < tolerance)
+        #expect(dots[3].glyph == .articStaccatoAbove)
+        #expect(abs(try centreY(dots[3]) - y(9)) < tolerance)
+    }
+
+    @Test("A tenuto is placed as a staccato is")
+    func tenutoAwayFromStem() throws {
+        let svg = try render("!tenuto!c2 !tenuto!A2 z4 |]", key: "C").joined()
+        #expect(glyphs(.articTenutoAbove, in: svg).count == 1)
+        #expect(glyphs(.articTenutoBelow, in: svg).count == 1)
+    }
+
+    @Test("An accent stands outside the staff, away from the stem")
+    func accentOutsideStaff() throws {
+        let svgs = try render("Lc2 LA2 !>!c2 !emphasis!A2 |]", key: "C")
+        let svg = svgs.joined()
+        let staffTop = try #require(try staffTops(in: svgs).first)
+        let above = glyphs(.articAccentAbove, in: svg)
+        let below = glyphs(.articAccentBelow, in: svg)
+        #expect(above.count == 2 && below.count == 2)
+        for accent in above {
+            #expect(try ink(accent).bottom <= staffTop - s + tolerance)
+        }
+        for accent in below {
+            #expect(try ink(accent).top >= staffTop + 5 * s - tolerance)
+        }
+    }
+
+    @Test("Marcato and wedge go over the note, clear of a stem going up")
+    func marcatoAndWedgeOverTheNote() throws {
+        let svg = try render("!^!A2 !wedge!A2 z4 |]", key: "C").joined()
+        let marcato = try #require(glyphs(.articMarcatoAbove, in: svg).first)
+        let wedge = try #require(glyphs(.articStaccatissimoWedgeAbove, in: svg).first)
+        let stems = stems(in: svg)
+        try #require(stems.count == 2)
+        #expect(try ink(marcato).bottom <= stems[0].top - 0.5 * s + tolerance)
+        #expect(try ink(wedge).bottom <= stems[1].top - 0.5 * s + tolerance)
+    }
+
+    @Test("A staccato goes nearest the note, whatever order it was written in")
+    func nearMarksFirst() throws {
+        let svg = try render(".Tc2 T.c2 z4 |]", key: "C").joined()
+        let dots = glyphs(.articStaccatoAbove, in: svg)
+        let trills = glyphs(.ornamentTrill, in: svg)
+        try #require(dots.count == 2 && trills.count == 2)
+        for (dot, trill) in zip(dots, trills) {
+            #expect(try ink(trill).bottom < ink(dot).top)
+        }
+        #expect(abs(dots[0].y - dots[1].y) < tolerance)
+        #expect(abs(trills[0].y - trills[1].y) < tolerance)
+    }
+
+    @Test("On a shared staff the upper part's staccato goes over its stem")
+    func staccatoOverUpperVoiceStem() throws {
+        let svgs = try render("""
+            [V:1] .c4 z4 |]
+            [V:2] A4 z4 |]
+            """, header: "%%score (1 2)\nV:1\nV:2\n", key: "C")
+        let svg = svgs.joined()
+        let dot = try #require(glyphs(.articStaccatoAbove, in: svg).first)
+        let stem = try #require(stems(in: svg).min { $0.top < $1.top })
+        #expect(try ink(dot).bottom <= stem.top - 0.5 * s + tolerance)
+        #expect(abs(try centreX(dot) - stem.x) < tolerance)
+    }
+
+    // MARK: - Arpeggio
+
+    private func arpeggios(in svg: String) -> [(x: Double, y: Double, count: Int)] {
+        let wiggle = SMuFLGlyph.wiggleArpeggiatoUp.character
+        return svg.matches(of: /<g transform="rotate\(-90 ([-0-9.]+) ([-0-9.]+)\)">\s*<text [^>]*>([^<]+)<\/text>/)
+            .compactMap { m in
+                let text = String(m.3)
+                guard let x = Double(m.1), let y = Double(m.2),
+                      text.allSatisfy({ $0 == wiggle }) else { return nil }
+                return (x, y, text.count)
+            }
+    }
+
+    @Test("!arpeggio! draws a wavy line up the left of the chord, past both outer heads")
+    func arpeggioSpansTheChord() throws {
+        let svg = try render("!arpeggio![CEGc]4 z4 |]", key: "C").joined()
+        let lines = arpeggios(in: svg)
+        try #require(lines.count == 1)
+        let heads = glyphs(.noteheadHalf, in: svg)
+        try #require(heads.count == 4)
+        let line = lines[0]
+        let width = DecorationStack.arpeggioWidth * s
+        let length = Double(line.count) * DecorationStack.arpeggioAdvance * s
+
+        // Left of every head, and reaching from below the lowest to above the highest.
+        #expect(line.x <= heads.map(\.x).min()! - DecorationStack.arpeggioHeadGap * s + tolerance)
+        #expect(line.x - width > heads[0].x - 3 * s)
+        #expect(line.y > heads.map(\.y).max()!)
+        #expect(line.y - length < heads.map(\.y).min()! - 0.5 * s)
+    }
+
+    @Test("An arpeggio stands clear of the chord's accidentals")
+    func arpeggioClearsAccidentals() throws {
+        let svg = try render("!arpeggio![^ce]4 z4 |]", key: "C").joined()
+        let line = try #require(arpeggios(in: svg).first)
+        let sharp = try #require(glyphs(.accidentalSharp, in: svg).first)
+        let sharpLeft = sharp.x + (try box(.accidentalSharp)).swX * s
+        #expect(line.x <= sharpLeft - DecorationStack.arpeggioAccidentalGap * s + tolerance)
+    }
+
+    @Test("Room is made in front of a chord for its arpeggio")
+    func arpeggioRoomIsReserved() throws {
+        let headGap = { (body: String) throws -> Double in
+            let heads = self.glyphs(in: try self.render(body, key: "C").joined())
+                .filter { $0.glyph == .noteheadBlack }
+            return heads.last!.x - heads.first!.x
+        }
+        let plain = try headGap("c2 [ce]2 z4 |]")
+        let arpeggiated = try headGap("c2 !arpeggio![ce]2 z4 |]")
+        #expect(arpeggiated > plain)
     }
 }

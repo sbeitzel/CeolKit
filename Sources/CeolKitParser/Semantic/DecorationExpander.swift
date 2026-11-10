@@ -52,9 +52,11 @@ private func expandLong(_ text: String) -> Decoration {
     // Articulations
     case "staccato":         return .staccato
     case "staccatissimo":    return .staccatissimo
+    case "wedge":            return .staccatissimo  // §4.14: the staccatissimo mark
     case "tenuto":           return .tenuto
-    case "accent":           return .accent
-    case ">":                return .strongAccent
+    // §4.14: !>!, !accent! and !emphasis! are one accent; !^! and !marcato! the strong one.
+    case "accent", ">", "emphasis": return .accent
+    case "marcato", "^":     return .strongAccent
     case "arpeggio":         return .arpeggio
     // Ornaments
     case "trill":            return .trill

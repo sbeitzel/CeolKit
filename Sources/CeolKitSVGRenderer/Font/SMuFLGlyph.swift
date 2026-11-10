@@ -122,6 +122,17 @@ public enum SMuFLGlyph: String, Sendable, CaseIterable {
     case fingering4
     case fingering5
 
+    // Dynamics (issue #264)
+    case dynamicPiano
+    case dynamicForte
+    case dynamicPPP
+    case dynamicPP
+    case dynamicMP
+    case dynamicMF
+    case dynamicFF
+    case dynamicFFF
+    case dynamicSforzato
+
     // Ornaments (issue #264)
     case ornamentTrill
     case ornamentTurn
@@ -238,6 +249,15 @@ public enum SMuFLGlyph: String, Sendable, CaseIterable {
         case .fingering3:                  return 0xED13
         case .fingering4:                  return 0xED14
         case .fingering5:                  return 0xED15
+        case .dynamicPiano:                return 0xE520
+        case .dynamicForte:                return 0xE522
+        case .dynamicPPP:                  return 0xE52A
+        case .dynamicPP:                   return 0xE52B
+        case .dynamicMP:                   return 0xE52C
+        case .dynamicMF:                   return 0xE52D
+        case .dynamicFF:                   return 0xE52F
+        case .dynamicFFF:                  return 0xE530
+        case .dynamicSforzato:             return 0xE539
         case .ornamentTrill:               return 0xE566
         case .ornamentTurn:                return 0xE567
         case .ornamentTurnInverted:        return 0xE568

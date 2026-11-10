@@ -125,10 +125,10 @@ enum MetadataFieldParser {
         case "0": return .fingering(0); case "1": return .fingering(1)
         case "2": return .fingering(2); case "3": return .fingering(3)
         case "4": return .fingering(4); case "5": return .fingering(5)
-        case "<(":                      return .crescendoStart
-        case "<)":                      return .crescendoEnd
-        case ">(":                      return .decrescendoStart
-        case ">)":                      return .decrescendoEnd
+        case "<(", "crescendo(":        return .crescendoStart
+        case "<)", "crescendo)":        return .crescendoEnd
+        case ">(", "diminuendo(":       return .decrescendoStart
+        case ">)", "diminuendo)":       return .decrescendoEnd
         case "segno":                   return .segno
         case "coda":                    return .coda
         case "fine":                    return .fine

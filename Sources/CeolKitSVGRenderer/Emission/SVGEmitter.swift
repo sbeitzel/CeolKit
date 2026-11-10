@@ -43,6 +43,21 @@ private struct PartKey: Hashable {
     let voice: Int
 }
 
+/// One note or chord's column, after the marks over and under it were stacked: where a
+/// further mark would go on each side, and whether an extended trill starts or ends on it.
+private struct MarkColumn {
+    let part: PartKey
+    /// The x the column's marks are centred on: the middle of its notehead.
+    let centerX: Double
+    /// The inner edge of a further mark over the staff, and of one under it.
+    let nextAbove: Double
+    let nextBelow: Double
+    /// The part's marks go under the staff (see ``DecorationStack/Side/stemSide``).
+    let flipped: Bool
+    let opensTrill: Bool
+    let closesTrill: Bool
+}
+
 /// Pending tie: records where a tied note's arc must start so the arc can be drawn
 /// when the matching end note is encountered (possibly in the next measure).
 private struct TieAnchor {
@@ -172,6 +187,9 @@ struct SVGEmitter: Sendable {
         // break (#27) are resolved with dangling arcs instead of being silently dropped.
         var pendingTies:  [TieAnchor]  = []
         var pendingSlurs: [SlurAnchor] = []
+        // And the extended trills (`!trill(!` … `!trill)!`) left open, by part: `true` once
+        // one is still open at the end of a system it carries on into the next, as a tie does.
+        var pendingTrills: Set<PartKey> = []
         // Likewise threaded: the way each part's last stem went, which settles a beam group
         // that sits evenly about the middle line (#218) even where the stem before it was
         // in the previous bar, system or page.
@@ -186,6 +204,7 @@ struct SVGEmitter: Sendable {
                                      layout: layout,
                                      embeddedFaces: embeddedFaces, fonts: fonts,
                                      pendingTies: &pendingTies, pendingSlurs: &pendingSlurs,
+                                     pendingTrills: &pendingTrills,
                                      lastStemUp: &lastStemUp)
             documents.append(document)
         }
@@ -197,6 +216,7 @@ struct SVGEmitter: Sendable {
     private func emitPage(_ page: ResolvedPage, pageNumber: Int, layout: ResolvedLayout,
                            embeddedFaces: EmbeddedFaces?, fonts: FontProvider?,
                            pendingTies: inout [TieAnchor], pendingSlurs: inout [SlurAnchor],
+                           pendingTrills: inout Set<PartKey>,
                            lastStemUp: inout [PartKey: Bool]) -> String {
         var builder = SVGBuilder(textRendering: config.textRendering, fonts: fonts)
         emitScrollSyncMetadata(for: page, pageNumber: pageNumber, builder: &builder)
@@ -207,6 +227,7 @@ struct SVGEmitter: Sendable {
             // that system.
             configured(for: system)
                 .emitSystem(system, pendingTies: &pendingTies, pendingSlurs: &pendingSlurs,
+                            pendingTrills: &pendingTrills,
                             lastStemUp: &lastStemUp,
                             builder: &builder)
         }
@@ -325,7 +346,7 @@ struct SVGEmitter: Sendable {
 
     /// Where every notehead of `measure` is drawn once the voices sharing the staff have been
     /// pulled apart (issue #79), keyed by event index — one placement per notehead the event
-    /// draws, in the order ``emitEvent(_:topStaffY:bottomStaffY:unitNoteLength:separateRests:precedingGraceBeamY:placements:builder:)``
+    /// draws, in the order ``emitEvent(_:topStaffY:bottomStaffY:unitNoteLength:separateRests:placements:stemOverride:builder:)``
     /// draws them.
     ///
     /// Columns are found by x rather than by onset because x is what the merge (#76) *did*
@@ -489,6 +510,7 @@ struct SVGEmitter: Sendable {
 
     private func emitSystem(_ system: ResolvedSystem,
                              pendingTies: inout [TieAnchor], pendingSlurs: inout [SlurAnchor],
+                             pendingTrills: inout Set<PartKey>,
                              lastStemUp: inout [PartKey: Bool],
                              builder: inout SVGBuilder) {
         emitStaffLines(system, builder: &builder)
@@ -521,11 +543,14 @@ struct SVGEmitter: Sendable {
                               part: $0.part, isCarriedOver: true)
         }
 
+        var markColumns: [MarkColumn] = []
         for measure in system.measures {
             emitMeasure(measure, system: system, staffIndex: staffIndex,
                         pendingTies: &pendingTies, pendingSlurs: &pendingSlurs,
-                        lastStemUp: &lastStemUp, builder: &builder)
+                        lastStemUp: &lastStemUp, markColumns: &markColumns, builder: &builder)
         }
+        emitExtendedTrills(markColumns, system: system, staffIndex: staffIndex,
+                           pendingTrills: &pendingTrills, builder: &builder)
         emitLyrics(system, builder: &builder)
         emitAnnotations(system, builder: &builder)
 
@@ -1206,6 +1231,7 @@ struct SVGEmitter: Sendable {
     private func emitMeasure(_ measure: ResolvedMeasure, system: ResolvedSystem, staffIndex: Int,
                               pendingTies: inout [TieAnchor], pendingSlurs: inout [SlurAnchor],
                               lastStemUp: inout [PartKey: Bool],
+                              markColumns: inout [MarkColumn],
                               builder: inout SVGBuilder) {
         let topY    = system.origin.y + system.staffOrigin
         let bottomY = topY + system.staffHeight
@@ -1262,6 +1288,9 @@ struct SVGEmitter: Sendable {
         // Grace note beam tip Y for the note that immediately follows, per voice for the same
         // reason; reset after each non-grace event of that voice.
         var lastGraceBeamY: [Int: Double] = [:]
+        // What that was for each event, kept until the bar's beams are drawn and the marks
+        // over its notes can be stacked clear of all of it (#264).
+        var graceBeamBefore: [Int: Double] = [:]
         // The event index of each entry of `pendingBeams`, and where each stem of the bar
         // ends as drawn — at its beam, for a beamed note — so a tuplet's number can be set
         // clear of them (#231).
@@ -1302,10 +1331,10 @@ struct SVGEmitter: Sendable {
                                                        bottomStaffY: bottomY, builder: &builder)
                 continue
             }
+            graceBeamBefore[index] = lastGraceBeamY[voice]
             let stemInfo = emitEvent(event, topStaffY: topY, bottomStaffY: bottomY,
                                      unitNoteLength: measure.unitNoteLength,
                                      separateRests: separateRests,
-                                     precedingGraceBeamY: lastGraceBeamY[voice],
                                      placements: eventPlacements,
                                      stemOverride: beamStems[index],
                                      builder: &builder)
@@ -1398,6 +1427,14 @@ struct SVGEmitter: Sendable {
             emitTuplet(tuplet, in: measure, stemEnds: stemEnds, topStaffY: topY,
                        bottomStaffY: bottomY, builder: &builder)
         }
+
+        // Only now does every stem in the bar end where it is drawn — a beamed one at its
+        // beam — so only now can a mark be set clear of it.
+        markColumns += emitStackedMarks(in: measure, staffIndex: staffIndex,
+                                        placements: placements, stemEnds: stemEnds,
+                                        graceBeamBefore: graceBeamBefore,
+                                        topStaffY: topY, bottomStaffY: bottomY,
+                                        builder: &builder)
     }
 
     /// Where a stem ends as drawn, and which way it went.
@@ -1840,7 +1877,6 @@ struct SVGEmitter: Sendable {
     @discardableResult
     private func emitEvent(_ event: ResolvedEvent, topStaffY: Double, bottomStaffY: Double,
                            unitNoteLength: Fraction, separateRests: Bool = false,
-                           precedingGraceBeamY: Double? = nil,
                            placements: [HeadPlacement] = [],
                            stemOverride: StemDirection? = nil,
                            builder: inout SVGBuilder) -> StemInfo? {
@@ -1854,7 +1890,6 @@ struct SVGEmitter: Sendable {
         case .note(let n):
             return emitNote(n, clef: event.clef, x: event.origin.x, topStaffY: topStaffY, bottomStaffY: bottomStaffY,
                             unitNoteLength: unitNoteLength, stemDirection: stem,
-                            precedingGraceBeamY: precedingGraceBeamY,
                             placement: placements.first ?? .unmoved,
                             builder: &builder)
         case .rest(let r):
@@ -1867,7 +1902,6 @@ struct SVGEmitter: Sendable {
             for (i, note) in c.notes.enumerated() {
                 emitNote(note, clef: event.clef, x: event.origin.x, topStaffY: topStaffY, bottomStaffY: bottomStaffY,
                          unitNoteLength: unitNoteLength, stemDirection: stem,
-                         precedingGraceBeamY: precedingGraceBeamY,
                          placement: placementOf(i), drawsStem: false,
                          builder: &builder)
             }
@@ -1917,7 +1951,6 @@ struct SVGEmitter: Sendable {
     @discardableResult
     private func emitNote(_ note: Note, clef: ClefSpec, x: Double, topStaffY: Double, bottomStaffY: Double,
                           unitNoteLength: Fraction, stemDirection: StemDirection,
-                          precedingGraceBeamY: Double? = nil,
                           placement: HeadPlacement = .unmoved,
                           drawsStem: Bool = true,
                           builder: inout SVGBuilder) -> StemInfo? {
@@ -1949,9 +1982,6 @@ struct SVGEmitter: Sendable {
                                      builder: &builder)
             }
         }
-
-        emitDecorations(note.decorations, x: headX, topStaffY: topStaffY, bottomStaffY: bottomStaffY,
-                        fontSize: fontSize, precedingGraceBeamY: precedingGraceBeamY, builder: &builder)
 
         var stemInfo: StemInfo?
         if absDur < 1.0 && drawsStem {
@@ -2440,46 +2470,190 @@ struct SVGEmitter: Sendable {
         }
     }
 
-    private func emitDecorations(_ decorations: [Decoration], x: Double,
+    // MARK: - Decorations stacked over a note
+
+    /// Draws the ornaments and fermatas of every note and chord in `measure`, each stacked
+    /// clear of what its note reaches (#264) — see ``DecorationStack`` — and returns where
+    /// each such column ended up, for an extended trill to be drawn over.
+    private func emitStackedMarks(in measure: ResolvedMeasure, staffIndex: Int,
+                                  placements: [Int: [HeadPlacement]], stemEnds: [Int: StemEnd],
+                                  graceBeamBefore: [Int: Double],
                                   topStaffY: Double, bottomStaffY: Double,
-                                  fontSize: Double, precedingGraceBeamY: Double? = nil,
-                                  builder: inout SVGBuilder) {
-        guard !decorations.isEmpty else { return }
+                                  builder: inout SVGBuilder) -> [MarkColumn] {
         let s = config.staffSize
-        // Center x over the notehead: offset from note origin to the glyph's horizontal midpoint.
+        let fontSize = 4.0 * s
         let nhBBox = metadata.glyphBBoxes["noteheadBlack"]
         let nhCenterX = ((nhBBox?.swX ?? 0.0) + (nhBBox?.neX ?? 1.18)) / 2.0 * s
 
-        for decoration in decorations {
-            switch decoration {
-            case .fermata:
-                let faBBox = metadata.glyphBBoxes["fermataAbove"]
-                let faCenterX = ((faBBox?.swX ?? 0.012) + (faBBox?.neX ?? 2.42)) / 2.0 * s
-                let fermataX = x + nhCenterX - faCenterX
-
-                // Y: at least one staff space above the top line; pushed higher if a preceding
-                // grace group's stem tip would be overlapped.
-                let descent = abs(faBBox?.swY ?? 0.012) * s
-                let gap = 0.5 * s
-                var fermataY = topStaffY - s
-                if let graceBeamY = precedingGraceBeamY {
-                    fermataY = min(fermataY, graceBeamY - gap - descent)
-                }
-                builder.text(String(SMuFLGlyph.fermataAbove.character), x: fermataX, y: fermataY,
-                             fontFamily: "Bravura", fontSize: fontSize)
-
-            case .invertedFermata:
-                let fbBBox = metadata.glyphBBoxes["fermataBelow"]
-                let fbCenterX = ((fbBBox?.swX ?? 0.012) + (fbBBox?.neX ?? 2.42)) / 2.0 * s
-                let fermataX = x + nhCenterX - fbCenterX
-                let fermataY = bottomStaffY + s + fontSize * 0.25
-                builder.text(String(SMuFLGlyph.fermataBelow.character), x: fermataX, y: fermataY,
-                             fontFamily: "Bravura", fontSize: fontSize)
-
+        var columns: [MarkColumn] = []
+        for (index, event) in measure.events.enumerated() {
+            let pitches: [Pitch]
+            let decorations: [Decoration]
+            switch event.kind {
+            case .note(let n):
+                pitches = [n.pitch]
+                decorations = n.decorations
+            case .chord(let c):
+                pitches = c.notes.map(\.pitch)
+                decorations = c.decorations + c.notes.flatMap(\.decorations)
             default:
-                break
+                continue
+            }
+            guard !pitches.isEmpty else { continue }
+            let ys = pitches.map { noteY(staffPos: staffPos(for: $0, clef: event.clef),
+                                         bottomStaffY: bottomStaffY) }
+            let centerX = event.origin.x + (placements[index]?.first?.dx ?? 0) + nhCenterX
+            let stem = stemEnds[index]
+
+            // How far the note reaches each way: its outer heads, its stem or beam on the
+            // side the stem goes, and a grace group drawn in front of it (whose stems
+            // always go up).
+            var reachUp = (ys.min() ?? topStaffY) - 0.5 * s
+            var reachDown = (ys.max() ?? bottomStaffY) + 0.5 * s
+            if let stem {
+                if stem.up { reachUp = min(reachUp, stem.y) } else { reachDown = max(reachDown, stem.y) }
+            }
+            if let graceY = graceBeamBefore[index] { reachUp = min(reachUp, graceY) }
+
+            // abcm2ps sets the ornaments of a part whose stems go down on a shared staff
+            // under it, and those of every other part over it.
+            let flipped = staffVoiceCount > 1 && resolvedStemDirection(forVoice: event.voiceIndex) == .down
+
+            var above = min(topStaffY - DecorationStack.staffGap * s, reachUp - DecorationStack.noteGap * s)
+            var below = max(bottomStaffY + DecorationStack.staffGap * s, reachDown + DecorationStack.noteGap * s)
+            let stemSide = DecorationStack.marks(of: decorations, side: .stemSide, flipped: flipped)
+            let under = DecorationStack.marks(of: decorations, side: .below, flipped: flipped)
+            for mark in stemSide {
+                if flipped {
+                    below = emitStackedMark(mark, centerX: centerX, base: below, upward: false,
+                                            fontSize: fontSize, builder: &builder)
+                } else {
+                    above = emitStackedMark(mark, centerX: centerX, base: above, upward: true,
+                                            fontSize: fontSize, builder: &builder)
+                }
+            }
+            for mark in under {
+                below = emitStackedMark(mark, centerX: centerX, base: below, upward: false,
+                                        fontSize: fontSize, builder: &builder)
+            }
+
+            columns.append(MarkColumn(
+                part: PartKey(staff: staffIndex, voice: event.voiceIndex),
+                centerX: centerX, nextAbove: above, nextBelow: below, flipped: flipped,
+                opensTrill: decorations.contains(.trillStart),
+                closesTrill: decorations.contains(.trillEnd)))
+        }
+        return columns
+    }
+
+    /// Draws `mark` with its inner edge at `base` — its bottom when `upward`, its top
+    /// otherwise — and returns where the next mark beyond it starts.
+    private func emitStackedMark(_ mark: DecorationStack.Mark, centerX: Double, base: Double,
+                                 upward: Bool, fontSize: Double,
+                                 builder: inout SVGBuilder) -> Double {
+        let s = config.staffSize
+        let (ascent, descent) = DecorationStack.extent(of: mark, metadata: metadata)
+        let baseline = upward ? base - descent * s : base + ascent * s
+        switch mark {
+        case .glyph(let glyph):
+            let box = metadata.glyphBBoxes[glyph.rawValue]
+            let glyphCenterX = ((box?.swX ?? 0) + (box?.neX ?? 2)) / 2.0 * s
+            builder.text(String(glyph.character), x: centerX - glyphCenterX, y: baseline,
+                         fontFamily: "Bravura", fontSize: fontSize)
+        case .roll:
+            emitRoll(centerX: centerX, baseline: baseline, inverted: !upward, builder: &builder)
+        }
+        let gap = DecorationStack.markGap * s
+        return upward ? baseline - ascent * s - gap : baseline + descent * s + gap
+    }
+
+    /// The roll: a thin crescent arching over its baseline — under it, `inverted` — as
+    /// abcm2ps draws `~`.
+    private func emitRoll(centerX: Double, baseline: Double, inverted: Bool,
+                          builder: inout SVGBuilder) {
+        let s = config.staffSize
+        let half = DecorationStack.rollHalfWidth * s
+        let sign = inverted ? 1.0 : -1.0
+        let outer = baseline + sign * DecorationStack.rollOuterControl * s
+        let inner = baseline + sign * DecorationStack.rollInnerControl * s
+        let left = centerX - half, right = centerX + half
+        let inset = 0.11 * half
+        let b = builder
+        let d = "M\(b.fmt(left)) \(b.fmt(baseline)) "
+            + "C\(b.fmt(left + 0.04 * half)) \(b.fmt(outer)) \(b.fmt(right - 0.04 * half)) \(b.fmt(outer)) "
+            + "\(b.fmt(right)) \(b.fmt(baseline)) "
+            + "C\(b.fmt(right - inset)) \(b.fmt(inner)) \(b.fmt(left + inset)) \(b.fmt(inner)) "
+            + "\(b.fmt(left)) \(b.fmt(baseline))Z"
+        builder.path(d: d, fill: "black")
+    }
+
+    /// Draws each extended trill (`!trill(!` … `!trill)!`) of this staff as abcm2ps does:
+    /// a wavy line from its first note to short of its last, clear of every column it
+    /// passes over.  One still open at the end of the system runs to the system's edge and
+    /// on from the start of the next, as a tie does.
+    private func emitExtendedTrills(_ columns: [MarkColumn], system: ResolvedSystem,
+                                    staffIndex: Int, pendingTrills: inout Set<PartKey>,
+                                    builder: inout SVGBuilder) {
+        guard let lastMeasure = system.measures.last else { return }
+        let s = config.staffSize
+        let leftEdge = system.measures.first?.origin.x ?? system.origin.x
+        let rightEdge = lastMeasure.origin.x + lastMeasure.width
+        let parts = Set(columns.map(\.part))
+            .union(pendingTrills.filter { $0.staff == staffIndex })
+            .sorted { ($0.staff, $0.voice) < ($1.staff, $1.voice) }
+
+        for part in parts {
+            let own = columns.filter { $0.part == part }
+            // Where the open trill starts, and the columns it has passed over so far.
+            var start: Double? = pendingTrills.contains(part) ? leftEdge : nil
+            var covered: [MarkColumn] = []
+            for column in own {
+                if column.closesTrill, let from = start {
+                    emitTrillLine(from: from, to: column.centerX - 2 * s, over: covered + [column],
+                                  builder: &builder)
+                    start = nil
+                    covered = []
+                }
+                if column.opensTrill {
+                    start = column.centerX
+                    covered = []
+                }
+                if start != nil { covered.append(column) }
+            }
+            if let from = start {
+                emitTrillLine(from: from, to: rightEdge, over: covered, builder: &builder)
+                pendingTrills.insert(part)
+            } else {
+                pendingTrills.remove(part)
             }
         }
+    }
+
+    private func emitTrillLine(from startX: Double, to endX: Double, over columns: [MarkColumn],
+                               builder: inout SVGBuilder) {
+        let s = config.staffSize
+        let flipped = columns.first?.flipped ?? false
+        // abcm2ps never draws one shorter than 20 points, about three and a third spaces;
+        // a shorter one is widened about its middle.
+        let least = 20.0 / 6.0 * s
+        var from = startX, to = endX
+        if to - from < least {
+            from -= (least - (to - from)) / 2
+            to = from + least
+        }
+        let box = metadata.glyphBBoxes[SMuFLGlyph.wiggleTrill.rawValue]
+        let low = (box?.swY ?? 0.392) * s, high = (box?.neY ?? 0.836) * s
+        let baseline: Double
+        if flipped {
+            let base = columns.map(\.nextBelow).max() ?? 0
+            baseline = base + high
+        } else {
+            let base = columns.map(\.nextAbove).min() ?? 0
+            baseline = base + low
+        }
+        let count = max(1, Int(((to - from) / (DecorationStack.wiggleAdvance * s)).rounded()))
+        let line = String(repeating: String(SMuFLGlyph.wiggleTrill.character), count: count)
+        builder.text(line, x: from, y: baseline, fontFamily: "Bravura", fontSize: 4.0 * s)
     }
 
     private func noteheadWidth() -> Double {

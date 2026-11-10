@@ -94,6 +94,15 @@ public enum SMuFLGlyph: String, Sendable, CaseIterable {
     case fermataAbove
     case fermataBelow
 
+    // Ornaments (issue #264)
+    case ornamentTrill
+    case ornamentTurn
+    case ornamentTurnInverted
+    case ornamentShortTrill
+    case ornamentMordent
+    /// One period of a trill's wavy line; repeated, the periods join into one line.
+    case wiggleTrill
+
     // Staff brackets and braces
     case bracketTop
     case bracketBottom
@@ -176,6 +185,12 @@ public enum SMuFLGlyph: String, Sendable, CaseIterable {
         case .repeatDot:                   return 0xE044
         case .fermataAbove:                return 0xE4C0
         case .fermataBelow:                return 0xE4C1
+        case .ornamentTrill:               return 0xE566
+        case .ornamentTurn:                return 0xE567
+        case .ornamentTurnInverted:        return 0xE568
+        case .ornamentShortTrill:          return 0xE56C
+        case .ornamentMordent:             return 0xE56D
+        case .wiggleTrill:                 return 0xEAA4
         case .bracketTop:                  return 0xE003
         case .bracketBottom:               return 0xE004
         case .csymAccidentalFlat:          return 0xED60

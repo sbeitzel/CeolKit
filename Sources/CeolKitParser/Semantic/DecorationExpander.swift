@@ -61,7 +61,9 @@ private func expandLong(_ text: String) -> Decoration {
     case "trill(":           return .trillStart
     case "trill)":           return .trillEnd
     case "mordent":          return .mordent
+    case "lowermordent":     return .mordent       // §4.14: M
     case "pralltriller":     return .pralltriller
+    case "uppermordent":     return .pralltriller  // §4.14: P
     case "roll":             return .roll
     case "turn":             return .turn
     case "invertedturn":     return .invertedTurn

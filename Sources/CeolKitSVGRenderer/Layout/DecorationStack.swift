@@ -35,7 +35,8 @@ enum DecorationStack {
         /// part's own side: the accent, which abcm2ps turns under a stem-up note.
         case opposite
         /// Outside the staff over the note, or under it for the part stemmed down on a
-        /// shared staff: the ornaments, the fermata, marcato and wedge.
+        /// shared staff: the ornaments, the fermata, marcato and wedge, the bowing and
+        /// technique marks and the fingerings.
         case outside
         /// Outside the staff under the note, whichever part: the inverted fermata.
         case below
@@ -50,8 +51,11 @@ enum DecorationStack {
         case .accent:
             return .opposite
         case .trill, .mordent, .pralltriller, .turn, .invertedTurn, .roll, .fermata,
-             .strongAccent, .staccatissimo:
+             .strongAccent, .staccatissimo,
+             .upbow, .downbow, .open, .snap, .thumb, .plus:
             return .outside
+        case .fingering(let n):
+            return (0...5).contains(n) ? .outside : nil
         case .invertedFermata:
             return .below
         default:
@@ -76,6 +80,16 @@ enum DecorationStack {
         case .roll:            return .roll
         case .fermata:         return .glyph(above ? .fermataAbove : .fermataBelow)
         case .invertedFermata: return .glyph(.fermataBelow)
+        case .upbow:           return .glyph(.stringsUpBow)
+        case .downbow:         return .glyph(.stringsDownBow)
+        case .open:            return .glyph(.stringsHarmonic)
+        case .snap:            return .glyph(above ? .pluckedSnapPizzicatoAbove : .pluckedSnapPizzicatoBelow)
+        case .thumb:           return .glyph(.stringsThumbPosition)
+        case .plus:            return .glyph(.pluckedLeftHandPizzicato)
+        case .fingering(let n):
+            let digits: [SMuFLGlyph] = [.fingering0, .fingering1, .fingering2,
+                                        .fingering3, .fingering4, .fingering5]
+            return digits.indices.contains(n) ? .glyph(digits[n]) : nil
         default:               return nil
         }
     }

@@ -106,6 +106,22 @@ public enum SMuFLGlyph: String, Sendable, CaseIterable {
     case articMarcatoAbove
     case articMarcatoBelow
 
+    // Bowing, technique and fingering (issue #264)
+    case stringsUpBow
+    case stringsDownBow
+    /// The small circle §4.14 gives `!open!`: an open string or a harmonic.
+    case stringsHarmonic
+    case pluckedSnapPizzicatoAbove
+    case pluckedSnapPizzicatoBelow
+    case stringsThumbPosition
+    case pluckedLeftHandPizzicato
+    case fingering0
+    case fingering1
+    case fingering2
+    case fingering3
+    case fingering4
+    case fingering5
+
     // Ornaments (issue #264)
     case ornamentTrill
     case ornamentTurn
@@ -209,6 +225,19 @@ public enum SMuFLGlyph: String, Sendable, CaseIterable {
         case .articStaccatissimoWedgeBelow: return 0xE4A9
         case .articMarcatoAbove:           return 0xE4AC
         case .articMarcatoBelow:           return 0xE4AD
+        case .stringsDownBow:              return 0xE610
+        case .stringsUpBow:                return 0xE612
+        case .stringsHarmonic:             return 0xE614
+        case .stringsThumbPosition:        return 0xE624
+        case .pluckedSnapPizzicatoBelow:   return 0xE630
+        case .pluckedSnapPizzicatoAbove:   return 0xE631
+        case .pluckedLeftHandPizzicato:    return 0xE633
+        case .fingering0:                  return 0xED10
+        case .fingering1:                  return 0xED11
+        case .fingering2:                  return 0xED12
+        case .fingering3:                  return 0xED13
+        case .fingering4:                  return 0xED14
+        case .fingering5:                  return 0xED15
         case .ornamentTrill:               return 0xE566
         case .ornamentTurn:                return 0xE567
         case .ornamentTurnInverted:        return 0xE568

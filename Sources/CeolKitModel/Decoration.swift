@@ -51,7 +51,7 @@ public enum Decoration: Hashable, Sendable {
     case open                   // !open!
     case snap                   // !snap!
     case thumb                  // !thumb!
-    case plus                   // !+!  (left-hand pizzicato / stopped horn)
+    case plus                   // !+! / !plus!  (left-hand pizzicato / stopped horn)
     case fingering(Int)         // !0! … !5!
 
     // Hairpins (single-event anchors)

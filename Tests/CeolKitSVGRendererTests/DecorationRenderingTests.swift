@@ -92,7 +92,7 @@ struct DecorationRenderingTests {
         #expect(glyphs(.ornamentTrill, in: svg).count == 3)
     }
 
-    @Test("Each ornament draws its own glyph", arguments: [
+    @Test("Each ornament, bowing and technique mark and fingering draws its own glyph", arguments: [
         ("Me4", SMuFLGlyph.ornamentMordent),
         ("!mordent!e4", .ornamentMordent),
         ("!lowermordent!e4", .ornamentMordent),
@@ -101,6 +101,21 @@ struct DecorationRenderingTests {
         ("!uppermordent!e4", .ornamentShortTrill),
         ("!turn!e4", .ornamentTurn),
         ("!invertedturn!e4", .ornamentTurnInverted),
+        ("ue4", .stringsUpBow),
+        ("!upbow!e4", .stringsUpBow),
+        ("ve4", .stringsDownBow),
+        ("!downbow!e4", .stringsDownBow),
+        ("!open!e4", .stringsHarmonic),
+        ("!snap!e4", .pluckedSnapPizzicatoAbove),
+        ("!thumb!e4", .stringsThumbPosition),
+        ("!+!e4", .pluckedLeftHandPizzicato),
+        ("!plus!e4", .pluckedLeftHandPizzicato),
+        ("!0!e4", .fingering0),
+        ("!1!e4", .fingering1),
+        ("!2!e4", .fingering2),
+        ("!3!e4", .fingering3),
+        ("!4!e4", .fingering4),
+        ("!5!e4", .fingering5),
     ])
     func ornamentGlyph(body: String, glyph: SMuFLGlyph) throws {
         let svg = try render(body + " z4 |]").joined()
@@ -318,6 +333,34 @@ struct DecorationRenderingTests {
         let stem = try #require(stems(in: svg).min { $0.top < $1.top })
         #expect(try ink(dot).bottom <= stem.top - 0.5 * s + tolerance)
         #expect(abs(try centreX(dot) - stem.x) < tolerance)
+    }
+
+    // MARK: - Bowing, technique and fingering
+
+    @Test("Bowing marks go over the note, clear of a stem going up")
+    func bowingOverTheNote() throws {
+        // A stems up, c down; both bows stand over the note either way, as in abcm2ps.
+        let svgs = try render("uA2 vc2 vA2 uc2 |]", key: "G")
+        let svg = svgs.joined()
+        let staffTop = try #require(try staffTops(in: svgs).first)
+        let bows = glyphs(in: svg).filter { $0.glyph == .stringsUpBow || $0.glyph == .stringsDownBow }
+        let stems = stems(in: svg)
+        try #require(bows.count == 4 && stems.count == 4)
+        for (bow, stem) in zip(bows, stems) {
+            #expect(try ink(bow).bottom <= min(staffTop - s, stem.top - 0.5 * s) + tolerance)
+        }
+    }
+
+    @Test("Fingerings stack outward in the order written, with the other marks")
+    func fingeringsStack() throws {
+        let svg = try render("!3!!1!c2 uTc2 z4 |]", key: "G").joined()
+        let three = try #require(glyphs(.fingering3, in: svg).first)
+        let one = try #require(glyphs(.fingering1, in: svg).first)
+        let bow = try #require(glyphs(.stringsUpBow, in: svg).first)
+        let trill = try #require(glyphs(.ornamentTrill, in: svg).first)
+        let gap = DecorationStack.markGap * s
+        #expect(abs(try ink(one).bottom - (ink(three).top - gap)) < tolerance)
+        #expect(abs(try ink(trill).bottom - (ink(bow).top - gap)) < tolerance)
     }
 
     // MARK: - Arpeggio

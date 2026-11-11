@@ -10,8 +10,9 @@ import CeolKitParser
 /// then drawn the way the group's *first* note went.  In `Gd` the `d` was placed stem-down,
 /// at its notehead's left edge, and drawn up to the beam.
 ///
-/// The expected directions are abcm2ps's (8.14, `-g`): the note farthest from the middle
-/// line decides, and a group as far above it as below follows the stem before it.
+/// The note farthest from the middle line decides.  A group as far above it as below, like
+/// a lone note on it, goes by the stems around it in its bar (#269): the way they all go,
+/// else the way the ones in its beat or half-bar agree on, else down.
 @Suite("Beam group stem direction (#218)")
 struct BeamGroupStemTests {
 
@@ -34,7 +35,12 @@ struct BeamGroupStemTests {
     /// notehead and the n-th stem from the left belong together.
     private func stemsByNote(_ body: String, header: String = "") throws
         -> [(head: Head, stem: Stem, isUp: Bool)] {
-        let abc = "X:1\nT:Beams\nM:2/4\nL:1/8\n\(header)K:C\n\(body)\n"
+        try stems(inABC: "X:1\nT:Beams\nM:2/4\nL:1/8\n\(header)K:C\n\(body)\n")
+    }
+
+    /// As ``stemsByNote(_:header:)``, for a whole ABC file, whose noteheads are read left
+    /// to right across every staff it draws — so give it one staff of music.
+    private func stems(inABC abc: String) throws -> [(head: Head, stem: Stem, isUp: Bool)] {
         let score = CeolKitParser().parse(abc, options: .default).score
         let svg = try textProbeRenderer().render(score).joined()
 
@@ -82,54 +88,113 @@ struct BeamGroupStemTests {
         }
     }
 
-    @Test("The note farthest from the middle line decides, and a tie follows the stem before")
-    func directionsMatchAbcm2ps() throws {
+    @Test("The note farthest from the middle line decides, and an even group follows its bar")
+    func directionsByPitchAndBar() throws {
         let notes = try stemsByNote("GB Ac | ce Ac | ce Gd | GA Gd | GcBd | dGBc |")
         try #require(notes.count == 24)
         let expected: [Bool] = [true, true, true, true,       // GB up; Ac even, follows up
                                 false, false, false, false,   // ce down; Ac follows down
                                 false, false, false, false,   // ce down; Gd follows down
                                 true, true, true, true,       // GA up; Gd follows up
-                                true, true, true, true,       // GcBd even, follows up
-                                true, true, true, true]       // dGBc even, follows up
+                                false, false, false, false,   // GcBd even, nothing else: down
+                                false, false, false, false]   // dGBc even, nothing else: down
         #expect(notes.map(\.isUp) == expected)
         for note in notes {
             #expect(try isAttached(note.stem, to: note.head, up: note.isUp))
         }
     }
 
-    @Test("An even group follows an unbeamed stem in the bar before")
-    func tieBreakRunsAcrossTheBarLine() throws {
-        // The quarter e stems down on its own; the Gd after the bar line follows it.
-        let notes = try stemsByNote("e2 z2 | Gd z2 |")
+    @Test("An even group takes nothing from the bar before it")
+    func tieBreakStopsAtTheBarLine() throws {
+        // The G stems up on its own; the Gd after the bar line has nothing in its own bar to
+        // go by, and stems down.
+        let notes = try stemsByNote("G2 z2 | Gd z2 |")
         try #require(notes.count == 3)
-        #expect(notes.map(\.isUp) == [false, false, false])
+        #expect(notes.map(\.isUp) == [true, false, false])
     }
 
-    // Issue #221: an unbeamed note on the middle line is the same tie-break as an even
-    // group — it follows the stem before it in the part, and stems up where there is none.
+    // Issue #221, as #269 revised it: an unbeamed note on the middle line is the same
+    // tie-break as an even group.
 
-    @Test("A lone middle-line note follows the stem before it, across bar lines and rests")
-    func middleLineNoteFollowsThePreviousStem() throws {
-        // The issue's tune at L:1/8.  abcm2ps 8.14 (-g): B up in the first bar, down in the
-        // second; the last bar's first B follows the second bar's last, past the rest after
-        // it, and the G turns everything after it back up.
+    @Test("A lone middle-line note follows the stems of its bar, wherever they stand in it")
+    func middleLineNoteFollowsItsBar() throws {
+        // In the last bar every B follows the G, the one stem decided by pitch — the first
+        // B included, though it comes before the G and after the bar of down stems.
         let notes = try stemsByNote("G2 B2 G2 B2 | d2 B2 d2 B2 | B z G2 B z B2 |")
         try #require(notes.count == 12)
         let expected: [Bool] = [true, true, true, true,
                                 false, false, false, false,
-                                false, true, true, true]
+                                true, true, true, true]
         #expect(notes.map(\.isUp) == expected)
         for note in notes {
             #expect(try isAttached(note.stem, to: note.head, up: note.isUp))
         }
     }
 
-    @Test("A lone middle-line note follows a beam group before it")
+    @Test("A lone middle-line note follows a beam group in its bar")
     func middleLineNoteFollowsABeamGroup() throws {
-        let notes = try stemsByNote("ce B2 z2 |")
-        try #require(notes.count == 3)
-        #expect(notes.map(\.isUp) == [false, false, false])
+        #expect(try stemsByNote("ce B2 z2 |").map(\.isUp) == [false, false, false])
+        #expect(try stemsByNote("GA B2 z2 |").map(\.isUp) == [true, true, true])
+    }
+
+    // Issue #269: where the stems of the bar go both ways, a middle-line note goes the way
+    // of those in its beat, then its half-bar; where neither settles it, down.
+
+    @Test("In a bar of mixed stems, a middle-line note follows its beat")
+    func mixedBarFollowsTheBeat() throws {
+        // 4/4: the B shares the first beat with the d (down), though the rest of the bar
+        // stems up.
+        let notes = try stemsByNote("d B G2 F2 E2 |", header: "M:4/4\n")
+        try #require(notes.count == 5)
+        #expect(notes.map(\.isUp) == [false, false, true, true, true])
+    }
+
+    @Test("In a bar of mixed stems, a middle-line note alone in its beat follows its half-bar")
+    func mixedBarFollowsTheHalfBar() throws {
+        // The B is alone in the third beat; the G in the same half-bar stems up.
+        let up = try stemsByNote("d2 c2 B2 G2 |", header: "M:4/4\n")
+        #expect(up.map(\.isUp) == [false, false, true, true])
+        // The B is alone in the second beat; the d in the same half-bar stems down.
+        let down = try stemsByNote("d2 B2 G2 F2 |", header: "M:4/4\n")
+        #expect(down.map(\.isUp) == [false, false, true, true])
+    }
+
+    @Test("Where neither the beat nor the half-bar agrees, a middle-line note stems down")
+    func mixedBarWithNoAgreementStemsDown() throws {
+        // The first half-bar holds the d (down) and the G (up); most of the bar stems up,
+        // but the B goes down.
+        let notes = try stemsByNote("d G B2 E2 F2 |", header: "M:4/4\n")
+        try #require(notes.count == 5)
+        #expect(notes.map(\.isUp) == [false, true, false, true, true])
+    }
+
+    @Test("A compound meter's beat is a dotted note")
+    func compoundMeterBeats() throws {
+        // 6/8: the first beat is c d B (one dotted quarter, unbeamed here), the second G A F.
+        // The bar is mixed, and the B follows the c and d it shares its beat with.
+        let notes = try stemsByNote("c d B G A F |", header: "M:6/8\n")
+        try #require(notes.count == 6)
+        #expect(notes.map(\.isUp) == [false, false, false, true, true, true])
+    }
+
+    @Test("A bar of nothing but middle-line notes stems down")
+    func onlyMiddleLineNotesStemDown() throws {
+        let notes = try stemsByNote("G2 E2 | B2 B2 |")
+        #expect(notes.map(\.isUp) == [true, true, false, false])
+    }
+
+    @Test("How a tune is stemmed does not depend on the tune before it")
+    func noStemRunsOnIntoTheNextTune() throws {
+        // The issue's file.  Tune One's last stem was once carried into tune Two, so its Bs
+        // stemmed down after One and up on their own.  They stem down either way.
+        let one = "X:1\nT:One\nL:1/4\nK:C\nc4 |]\n\n"
+        let two = "X:2\nT:Two\nL:1/4\nK:C\nB4 B B B B |]\n"
+        let alone = try stems(inABC: two)
+        let after = try stems(inABC: one + two)
+        #expect(alone.count == 4)
+        #expect(alone.allSatisfy { !$0.isUp })
+        #expect(after.count == 4)
+        #expect(after.allSatisfy { !$0.isUp })
     }
 
     @Test("A voice's own stem= still decides a middle-line note")

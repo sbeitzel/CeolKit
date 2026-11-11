@@ -957,8 +957,9 @@ struct SemanticPass {
 
         // Nothing draws text on a grace note, and `"^text"{g}A` — out of §4.20's order, but
         // how pipe music writes it — means `A`, as abcm2ps reads it: quoted text stays
-        // pending through a grace group for the note after `}` (#176).  Decorations inside
-        // the braces still belong to the grace note.
+        // pending through a grace group for the note after `}` (#176).  Decorations written
+        // before `{` are set aside by `startGrace` (#267); those inside the braces belong to
+        // the grace note.
         let inGrace = ctx.isInGrace(voice)
         let note = Note(
             pitch: pitch,

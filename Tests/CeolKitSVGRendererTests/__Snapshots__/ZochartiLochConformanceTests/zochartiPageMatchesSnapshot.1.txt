@@ -331,13 +331,13 @@
   <path d="M 385.761 255.903 C 393.743 259.638 401.725 261.888 409.707 258.153 L 409.707 257.703 C 401.725 260.718 393.743 258.468 385.761 255.453 Z" fill="black" stroke="none"/>
   <line x1="526.445" y1="242.178" x2="526.445" y2="260.178" stroke="black" stroke-width="0.72"/>
   <line x1="528.245" y1="242.178" x2="528.245" y2="260.178" stroke="black" stroke-width="0.72"/>
-  <use href="#bravura-g157" xlink:href="#bravura-g157" transform="translate(451.587 246.678) scale(0.018 -0.018)"/>
-  <use href="#bravura-g537" xlink:href="#bravura-g537" transform="translate(446.565 246.678) scale(0.018 -0.018)"/>
-  <use href="#bravura-g459" xlink:href="#bravura-g459" transform="translate(457.959 244.428) scale(0.018 -0.018)"/>
-  <line x1="456.627" y1="230.928" x2="456.627" y2="245.922" stroke="black" stroke-width="0.54"/>
-  <use href="#bravura-g157" xlink:href="#bravura-g157" transform="translate(451.587 251.178) scale(0.018 -0.018)"/>
-  <use href="#bravura-g459" xlink:href="#bravura-g459" transform="translate(457.959 248.928) scale(0.018 -0.018)"/>
-  <line x1="451.857" y1="251.934" x2="451.857" y2="266.928" stroke="black" stroke-width="0.54"/>
-  <use href="#bravura-g968" xlink:href="#bravura-g968" transform="translate(448.77 228.624) scale(0.018 -0.018)"/>
-  <use href="#bravura-g969" xlink:href="#bravura-g969" transform="translate(448.77 269.178) scale(0.018 -0.018)"/>
+  <use href="#bravura-g157" xlink:href="#bravura-g157" transform="translate(456.609 246.678) scale(0.018 -0.018)"/>
+  <use href="#bravura-g537" xlink:href="#bravura-g537" transform="translate(451.587 246.678) scale(0.018 -0.018)"/>
+  <use href="#bravura-g459" xlink:href="#bravura-g459" transform="translate(462.981 244.428) scale(0.018 -0.018)"/>
+  <line x1="461.649" y1="230.928" x2="461.649" y2="245.922" stroke="black" stroke-width="0.54"/>
+  <use href="#bravura-g157" xlink:href="#bravura-g157" transform="translate(456.609 251.178) scale(0.018 -0.018)"/>
+  <use href="#bravura-g459" xlink:href="#bravura-g459" transform="translate(462.981 248.928) scale(0.018 -0.018)"/>
+  <line x1="456.879" y1="251.934" x2="456.879" y2="266.928" stroke="black" stroke-width="0.54"/>
+  <use href="#bravura-g968" xlink:href="#bravura-g968" transform="translate(453.792 228.624) scale(0.018 -0.018)"/>
+  <use href="#bravura-g969" xlink:href="#bravura-g969" transform="translate(453.792 269.178) scale(0.018 -0.018)"/>
 </svg>

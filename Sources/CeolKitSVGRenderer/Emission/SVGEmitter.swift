@@ -198,10 +198,12 @@ struct SVGEmitter: Sendable {
         var pendingTrills: Set<PartKey> = []
         // And the hairpins, by part, for the same reason (#264).
         var pendingHairpins: [PartKey: [DynamicsBand.Hairpin]] = [:]
-        // Likewise threaded: the way each part's last stem went, which settles a beam group
-        // that sits evenly about the middle line (#218) even where the stem before it was
-        // in the previous bar, system or page.
-        var lastStemUp: [PartKey: Bool] = [:]
+        // Likewise threaded: the meter each staff is in, which says where a bar's beats fall
+        // for the stems of notes on the middle line (#269).  A time signature is written only
+        // on a tune's first system and where `[M:]` changes it, so the one in force has to be
+        // carried from there.  Every tune's first system states one, so none runs on into
+        // the next tune.
+        var meters: [Int: Meter] = [:]
         var documents: [String] = []
         documents.reserveCapacity(layout.pages.count)
         for (pageIndex, page) in layout.pages.enumerated() {
@@ -214,7 +216,7 @@ struct SVGEmitter: Sendable {
                                      pendingTies: &pendingTies, pendingSlurs: &pendingSlurs,
                                      pendingTrills: &pendingTrills,
                                      pendingHairpins: &pendingHairpins,
-                                     lastStemUp: &lastStemUp)
+                                     meters: &meters)
             documents.append(document)
         }
         return documents
@@ -227,7 +229,7 @@ struct SVGEmitter: Sendable {
                            pendingTies: inout [TieAnchor], pendingSlurs: inout [SlurAnchor],
                            pendingTrills: inout Set<PartKey>,
                            pendingHairpins: inout [PartKey: [DynamicsBand.Hairpin]],
-                           lastStemUp: inout [PartKey: Bool]) -> String {
+                           meters: inout [Int: Meter]) -> String {
         var builder = SVGBuilder(textRendering: config.textRendering, fonts: fonts)
         emitScrollSyncMetadata(for: page, pageNumber: pageNumber, builder: &builder)
         emitTitleBlock(page.titleRows, builder: &builder)
@@ -239,7 +241,7 @@ struct SVGEmitter: Sendable {
                 .emitSystem(system, pendingTies: &pendingTies, pendingSlurs: &pendingSlurs,
                             pendingTrills: &pendingTrills,
                             pendingHairpins: &pendingHairpins,
-                            lastStemUp: &lastStemUp,
+                            meters: &meters,
                             builder: &builder)
         }
         emitFooterBlock(page.footerRows, builder: &builder)
@@ -523,7 +525,7 @@ struct SVGEmitter: Sendable {
                              pendingTies: inout [TieAnchor], pendingSlurs: inout [SlurAnchor],
                              pendingTrills: inout Set<PartKey>,
                              pendingHairpins: inout [PartKey: [DynamicsBand.Hairpin]],
-                             lastStemUp: inout [PartKey: Bool],
+                             meters: inout [Int: Meter],
                              builder: inout SVGBuilder) {
         emitStaffLines(system, builder: &builder)
         emitStaffGroupConnector(system, builder: &builder)
@@ -543,6 +545,7 @@ struct SVGEmitter: Sendable {
         // system, and an anchor left open on the staff above holds that staff's y.  Moving
         // it here would redraw it a staff down from where its note is.
         let staffIndex = staffIndex(of: system)
+        if let meter = system.meter { meters[staffIndex] = meter }
         let leftEdge = system.origin.x
         pendingTies = pendingTies.map {
             guard $0.part.staff == staffIndex else { return $0 }
@@ -559,7 +562,7 @@ struct SVGEmitter: Sendable {
         for measure in system.measures {
             emitMeasure(measure, system: system, staffIndex: staffIndex,
                         pendingTies: &pendingTies, pendingSlurs: &pendingSlurs,
-                        lastStemUp: &lastStemUp, markColumns: &markColumns, builder: &builder)
+                        meters: &meters, markColumns: &markColumns, builder: &builder)
         }
         emitExtendedTrills(markColumns, system: system, staffIndex: staffIndex,
                            pendingTrills: &pendingTrills, builder: &builder)
@@ -1244,7 +1247,7 @@ struct SVGEmitter: Sendable {
 
     private func emitMeasure(_ measure: ResolvedMeasure, system: ResolvedSystem, staffIndex: Int,
                               pendingTies: inout [TieAnchor], pendingSlurs: inout [SlurAnchor],
-                              lastStemUp: inout [PartKey: Bool],
+                              meters: inout [Int: Meter],
                               markColumns: inout [MarkColumn],
                               builder: inout SVGBuilder) {
         let topY    = system.origin.y + system.staffOrigin
@@ -1323,8 +1326,8 @@ struct SVGEmitter: Sendable {
 
         // One stem direction for every note of a beam group, decided before any of its stems
         // is placed (#218): each stem's side of the notehead depends on it.
-        let beamStems = beamGroupStemDirections(in: measure, staffIndex: staffIndex,
-                                                lastStemUp: &lastStemUp)
+        if let meter = measure.meter { meters[staffIndex] = meter }
+        let beamStems = beamGroupStemDirections(in: measure, meter: meters[staffIndex])
 
         for (index, event) in measure.events.enumerated() {
             let voice = event.voiceIndex
@@ -1708,20 +1711,30 @@ struct SVGEmitter: Sendable {
         }
     }
 
-    /// The stem direction for each beamed note of `measure`, and each unbeamed note on the
-    /// middle line, keyed by event index, for the voices whose direction is left to the
-    /// notes (`.auto`).  A voice with a direction of
-    /// its own — `V:` `stem=`, the document's, a shared staff's opposition — gets nothing
-    /// here: every one of its stems already goes that way.
+    /// The stem direction for each beamed note of `measure`, each unbeamed chord, and each
+    /// unbeamed note on the middle line, keyed by event index, for the voices whose direction
+    /// is left to the notes (`.auto`).  A voice with a direction of its own — `V:` `stem=`,
+    /// the document's, a shared staff's opposition — gets nothing here: every one of its
+    /// stems already goes that way.
     ///
-    /// As abcm2ps decides it (#218): a group stems down when its highest note is farther
-    /// above the middle line than its lowest is below it, and up in the opposite case.  A
-    /// group as far above as below follows the stem before it in the same part, beamed or
-    /// not — `lastStemUp`, which this updates and which runs on from bar to bar — and stems
-    /// up where there is none.  An unbeamed note on the middle line is decided the same way
-    /// (#221); rests leave the previous stem standing.
-    private func beamGroupStemDirections(in measure: ResolvedMeasure, staffIndex: Int,
-                                         lastStemUp: inout [PartKey: Bool]) -> [Int: StemDirection] {
+    /// A stem is drawn for a lone note, a chord, or a beam group.  One that stands off the
+    /// middle line takes its direction from that: a group or chord stems down when its
+    /// highest note is farther above the middle line than its lowest is below it, and up in
+    /// the opposite case (#218, #233); a chord whose outer notes balance is decided by all of
+    /// them.  What still balances — a note on the middle line, a chord or group as far above
+    /// it as below — is decided by the stems around it in the same bar and part (#269),
+    /// deliberately not as abcm2ps does it:
+    ///
+    /// 1. if those stems all go one way, it goes that way too;
+    /// 2. if they go both ways, it goes the way of the ones in the same beat, where those
+    ///    agree, or failing that the ones in the same half-bar;
+    /// 3. otherwise — nothing to go by, or nothing that agrees — it stems down.
+    ///
+    /// Only stems decided by pitch count as context, so one middle-line note never tips the
+    /// next, and the bar line is the edge of it: nothing runs on from bar to bar, or from
+    /// tune to tune.  Notes without stems (a whole note and longer) are no context either.
+    private func beamGroupStemDirections(in measure: ResolvedMeasure,
+                                         meter: Meter?) -> [Int: StemDirection] {
         // The groups, as event indices: the beam states are per voice, and a shared staff
         // interleaves its voices, so each voice's open group is tracked on its own.  A group
         // left open by malformed input still counts — `flushBeam` draws it.
@@ -1748,45 +1761,96 @@ struct SVGEmitter: Sendable {
         groups += open.values
         let groupAt = Dictionary(groups.map { ($0[0], $0) }, uniquingKeysWith: { a, _ in a })
 
-        let middleLine = 4
-        var result: [Int: StemDirection] = [:]
+        // Where each event starts and ends in its voice's bar, in whole notes.  The events
+        // of a tuplet already carry their sounding length (`TupletExpansion`).
+        let unit = Rational(measure.unitNoteLength.numerator, measure.unitNoteLength.denominator)
+        var clock: [Int: Rational] = [:]
+        var spans: [Int: (start: Rational, end: Rational)] = [:]
         for (index, event) in measure.events.enumerated() {
-            guard let stemmed = stemmed(event) else { continue }
-            let direction = resolvedStemDirection(forVoice: event.voiceIndex)
-            let part = PartKey(staff: staffIndex, voice: event.voiceIndex)
-            if let group = groupAt[index] {
-                let positions = group.flatMap { self.stemmed(measure.events[$0])?.positions ?? [] }
-                let up: Bool
-                switch direction {
-                case .up:   up = true
-                case .down: up = false
-                case .auto:
-                    let balance = positions.min()! + positions.max()! - 2 * middleLine
-                    up = balance == 0 ? (lastStemUp[part] ?? true) : balance < 0
-                    for member in group { result[member] = up ? .up : .down }
-                }
-                lastStemUp[part] = up
-            } else if stemmed.beam == .single {
-                let positions = stemmed.positions
-                let up: Bool
-                if direction == .auto && positions.count > 1 {
-                    // A chord is decided by its outer notes, and where they balance by all of
-                    // them; where those balance too, it follows the stem before (#233).
-                    var balance = positions.min()! + positions.max()! - 2 * middleLine
-                    if balance == 0 {
-                        balance = positions.reduce(0, +) - positions.count * middleLine
-                    }
-                    up = balance == 0 ? (lastStemUp[part] ?? true) : balance < 0
-                    result[index] = up ? .up : .down
-                } else if direction == .auto && positions[0] == middleLine {
-                    // The middle line is the same tie-break for a lone note (#221).
-                    up = lastStemUp[part] ?? true
-                    result[index] = up ? .up : .down
-                } else {
-                    up = stemsUp(direction, staffPos: positions[0])
-                }
-                lastStemUp[part] = up
+            let duration: Fraction
+            switch event.kind {
+            case .note(let n):  duration = n.duration
+            case .rest(let r):  duration = r.duration
+            case .chord(let c): duration = c.duration
+            default:            continue
             }
+            let start = clock[event.voiceIndex] ?? .zero
+            let end = start + unit * Rational(duration.numerator, duration.denominator)
+            spans[index] = (start, end)
+            clock[event.voiceIndex] = end
+        }
+
+        // The stems of the bar, each a lone note or chord or a whole beam group.
+        struct Unit {
+            let members: [Int]
+            let voice: Int
+            let start: Rational
+            let end: Rational
+            /// Up or down by pitch; nil where it balances on the middle line.
+            let byPitch: Bool?
+            /// Whether it is drawn with a stem at all, and so is context for the others.
+            let hasStem: Bool
+            /// Whether its direction goes in the result rather than being left to
+            /// `stemsUp` — a lone note off the middle line is.
+            let isReported: Bool
+        }
+        let middleLine = 4
+        var units: [Unit] = []
+        for (index, event) in measure.events.enumerated() {
+            guard let stemmed = stemmed(event),
+                  resolvedStemDirection(forVoice: event.voiceIndex) == .auto else { continue }
+            let members: [Int]
+            if let group = groupAt[index] {
+                members = group
+            } else if stemmed.beam == .single {
+                members = [index]
+            } else {
+                continue  // a later member of a group
+            }
+            let positions = members.flatMap { self.stemmed(measure.events[$0])?.positions ?? [] }
+            var balance = positions.min()! + positions.max()! - 2 * middleLine
+            if balance == 0 && members.count == 1 && positions.count > 1 {
+                balance = positions.reduce(0, +) - positions.count * middleLine
+            }
+            let span = (spans[members.first!]?.start ?? .zero, spans[members.last!]?.end ?? .zero)
+            let isLoneNote = members.count == 1 && positions.count == 1
+            units.append(Unit(
+                members: members, voice: event.voiceIndex, start: span.0, end: span.1,
+                byPitch: balance == 0 ? nil : balance < 0,
+                hasStem: absoluteDuration(stemmed.duration, unitNoteLength: measure.unitNoteLength) < 1.0
+                    || members.count > 1,
+                isReported: !isLoneNote || balance == 0))
+        }
+
+        let beats = BeatGrid(meter: meter)
+        var result: [Int: StemDirection] = [:]
+        for unit in units where unit.isReported {
+            let up: Bool
+            if let byPitch = unit.byPitch {
+                up = byPitch
+            } else {
+                let context = units.filter { $0.voice == unit.voice && $0.hasStem && $0.byPitch != nil }
+                func agreed(_ candidates: [Unit]) -> Bool? {
+                    let ways = Set(candidates.compactMap(\.byPitch))
+                    return ways.count == 1 ? ways.first : nil
+                }
+                let barLength = beats.barLength ?? (clock[unit.voice] ?? .zero)
+                let span = (start: unit.start, end: unit.end)
+                func sharing(_ segments: [Rational]) -> [Unit] {
+                    context.filter { BeatGrid.overlap(($0.start, $0.end), span, segments: segments) }
+                }
+                if let way = agreed(context) {
+                    up = way
+                } else if let beatsOfBar = beats.beats, let way = agreed(sharing(beatsOfBar)) {
+                    up = way
+                } else if barLength > .zero,
+                          let way = agreed(sharing([barLength * Rational(1, 2)])) {
+                    up = way
+                } else {
+                    up = false
+                }
+            }
+            for member in unit.members { result[member] = up ? .up : .down }
         }
         return result
     }

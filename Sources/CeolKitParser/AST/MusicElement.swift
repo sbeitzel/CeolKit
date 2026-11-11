@@ -28,6 +28,16 @@ struct NoteToken {
     let duration: DurationToken
     let tie: Bool
     let source: SourceRange
+    /// Decorations written inside a chord's brackets, in front of this note: the `T` in
+    /// `[Tce]`, the `!fermata!` in `[c!fermata!e]` (#266).  A note outside brackets has none
+    /// here; its decorations are `MusicElement.decoration`s of their own.
+    var decorations: [DecorationMark] = []
+}
+
+/// A decoration as written, and where.
+struct DecorationMark {
+    let token: DecorationToken
+    let source: SourceRange
 }
 
 struct DurationToken {

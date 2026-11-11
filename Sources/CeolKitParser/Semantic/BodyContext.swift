@@ -290,6 +290,11 @@ struct GraceState {
     let kind: GraceKind
     let source: SourceRange
     var notes: [Note] = []
+    /// The decorations pending when `{` opened, set aside for the note after `}` (#267):
+    /// `T{gef}e` trills the `e`, as abcm2ps reads it, and pipe music often writes the
+    /// decoration ahead of the gracing.  Decorations written inside the braces are not here;
+    /// they stay pending and go to the grace note they stand before.
+    var heldDecorations: [Decoration] = []
 }
 
 // MARK: - TupletState
@@ -490,13 +495,20 @@ struct VoiceState {
     // MARK: Grace groups
 
     mutating func startGrace(acciaccatura: Bool, source: SourceRange) {
-        grace = GraceState(kind: acciaccatura ? .acciaccatura : .appoggiatura, source: source)
+        // A `{` inside an open group replaces it; what the outer one held is still held.
+        let held = (grace?.heldDecorations ?? []) + pendingDecorations
+        pendingDecorations = []
+        grace = GraceState(kind: acciaccatura ? .acciaccatura : .appoggiatura, source: source,
+                           heldDecorations: held)
     }
 
     mutating func flushGrace(source: SourceRange? = nil) {
         guard let open = grace else { return }
         let group = GraceGroup(kind: open.kind, notes: open.notes, source: source ?? open.source)
         grace = nil
+        // What was set aside at `{` goes to the note after `}`, ahead of anything left
+        // pending inside the braces, which went there before #267 and still does.
+        pendingDecorations = open.heldDecorations + pendingDecorations
         accumulator.currentEvents.append(.grace(group))
     }
 

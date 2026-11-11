@@ -39,8 +39,10 @@ struct ColumnMetrics: Sendable {
     ///     column runs only as far as the next voice's onset and a note sounding across
     ///     several columns is spaced by the first of them.  `nil` (the single-voice case)
     ///     means the event's own duration.  Everything that is a property of the event
-    ///     rather than of the column — accidental reservation, the dotted-note minimum —
-    ///     is unaffected by it.
+    ///     rather than of the column — the dotted-note minimum — is unaffected by it.
+    ///
+    /// The column runs from the notehead on: an accidental, drawn in front of the head, is
+    /// not in it but in ``leadingRoom(for:)`` (#268).
     ///   - next: the event this column runs to, where the caller knows it.  Only the
     ///     syllables under it are read, and only to keep them clear of this column's own
     ///     (§4.18); `nil` spaces the column for its own syllables alone.
@@ -84,7 +86,6 @@ struct ColumnMetrics: Sendable {
             let rawCol = base * durationFactor(durationUnits ?? rawDuration(n.duration),
                                                quarterInUnits: quarterInUnits)
             var col = max(minCol, rawCol)
-            let accWidth = accidentalMetrics.reservation(for: n.displayedAccidental)
             // Very short notes (at the minimum floor) get a dot-gap equivalent of extra space
             // so consecutive beamed notes aren't visually pressed against each other.
             let breathingRoom = rawCol < minCol ? noteheadWidth() * 0.2 : 0
@@ -98,7 +99,7 @@ struct ColumnMetrics: Sendable {
             // A syllable under this note may be wider than the music asks for; the column
             // is then spaced to hold the text instead (§4.18).  Notes no `w:` line reaches
             // reserve nothing and are spaced exactly as they always were.
-            return max(col + accWidth + breathingRoom,
+            return max(col + breathingRoom,
                        lyricReservation(n.lyrics, next: next))
 
         case .rest(let r):
@@ -108,11 +109,7 @@ struct ColumnMetrics: Sendable {
         case .chord(let c):
             let col = max(minCol, base * durationFactor(durationUnits ?? rawDuration(c.duration),
                                                         quarterInUnits: quarterInUnits))
-            // Chord accidentals are not yet stacked, so reserve for the widest of them.
-            let accWidth = c.notes
-                .map { accidentalMetrics.reservation(for: $0.displayedAccidental) }
-                .max() ?? 0
-            return max(col + accWidth, lyricReservation(c.lyrics, next: next))
+            return max(col, lyricReservation(c.lyrics, next: next))
 
         case .tuplet(let t):
             let df = durationFactor(durationUnits ?? tupletDuration(t),
@@ -137,8 +134,10 @@ struct ColumnMetrics: Sendable {
         }
     }
 
-    /// The room `event` needs in front of its noteheads, beyond its column: an arpeggio's
-    /// (#264), which abcm2ps adds to the note's left width.  Zero for everything else.
+    /// The room `event` needs in front of its noteheads, beyond its column: what abcm2ps
+    /// adds to a note's left width.  That is its accidental (#268) — for a chord, the
+    /// widest of them, as chord accidentals are not yet stacked — or, with an arpeggio
+    /// (#264), the arpeggio standing clear of the accidental.  Zero for everything else.
     func leadingRoom(for event: Event) -> Double {
         let notes: [Note]
         let decorations: [Decoration]
@@ -147,9 +146,9 @@ struct ColumnMetrics: Sendable {
         case .chord(let c): (notes, decorations) = (c.notes, c.decorations + c.notes.flatMap(\.decorations))
         default:            return 0
         }
-        guard decorations.contains(.arpeggio) else { return 0 }
         let accidentals = notes.map { accidentalMetrics.reservation(for: $0.displayedAccidental) }
             .max() ?? 0
+        guard decorations.contains(.arpeggio) else { return accidentals }
         return DecorationStack.arpeggioLead(accidentalReservation: accidentals,
                                             staffSize: config.staffSize)
     }

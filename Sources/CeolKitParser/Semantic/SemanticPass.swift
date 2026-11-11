@@ -782,7 +782,7 @@ struct SemanticPass {
             ctx.emit(event, in: voice)
 
         case .chord(let notes, let src):
-            let event = buildChordEvent(notes, source: src, voice: voice, ctx: &ctx)
+            let event = buildChordEvent(notes, source: src, voice: voice, ctx: &ctx, diagnostics: &diagnostics)
             ctx.emit(event, in: voice)
 
         case .rest(let kind, let dur, let src):
@@ -989,9 +989,29 @@ struct SemanticPass {
         _ notes: [NoteToken],
         source: SourceRange,
         voice: VoiceKey,
-        ctx: inout BodyContext
+        ctx: inout BodyContext,
+        diagnostics: inout [Diagnostic]
     ) -> Event {
+        let userSymbols = ctx.userSymbols
+        let strict = options.strictRecovery
+        var noteDiagnostics: [Diagnostic] = []
         let resolvedNotes: [Note] = notes.map { tok in
+            // A decoration written inside the brackets is on the note it stands in front of
+            // (#266).  An undefined symbol is reported and ignored, as it is outside them.
+            let decorations: [Decoration] = tok.decorations.compactMap { mark in
+                if let decoration = expandDecoration(mark.token, userSymbols: userSymbols) {
+                    return decoration
+                }
+                if case .shortForm(let ch) = mark.token {
+                    noteDiagnostics.append(Diagnostic(
+                        severity: strict ? .error : .warning, code: .reservedCharacter,
+                        message: "'\(ch)' is not a defined decoration symbol (U:); it is ignored",
+                        source: mark.source
+                    ))
+                }
+                return nil
+            }
+
             let step = diatonicStep(from: tok.pitchLetter)
             let baseOctave = tok.pitchLetter.isUppercase ? 4 : 5
             let octave = baseOctave + tok.octaveMarks + ctx.octave(in: voice)
@@ -1019,7 +1039,7 @@ struct SemanticPass {
                 duration: duration,
                 ties: tieState,
                 slurs: .none,
-                decorations: [],
+                decorations: decorations,
                 chordSymbol: nil,
                 annotations: [],
                 beam: .single,
@@ -1027,6 +1047,8 @@ struct SemanticPass {
                 source: tok.source
             )
         }
+
+        diagnostics += noteDiagnostics
 
         let duration = resolvedNotes.first?.duration ?? Fraction(numerator: 1, denominator: 8)
         let tieState: TieState = resolvedNotes.contains { $0.ties == .startsTie } ? .startsTie : .none

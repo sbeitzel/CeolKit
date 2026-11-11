@@ -237,7 +237,8 @@ private struct ParseContext {
                 octaveMarks: note.octaveMarks,
                 duration: newDur,
                 tie: note.tie || chordTie,
-                source: note.source
+                source: note.source,
+                decorations: note.decorations
             )
         }
 
@@ -247,6 +248,37 @@ private struct ParseContext {
     // Parses one note inside a chord bracket, advancing past it.
     // Returns either one NoteToken wrapped in an array, or empty on parse error.
     mutating func parseChordNote(_ tok: Token, _ src: SourceRange) -> [NoteToken] {
+        // Decorations in front of the note belong to it, as abcm2ps reads them: the `T` in
+        // `[Tce]` is on the c, the `!fermata!` in `[c!fermata!e]` on the e (#266).
+        var decorations: [DecorationMark] = []
+        var tok = tok
+        var src = src
+        decorationLoop: while true {
+            switch tok {
+            case .decorationOpen:
+                advance()
+                if case .decoration(let d, let s) = parseDecorationLong(openSource: src) {
+                    decorations.append(DecorationMark(token: d, source: s))
+                }
+            case .shortDecoration(let ch):
+                advance()
+                decorations.append(DecorationMark(token: .shortForm(ch), source: src))
+            default:
+                break decorationLoop
+            }
+            guard let next = current else { return [] }
+            (tok, src) = next
+        }
+        if !decorations.isEmpty, case .rightBracket = tok {
+            // abcm2ps reports "Not a note" here; there is no note for them to be on.
+            diagnostics.append(Diagnostic(
+                severity: .warning, code: .constructOutOfOrder,
+                message: "A decoration after the last note of a chord belongs to no note; it is ignored",
+                source: decorations[0].source, related: [], hint: nil
+            ))
+            return []
+        }
+
         var accidental: AccidentalToken? = nil
         var noteStart = src
         var pitchChar: Character
@@ -290,7 +322,8 @@ private struct ParseContext {
             octaveMarks: octaveMarks,
             duration: dur,
             tie: hasTie,
-            source: noteStart
+            source: noteStart,
+            decorations: decorations
         )]
     }
 

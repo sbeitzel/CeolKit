@@ -707,8 +707,10 @@ struct SemanticPass {
                         diagnostics: &diagnostics)
             index += bars
         }
-        // Finish any open grace group (malformed; just close it)
-        if ctx.isInGrace(voice) {
+        // A grace group does not run past the end of its line: close it, keeping its notes,
+        // and say so at the `{` (#278).
+        if let open = ctx.openGraceSource(in: voice) {
+            diagnostics.append(unclosedGraceGroup(at: open, before: "the end of the line"))
             ctx.flushGrace(in: voice)
         }
         // A tuplet does not run past the end of the line that opened it: whatever it collected
@@ -716,6 +718,17 @@ struct SemanticPass {
         for abandoned in ctx.flushOpenTuplets() {
             diagnostics.append(incompleteTuplet(abandoned))
         }
+    }
+
+    /// The diagnostic for a `{` grace group that `ending` closed before its `}` (#278): a
+    /// warning, or an error under `strictRecovery`.  abcm2ps reports the same source as an
+    /// error, "EOLN in grace note sequence".
+    private func unclosedGraceGroup(at source: SourceRange, before ending: String) -> Diagnostic {
+        Diagnostic(
+            severity: options.strictRecovery ? .error : .warning, code: .unclosedGraceGroup,
+            message: "this grace group has no closing `}` before \(ending)",
+            source: source,
+            hint: "the grace group is closed there, and its notes are kept.")
     }
 
     /// The warning for a tuplet that ended before the `r` notes it asked for.
@@ -748,7 +761,10 @@ struct SemanticPass {
         diagnostics: inout [Diagnostic]
     ) {
         // Whatever the layer being left holds open is finished before the clock moves.
-        if ctx.isInGrace(voice) { ctx.flushGrace(source: source, in: voice) }
+        if let open = ctx.openGraceSource(in: voice) {
+            diagnostics.append(unclosedGraceGroup(at: open, before: "an `&` overlay"))
+            ctx.flushGrace(source: source, in: voice)
+        }
         if let abandoned = ctx.flushTuplet(in: voice) {
             diagnostics.append(incompleteTuplet(abandoned))
         }

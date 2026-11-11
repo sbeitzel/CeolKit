@@ -135,32 +135,20 @@ Dialect is fixed after stage 2 (from the version line / `I:abc-version`), except
 
 ## Release process
 
-Work lands on `develop`; `main` is the release branch and carries the tags. A release is
-five steps, and **the last one is not optional**:
+There is no `develop` branch. Work happens on feature branches (`feature/fix_NN`, cut from a
+fresh `origin/main`), and PRs merge them into `main`. When `main` is ready, it freezes and a
+release is cut from its tip:
 
-1. Verify `develop`: clean tree, `swift build`, `swift test`, CI green on the tip.
-2. Open a PR `develop` → `main` titled `Release X.Y.Z`, and merge it with a **merge commit**
-   (not squash, not rebase — the tags and the merge-back both depend on the shared history).
-3. Tag `main`: `git tag -a vX.Y.Z -m "Release X.Y.Z"` and push the tag.
-4. `gh release create vX.Y.Z --title "X.Y[.Z]" --notes-file <notes> --verify-tag`, then
+1. Verify `main`: clean tree, `swift build`, `swift test`, CI green on the tip.
+2. Tag `main`: `git tag -a vX.Y.Z -m "Release X.Y.Z"` and push the tag.
+3. `gh release create vX.Y.Z --title "X.Y[.Z]" --notes-file <notes> --verify-tag`, then
    append the generated PR list (`gh api -X POST repos/sbeitzel/CeolKit/releases/generate-notes
    -f tag_name=vX.Y.Z -f previous_tag_name=<prev>`) above the `## Upgrading` section.
-5. **Merge `main` back into `develop` and push.** Step 2 puts a merge commit on `main` that
-   is not on `develop` — `develop` is an ancestor of `main`, but not the reverse — so without
-   this `develop` is behind by exactly that commit, and branch protection then refuses the
-   *next* release PR as "head branch is not up to date". Skipping it is what makes step 2
-   fail later, not now.
-
-   Usually nothing has landed on `develop` since the release PR, so this fast-forwards and
-   writes no new commit; `git merge main` reports `Fast-forward` rather than making a merge
-   commit. That is the step working, not skipping — **the push is still required**, because
-   what matters is that `origin/develop` reaches the release merge commit. Where work *has*
-   landed on `develop` meanwhile, the same command makes a real merge commit instead.
 
 Two notes on the mechanics:
 
-- Issues fixed on `develop` stay **open** until step 2 — GitHub only auto-closes
-  `Fix #NN` references when they reach the default branch. Do not close them by hand.
+- A `Fix #NN` PR merged into `main` closes its issue on merge, so "fixed" means "fixed on
+  `main`, in the next release", not "released".
 - Version numbers live only in the git tag and the GitHub release. Nothing in `Package.swift`
   or the sources needs editing.
 

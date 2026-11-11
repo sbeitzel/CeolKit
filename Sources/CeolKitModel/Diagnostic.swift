@@ -43,6 +43,9 @@ public enum DiagnosticCode: String, Codable, Sendable {
     /// as a tuplet of the length actually written, so the duration scaling the source asked
     /// for still applies to them.
     case incompleteTuplet
+    /// A `{` grace group was not closed by `}` before the end of its line, or before an `&`
+    /// overlay.  The group is closed there and its notes are kept (issue #278).
+    case unclosedGraceGroup
     /// Two voices of the same tune disagree about how much music a source line holds,
     /// so the staves of a system cannot be aligned from the source alone.  The renderer
     /// pads the short voice with invisible full-measure rests and carries on.

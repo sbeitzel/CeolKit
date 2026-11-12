@@ -128,10 +128,11 @@ struct ClefNotePositionTests {
         #expect(onBass.above >= config.staffSize)
         #expect(onBass.below == 0)
 
-        // Two ledger lines below a bass staff, which a treble count put far lower still.
+        // Two ledger lines below a bass staff, which a treble count put far lower still.  The
+        // notehead hangs half a space below the second of them (#273).
         let lowC = Pitch(step: .c, alteration: .natural, octave: 2)
         let low  = extents(of: lowC, clef: .bass)
         #expect(low.above == 0)
-        #expect(abs(low.below - 2 * config.staffSize) < 1e-9)
+        #expect(abs(low.below - 2.5 * config.staffSize) < 1e-9)
     }
 }

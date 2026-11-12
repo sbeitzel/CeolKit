@@ -599,8 +599,7 @@ public struct VerticalLayoutEngine: Sendable {
                                 dynamicsOverStaff: Bool = false,
                                 openHairpins: [Int: [DynamicsBand.Hairpin]] = [:]
     ) -> (extraAbove: Double, extraBelow: Double, annotationFloors: AnnotationFloors) {
-        var maxLedgerAbove = 0
-        var maxLedgerBelow = 0
+        var headReach = HeadReach()
         var verses = 0
         var hasGraceGroups = false
 
@@ -660,8 +659,7 @@ public struct VerticalLayoutEngine: Sendable {
                 scan(
                     event,
                     clef: clef,
-                    maxLedgerAbove: &maxLedgerAbove,
-                    maxLedgerBelow: &maxLedgerBelow,
+                    headReach: &headReach,
                     verses: &verses,
                     hasGraceGroups: &hasGraceGroups
                 )
@@ -679,13 +677,15 @@ public struct VerticalLayoutEngine: Sendable {
         // notehead. Reserve that height so stems never intrude into the title block zone.
         let graceOvershoot = hasGraceGroups ? 3.5 * s * 0.6 : 0
         let floor = AnnotationBand.floorRatio * s
+        // The noteheads beyond the staff reach past their outermost ledger line (#273).
+        //
         // A tuplet's number stands beyond the ledger lines and stems of its own notes, which
         // is as far as anything on its side reaches; the annotations stack beyond it (#231).
         // The ornaments and fermatas stand clear of their notes' stems and ledger lines
         // already, so they too are maxed with them rather than added (#264).
-        let floorAbove = max(Double(maxLedgerAbove) * s + graceOvershoot, tupletAbove, marks.above)
+        let floorAbove = max(headReach.above * s + graceOvershoot, tupletAbove, marks.above)
             + (lines.above > 0 ? floor : 0)
-        let floorBelow = max(Double(maxLedgerBelow) * s, tupletBelow, marks.below)
+        let floorBelow = max(headReach.below * s, tupletBelow, marks.below)
             + (lines.below > 0 ? floor : 0)
         let baseAbove = floorAbove + AnnotationBand.height(
             lines: lines.above, metrics: AnnotationBand.aboveMetrics(styles), staffSize: s)
@@ -944,51 +944,33 @@ public struct VerticalLayoutEngine: Sendable {
     private func scan(
         _ event: Event,
         clef: ClefSpec,
-        maxLedgerAbove: inout Int,
-        maxLedgerBelow: inout Int,
+        headReach: inout HeadReach,
         verses: inout Int,
         hasGraceGroups: inout Bool
     ) {
         switch event {
         case .note(let n):
-            accumulate(pitch: n.pitch, clef: clef, above: &maxLedgerAbove, below: &maxLedgerBelow)
+            headReach.include(clef.staffPosition(of: n.pitch))
             verses = max(verses, n.lyrics.count)
         case .chord(let c):
-            for n in c.notes { accumulate(pitch: n.pitch, clef: clef, above: &maxLedgerAbove, below: &maxLedgerBelow) }
+            for n in c.notes { headReach.include(clef.staffPosition(of: n.pitch)) }
             verses = max(verses, c.lyrics.count)
         case .tuplet(let t):
             for e in t.events {
                 scan(e,
                      clef: clef,
-                     maxLedgerAbove: &maxLedgerAbove,
-                     maxLedgerBelow: &maxLedgerBelow,
+                     headReach: &headReach,
                      verses: &verses,
                      hasGraceGroups: &hasGraceGroups)
             }
         case .grace(let g):
             hasGraceGroups = true
-            for n in g.notes { accumulate(pitch: n.pitch, clef: clef, above: &maxLedgerAbove, below: &maxLedgerBelow) }
+            for n in g.notes {
+                headReach.include(clef.staffPosition(of: n.pitch), scale: GraceMetrics.scale)
+            }
         default:
             break
         }
-    }
-
-    private func accumulate(pitch: Pitch, clef: ClefSpec, above: inout Int, below: inout Int) {
-        let (a, b) = ledgerLines(for: pitch, clef: clef)
-        above = max(above, a)
-        below = max(below, b)
-    }
-
-    /// Returns the number of ledger lines required above and below a staff carrying `clef`.
-    ///
-    /// The bottom staff line is position 0 and the top line position 8, whatever the clef;
-    /// the clef says which pitch each names.  On a treble staff a note on position 10 (A5)
-    /// sits on the first ledger line above, and on a bass staff the same is true of C4.
-    private func ledgerLines(for pitch: Pitch, clef: ClefSpec) -> (above: Int, below: Int) {
-        let staffPos = clef.staffPosition(of: pitch)
-        let above = max(0, (staffPos - 8) / 2)
-        let below = max(0, (-staffPos) / 2)
-        return (above, below)
     }
 
     // MARK: - Horizontal layout
@@ -1125,5 +1107,27 @@ public struct VerticalLayoutEngine: Sendable {
         }
 
         return resolved
+    }
+}
+
+/// How far the noteheads of a staff reach beyond its outer lines, in staff spaces (#273).
+///
+/// The bottom staff line is position 0 and the top line position 8, whatever the clef, and a
+/// notehead is a staff space tall.  So a head at position `p` above the staff reaches
+/// `(p - 8) / 2 + ½` spaces over the top line: a note on the first ledger line (10) reaches
+/// 1½, not the 1 its ledger line does, and one in the space above the second (13) reaches 3.
+/// Below the staff, the mirror.  A grace note's head is its scale of that half.
+///
+/// Only heads off the staff count.  One on an outer line pokes out by half a space too, but
+/// the gap between staves is measured from those lines and already has room for that much;
+/// counting it would push apart every staff with an E4 or an F5 on it.
+struct HeadReach {
+    private(set) var above = 0.0
+    private(set) var below = 0.0
+
+    mutating func include(_ staffPosition: Int, scale: Double = 1.0) {
+        let half = scale / 2
+        if staffPosition > 8 { above = max(above, Double(staffPosition - 8) / 2 + half) }
+        if staffPosition < 0 { below = max(below, Double(-staffPosition) / 2 + half) }
     }
 }

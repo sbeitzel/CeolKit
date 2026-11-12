@@ -1029,6 +1029,9 @@ struct BodyContext {
 
     func isInGrace(_ voice: VoiceKey) -> Bool { voices[voice]?.isInGrace ?? false }
 
+    /// Where the open grace group in `voice` began — its `{` — or nil if none is open.
+    func openGraceSource(in voice: VoiceKey) -> SourceRange? { voices[voice]?.grace?.source }
+
     mutating func startGrace(acciaccatura: Bool, source: SourceRange, in voice: VoiceKey) {
         withVoice(voice, source: source) { $0.startGrace(acciaccatura: acciaccatura, source: source) }
     }

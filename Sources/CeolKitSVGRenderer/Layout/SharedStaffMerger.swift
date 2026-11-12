@@ -147,9 +147,13 @@ struct SharedStaffMerger: Sendable {
             if subColumnCount > 0 { subWidths[subColumnCount - 1] += extra.right }
 
             var subX = [Double](repeating: 0, count: subColumnCount)
-            // An arpeggio's room goes in front of the whole column, grace groups and all.
-            let lead = runs.compactMap { run in
-                run.slot.events.last.map { metrics.leadingRoom(for: run.voice.part.measure.events[$0]) }
+            // What a note needs in front of its head — its accidental (#268), an arpeggio —
+            // goes in front of the whole column, unless a grace group stands before the note,
+            // which has kept the room between the two already.
+            let lead = runs.compactMap { run -> Double? in
+                guard let last = run.slot.events.last,
+                      !run.pairedGraceOffsets.contains(run.slot.events.count - 2) else { return nil }
+                return metrics.leadingRoom(for: run.voice.part.measure.events[last])
             }.max() ?? 0
             var cursor = x + extra.left + lead
             for j in 0..<subColumnCount {
@@ -301,11 +305,14 @@ struct SharedStaffMerger: Sendable {
             var paired: Set<Int> = []
             for (j, event) in events.enumerated() {
                 // A grace group and the note it ornaments move together: the group's width
-                // plus the gap to the notehead is one fixed sub-column.
+                // plus the gap to the notehead is one fixed sub-column.  What the note needs
+                // in front of its head — its accidental, an arpeggio — stands between the
+                // two, as it does on a staff of its own.
                 if case .grace(let group) = event, j + 1 < events.count,
                    metrics.isSpacingEvent(events[j + 1]) {
                     paired.insert(j)
-                    widths.append(metrics.graceGroupWidth(group) + metrics.graceNoteGap(for: group))
+                    widths.append(metrics.graceGroupWidth(group) + metrics.graceNoteGap(for: group)
+                                  + metrics.leadingRoom(for: events[j + 1]))
                     continue
                 }
                 // The last event of a run is the one that sounds, and it is spaced for the

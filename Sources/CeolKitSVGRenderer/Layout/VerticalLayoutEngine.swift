@@ -1099,6 +1099,13 @@ public struct VerticalLayoutEngine: Sendable {
                 unitNoteLength: jm.source.unitNoteLength,
                 meter: jm.source.measure.meter,
                 keyChange: jm.keyChange,
+                // Measured from the source bar, not `openingBar`: a `[|:` part way through a
+                // line is drawn as the previous measure's closing bar and dropped from this
+                // one, but its dots still stand in front of the signature.
+                signatureX: measureOrigin.x + jm.source.openingBarLead
+                    + ColumnMetrics.signatureOffset(after: jm.source.measure.openingBar?.kind,
+                                                    metadata: metadata,
+                                                    staffSize: config.staffSize),
                 trailingClef: jm.trailingClef,
                 tuplets: jm.source.tuplets
             ))

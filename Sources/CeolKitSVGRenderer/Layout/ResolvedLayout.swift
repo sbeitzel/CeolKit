@@ -947,12 +947,17 @@ public struct ResolvedMeasure: Sendable {
     /// absolute note durations for notehead-type selection.
     public let unitNoteLength: Fraction
     /// Non-nil when an inline `[M:…]` changed the time signature before this measure.
-    /// The emitter draws the corresponding glyph at `origin.x` before the first note.
+    /// The emitter draws the corresponding glyph at ``signatureX`` before the first note.
     public let meter: Meter?
     /// Non-nil when a `K:` changed the key before this measure. The emitter draws the
-    /// cancelling naturals and the new signature at `origin.x`, ahead of any time signature
-    /// changing in the same bar, in the space ``ColumnMetrics`` reserved for them.
+    /// cancelling naturals and the new signature at ``signatureX``, ahead of any time
+    /// signature changing in the same bar, in the space ``ColumnMetrics`` reserved for them.
     public let keyChange: KeyChange?
+    /// Where a key or time signature changing at this measure starts: clear of everything
+    /// its opening bar draws, the thin line of `[|` and the dots of `|:` included — even
+    /// where that bar is drawn as the previous measure's closing bar (issue #286).  `nil`
+    /// means two thin-line thicknesses past ``origin``.
+    public let signatureX: Double?
     /// Non-nil when the staff changes clef at this measure's closing bar: the emitter draws
     /// the new clef small, just before the bar.  See ``SizedMeasure/trailingClef``.
     public let trailingClef: ClefSpec?
@@ -969,12 +974,14 @@ public struct ResolvedMeasure: Sendable {
         unitNoteLength: Fraction = Fraction(numerator: 1, denominator: 8),
         meter: Meter? = nil,
         keyChange: KeyChange? = nil,
+        signatureX: Double? = nil,
         trailingClef: ClefSpec? = nil,
         tuplets: [TupletSpan] = []
     ) {
         self.origin = origin
         self.width = width
         self.events = events
+        self.signatureX = signatureX
         self.trailingClef = trailingClef
         self.tuplets = tuplets
         self.openingBar = openingBar

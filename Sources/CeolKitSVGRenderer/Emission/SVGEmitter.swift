@@ -1274,12 +1274,13 @@ struct SVGEmitter: Sendable {
                           scale: clefChangeScale, builder: &builder)
         }
 
-        // A key or time signature changing here is drawn at the head of the bar, in the
-        // space `ColumnMetrics.leftMargin` kept ahead of the first note — key first, which is
-        // the order they are engraved in and the order that margin was measured in.
+        // A key or time signature changing here is drawn at the head of the bar, clear of
+        // the opening bar's lines and dots, in the space `ColumnMetrics.leftMargin` kept
+        // ahead of the first note — key first, which is the order they are engraved in and
+        // the order that margin was measured in.
         if measure.keyChange != nil || measure.meter != nil {
             let thin = metadata.engravingDefaults.thinBarlineThickness * config.staffSize
-            var signatureX = measure.origin.x + 2.0 * thin
+            var signatureX = measure.signatureX ?? measure.origin.x + 2.0 * thin
             if let change = measure.keyChange {
                 emitKeyAccidentals(keyChangeAccidentals(for: change), atX: signatureX,
                                    system: system, builder: &builder)

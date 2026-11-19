@@ -284,6 +284,36 @@ struct ColumnMetrics: Sendable {
         }
     }
 
+    /// How far a bar line's ink reaches right of its anchor.  Must match `emitBarLine` and
+    /// `emitRepeatDots`.  The right-anchored bars reach only half their last stroke past it;
+    /// the bars that open a section reach across every stroke and dot they draw.
+    static func rightExtent(of kind: BarLineKind, metadata: BravuraMetadata,
+                            staffSize s: Double) -> Double {
+        let thin    = metadata.engravingDefaults.thinBarlineThickness * s
+        let thick   = metadata.engravingDefaults.thickBarlineThickness * s
+        let wideSep = metadata.engravingDefaults.barlineSeparation * s * 2.0
+        let dots    = metadata.engravingDefaults.repeatBarlineDotSeparation * s
+            + (metadata.glyphBBoxes["repeatDot"].map { $0.width * s } ?? s * 0.25)
+        switch kind {
+        case .single, .dotted, .double:                  return thin / 2
+        case .final, .repeatEnd, .repeatEndSection:      return thick / 2
+        case .start:                                     return wideSep + thin / 2
+        case .repeatStart, .sectionRepeatStart:          return wideSep + thin / 2 + dots
+        case .repeatBoth:                                return thick / 2 + dots
+        }
+    }
+
+    /// How far right of a measure's opening bar anchor a key or time signature changing at
+    /// it starts: one gap of two thin-line thicknesses past the bar's rightmost ink, so it
+    /// clears the thin line of `[|` and the dots of `|:`, `[|:` and `::` (issue #286).
+    /// `barMargin` keeps the same room and the emitter draws there, both through this.
+    static func signatureOffset(after kind: BarLineKind?, metadata: BravuraMetadata,
+                                staffSize: Double) -> Double {
+        let thin = metadata.engravingDefaults.thinBarlineThickness * staffSize
+        let reach = kind.map { rightExtent(of: $0, metadata: metadata, staffSize: staffSize) } ?? 0
+        return reach + 2.0 * thin
+    }
+
     /// How far right of the measure's origin its opening bar stands: see
     /// ``SizedMeasure/openingBarLead``.
     ///
@@ -329,32 +359,22 @@ struct ColumnMetrics: Sendable {
 
     private func barMargin(for measure: Measure, keyChange: KeyChange?) -> Double {
         let nhw = noteheadWidth()
-        let thin = metadata.engravingDefaults.thinBarlineThickness * config.staffSize
-        let keySigW = keyChange.map {
-            keyChangeWidth(for: $0, metadata: metadata, staffSize: config.staffSize)
-        } ?? 0
-        let timeSigW = measure.meter.map { timeSignatureWidth(for: $0, metadata: metadata, staffSize: config.staffSize) } ?? 0
-        // One gap clear of the bar line, for whichever of the two is drawn first.
-        let signatureGap = keySigW > 0 || measure.meter != nil ? 2.0 * thin : 0
-        let signatures = signatureGap + keySigW + timeSigW
-        guard let opening = measure.openingBar else { return signatures + nhw }
-        switch opening.kind {
-        case .repeatStart, .sectionRepeatStart, .repeatBoth:
-            // Must match `emitRepeatDots`, which places the dots by this same measurement:
-            // from the edge of the bar they abut.  That is the thin bar `wideSep` right of
-            // the anchor for `|:` and `[|:`, and the thick bar on the anchor for `::`.
-            let dotBar: Double
-            if opening.kind == .repeatBoth {
-                dotBar = metadata.engravingDefaults.thickBarlineThickness * config.staffSize / 2
-            } else {
-                dotBar = metadata.engravingDefaults.barlineSeparation * config.staffSize * 2.0 + thin / 2
-            }
-            let dotSep  = metadata.engravingDefaults.repeatBarlineDotSeparation * config.staffSize
-            let dotW    = metadata.glyphBBoxes["repeatDot"].map { $0.width * config.staffSize }
-                          ?? config.staffSize * 0.25
-            return dotBar + dotSep + dotW + signatures + nhw
+        let s = config.staffSize
+        let keySigW = keyChange.map { keyChangeWidth(for: $0, metadata: metadata, staffSize: s) } ?? 0
+        let timeSigW = measure.meter.map { timeSignatureWidth(for: $0, metadata: metadata, staffSize: s) } ?? 0
+        let kind = measure.openingBar?.kind
+        // A key or time signature starts clear of everything the opening bar draws — where
+        // the emitter draws it — key first, then time.
+        if keySigW > 0 || measure.meter != nil {
+            return Self.signatureOffset(after: kind, metadata: metadata, staffSize: s)
+                + keySigW + timeSigW + nhw
+        }
+        switch kind {
+        case .some(let kind) where [.repeatStart, .sectionRepeatStart, .repeatBoth].contains(kind):
+            // The dots stand in the space after the bar; the first note goes past them.
+            return Self.rightExtent(of: kind, metadata: metadata, staffSize: s) + nhw
         default:
-            return signatures + nhw
+            return nhw
         }
     }
 

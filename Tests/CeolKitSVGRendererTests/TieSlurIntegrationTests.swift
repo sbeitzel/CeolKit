@@ -212,3 +212,94 @@ struct TieSlurTaperTests {
         #expect(gap > ends)
     }
 }
+
+// MARK: - Which side the arc curves on
+
+/// A tie curves away from its note's stem and a slur follows abcm2ps's `slur_direction`,
+/// both decided by the stems as drawn rather than by the staff position alone, and a voice
+/// sharing its staff keeps its arcs on its own side of it (#288).
+@Suite("Tie and slur arc side")
+struct TieSlurArcSideTests {
+
+    /// Every tie or slur drawn on the page, left to right, as whether it curves below its
+    /// notes.  An arc is the only drawn path with a curve in it; its start point is its
+    /// first y and its first control point the next, and SVG's y grows downward.
+    private func arcsBelow(_ abc: String, topToBottom: Bool = false) throws -> [Bool] {
+        let score = CeolKitParser().parse(abc, options: .default).score
+        let svg = try #require(try SVGRenderer().render(score).first)
+        let drawn: [String] = svg.components(separatedBy: "<path d=\"").dropFirst()
+            .compactMap { $0.components(separatedBy: "\"").first }
+        var arcs: [(x: Double, y: Double, below: Bool)] = []
+        for d in drawn where d.contains(" C ") {
+            let n = coordinates(of: d)
+            arcs.append((x: n[0], y: n[1], below: n[3] > n[1]))
+        }
+        arcs.sort { topToBottom ? $0.y < $1.y : $0.x < $1.x }
+        return arcs.map(\.below)
+    }
+
+    private func tune(_ body: String, preamble: String = "", voices: String = "") -> String {
+        "\(preamble)\n\nX:1\nT:Test\nM:4/4\nL:1/8\n\(voices)K:C\n\(body)\n"
+    }
+
+    @Test("Below the middle line with stems left alone, ties and slurs curve below")
+    func lowNotesAutoStems() throws {
+        #expect(try arcsBelow(tune("C2-C2 (DE)F2 |]")) == [true, true])
+    }
+
+    @Test("Above the middle line with stems left alone, ties and slurs curve above")
+    func highNotesAutoStems() throws {
+        #expect(try arcsBelow(tune("e2-e2 (fg)a2 |]")) == [false, false])
+    }
+
+    /// The issue's own case: pipe format stems every note down, so a low note's arc goes
+    /// over it, away from the stem, not under it where an up stem would have been.
+    @Test("%%ceolkit:pipeformat stems low notes down, and their arcs go above")
+    func pipeFormatLowNotes() throws {
+        let abc = tune("C2-C2 (DE)F2 | F2-F2 (DE)F2 |]",
+                       preamble: "%%ceolkit:pipeformat true")
+        #expect(try arcsBelow(abc) == [false, false, false, false])
+    }
+
+    @Test("A voice's stem=down sends its low notes' arcs above")
+    func voiceStemDown() throws {
+        let abc = tune("[V:1] C2-C2 (DE)F2 |]", voices: "V:1 stem=down\n")
+        #expect(try arcsBelow(abc) == [false, false])
+    }
+
+    @Test("A voice's stem=up sends its high notes' arcs below")
+    func voiceStemUp() throws {
+        let abc = tune("[V:1] e2-e2 (fg)a2 |]", voices: "V:1 stem=up\n")
+        #expect(try arcsBelow(abc) == [true, true])
+    }
+
+    /// abcm2ps's `slur_direction` reads every note under the slur: one stem down anywhere in
+    /// it puts the slur above, even though the note it starts on is stemmed up.
+    @Test("A slur over any down-stemmed note goes above, whatever note it starts on")
+    func slurSpanWithADownStem() throws {
+        #expect(try arcsBelow(tune("(C2 E2 g2 e2) |]")) == [false])
+    }
+
+    /// The same rule's other half: nothing stemmed and nothing under the middle line puts
+    /// the slur above; a whole note below it puts it below.
+    @Test("A slur over stemless notes goes above unless one lies under the middle line")
+    func slurOverStemlessNotes() throws {
+        #expect(try arcsBelow(tune("(e8 | f8) |]")) == [false])
+        #expect(try arcsBelow(tune("(C8 | D8) |]")) == [true])
+    }
+
+    /// abcm2ps's `multi`: on a shared staff the upper voice's arcs go above and the lower
+    /// voice's below, though that puts each on the side its stems point.
+    @Test("On a shared staff the upper voice arcs above and the lower below")
+    func sharedStaffVoicesKeepTheirSides() throws {
+        // Both voices under the middle line: the upper voice's arcs still go above.
+        let low = tune("[V:1] F2-F2 (FG)A2 |]\n[V:2] C2-C2 (CD)E2 |]",
+                       preamble: "%%score (1 2)", voices: "V:1\nV:2\n")
+        // Both over it: the lower voice's arcs still go below.
+        let high = tune("[V:1] f2-f2 (fg)a2 |]\n[V:2] c2-c2 (cd)e2 |]",
+                        preamble: "%%score (1 2)", voices: "V:1\nV:2\n")
+        // The upper voice's notes lie above the lower's, so its arcs are the top two.
+        #expect(try arcsBelow(low, topToBottom: true) == [false, false, true, true])
+        #expect(try arcsBelow(high, topToBottom: true) == [false, false, true, true])
+    }
+}

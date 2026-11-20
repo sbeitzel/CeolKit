@@ -70,7 +70,7 @@ private struct TieAnchor {
     let x: Double       // left-edge x of the notehead where the tie originates (or a staff edge, see below)
     let noteY: Double   // y of the notehead
     let pitch: Pitch    // matched against the end note's pitch
-    let staffPos: Int   // determines whether the arc curves above or below the note
+    let arcBelow: Bool  // the arc curves away from the stem drawn on this note (#288)
     let part: PartKey   // only the part that opened it may close it
     // True once this anchor has been carried across a system/page break: `x` then refers
     // to the left staff edge of the new system rather than a real notehead, so the arc
@@ -85,11 +85,42 @@ private struct TieAnchor {
 /// neither pitch nor any other mark to match on, so without the part key two voices with
 /// interleaved slurs pair up entirely wrongly (#78).
 private struct SlurAnchor {
-    let x: Double       // left-edge x of the notehead where the slur opens (or a staff edge, see below)
+    var x: Double       // left-edge x of the notehead where the slur opens (or a staff edge, see below)
     let noteY: Double   // y of the notehead
-    let staffPos: Int   // determines whether the arc curves above or below
     let part: PartKey   // the stack is per part; see PartKey
     var isCarriedOver: Bool = false  // see TieAnchor.isCarriedOver
+    /// The side a voice sharing its staff keeps its slurs on, whatever its stems (#288);
+    /// `nil` on a staff of one voice, where the notes under the slur decide.
+    let voiceSide: Bool?
+    /// What the notes under the slur so far have been, from the one that opens it on: any
+    /// stemmed down, any stemmed up, any below the middle line.
+    var spanStemDown = false
+    var spanStemUp = false
+    var spanLow = false
+
+    /// Whether the slur curves below its notes — abcm2ps's `slur_direction`: above as soon
+    /// as any stem under it points down, and above when nothing under it is stemmed up and
+    /// nothing lies below the middle line; below otherwise.  Read when the arc is drawn, so
+    /// an arc dangling off a system's end is decided by the notes it has reached.
+    var arcBelow: Bool {
+        if let side = voiceSide { return side }
+        if spanStemDown { return false }
+        return spanStemUp || spanLow
+    }
+
+    mutating func include(_ note: ArcNote) {
+        if let up = note.stemUp {
+            if up { spanStemUp = true } else { spanStemDown = true }
+        }
+        if note.lowestStaffPos < 4 { spanLow = true }
+    }
+}
+
+/// What one note or chord tells the tie or slur over it about which side to curve on: the
+/// way its stem was drawn (`nil` for a note drawn without one) and its lowest notehead.
+private struct ArcNote {
+    let stemUp: Bool?
+    let lowestStaffPos: Int
 }
 
 // MARK: - Pass 5
@@ -341,6 +372,15 @@ struct SVGEmitter: Sendable {
         return documentStemDirection
     }
 
+    /// Which side voice `index` keeps its ties and slurs on when it shares its staff, or
+    /// `nil` when it has the staff to itself.  abcm2ps's `multi`: the last voice below, every
+    /// voice above it above — whichever way their stems point, so that each part's arcs
+    /// stay on its own side of the staff (#288).
+    private func sharedStaffArcBelow(voice index: Int) -> Bool? {
+        guard staffVoiceCount > 1 else { return nil }
+        return index == staffVoiceCount - 1
+    }
+
     /// How far off centre a rest of voice `index` is drawn, in points, positive downward.
     ///
     /// Two voices resting at the same onset draw the same glyph at the same x, so without
@@ -549,13 +589,15 @@ struct SVGEmitter: Sendable {
         let leftEdge = system.origin.x
         pendingTies = pendingTies.map {
             guard $0.part.staff == staffIndex else { return $0 }
-            return TieAnchor(x: leftEdge, noteY: $0.noteY, pitch: $0.pitch, staffPos: $0.staffPos,
+            return TieAnchor(x: leftEdge, noteY: $0.noteY, pitch: $0.pitch, arcBelow: $0.arcBelow,
                              part: $0.part, isCarriedOver: true)
         }
         pendingSlurs = pendingSlurs.map {
             guard $0.part.staff == staffIndex else { return $0 }
-            return SlurAnchor(x: leftEdge, noteY: $0.noteY, staffPos: $0.staffPos,
-                              part: $0.part, isCarriedOver: true)
+            var carried = $0
+            carried.x = leftEdge
+            carried.isCarriedOver = true
+            return carried
         }
 
         var markColumns: [MarkColumn] = []
@@ -579,12 +621,12 @@ struct SVGEmitter: Sendable {
         if let lastMeasure = system.measures.last {
             let rightEdge = lastMeasure.origin.x + lastMeasure.width
             for anchor in pendingTies where anchor.part.staff == staffIndex {
-                emitDanglingArc(fromX: anchor.x, y: anchor.noteY, staffPos: anchor.staffPos,
+                emitDanglingArc(fromX: anchor.x, y: anchor.noteY, arcBelow: anchor.arcBelow,
                                 toEdgeX: rightEdge, isCarriedOver: anchor.isCarriedOver,
                                 kind: .tie, builder: &builder)
             }
             for anchor in pendingSlurs where anchor.part.staff == staffIndex {
-                emitDanglingArc(fromX: anchor.x, y: anchor.noteY, staffPos: anchor.staffPos,
+                emitDanglingArc(fromX: anchor.x, y: anchor.noteY, arcBelow: anchor.arcBelow,
                                 toEdgeX: rightEdge, isCarriedOver: anchor.isCarriedOver,
                                 kind: .slur, builder: &builder)
             }
@@ -1384,6 +1426,19 @@ struct SVGEmitter: Sendable {
                 }
             }
 
+            // Which side the ties and slurs over this note curve on, as abcm2ps decides it
+            // (#288).  The stem is the one drawn — after a forced voice direction or a beam
+            // group's shared one — not the one the staff position alone would pick.
+            let arcNote: ArcNote? = stemmed(event).map {
+                ArcNote(stemUp: stemInfo?.stemUp, lowestStaffPos: $0.positions.min() ?? 4)
+            }
+            let voiceSide = sharedStaffArcBelow(voice: voice)
+            if let arcNote {
+                for i in pendingSlurs.indices where pendingSlurs[i].part == part {
+                    pendingSlurs[i].include(arcNote)
+                }
+            }
+
             // Tie handling: resolve incoming ties before recording outgoing ones so that
             // a .continuesTie note draws the arc from the previous note to itself and
             // then registers itself as a new tie start.
@@ -1397,18 +1452,22 @@ struct SVGEmitter: Sendable {
                     }) {
                         let anchor = pendingTies.remove(at: idx)
                         if anchor.isCarriedOver {
-                            emitArrivingTieArc(edgeX: anchor.x, staffPos: anchor.staffPos,
+                            emitArrivingTieArc(edgeX: anchor.x, arcBelow: anchor.arcBelow,
                                                toX: anchorX, toY: ny,
                                                kind: .tie, builder: &builder)
                         } else {
-                            emitTieArc(fromX: anchor.x, fromY: anchor.noteY, staffPos: anchor.staffPos,
+                            emitTieArc(fromX: anchor.x, fromY: anchor.noteY, arcBelow: anchor.arcBelow,
                                        toX: anchorX, toY: ny, kind: .tie, builder: &builder)
                         }
                     }
                 }
                 if note.ties == .startsTie || note.ties == .continuesTie {
+                    // A tie curves away from its note's stem; a note drawn without one goes
+                    // the way its stem would have.
+                    let below = voiceSide ?? stemInfo?.stemUp
+                        ?? stemsUp(resolvedStemDirection(forVoice: voice), staffPos: sp)
                     pendingTies.append(TieAnchor(x: anchorX, noteY: ny,
-                                                 pitch: note.pitch, staffPos: sp, part: part))
+                                                 pitch: note.pitch, arcBelow: below, part: part))
                 }
             }
 
@@ -1422,18 +1481,20 @@ struct SVGEmitter: Sendable {
                     if let idx = pendingSlurs.lastIndex(where: { $0.part == part }) {
                         let anchor = pendingSlurs.remove(at: idx)
                         if anchor.isCarriedOver {
-                            emitArrivingTieArc(edgeX: anchor.x, staffPos: anchor.staffPos,
+                            emitArrivingTieArc(edgeX: anchor.x, arcBelow: anchor.arcBelow,
                                                toX: anchorX, toY: ny,
                                                kind: .slur, builder: &builder)
                         } else {
-                            emitTieArc(fromX: anchor.x, fromY: anchor.noteY, staffPos: anchor.staffPos,
+                            emitTieArc(fromX: anchor.x, fromY: anchor.noteY, arcBelow: anchor.arcBelow,
                                        toX: anchorX, toY: ny, kind: .slur, builder: &builder)
                         }
                     }
                 }
                 for _ in 0..<note.slurs.opens {
-                    pendingSlurs.append(SlurAnchor(x: anchorX, noteY: ny, staffPos: sp,
-                                                   part: part))
+                    var anchor = SlurAnchor(x: anchorX, noteY: ny, part: part,
+                                            voiceSide: voiceSide)
+                    if let arcNote { anchor.include(arcNote) }
+                    pendingSlurs.append(anchor)
                 }
             }
         }
@@ -2533,17 +2594,17 @@ struct SVGEmitter: Sendable {
     }
 
     /// Draws the cubic-bezier arc shared by ties and slurs, given final endpoint x's and
-    /// each endpoint's un-offset (notehead-centre) y. Stems go up for staffPos ≤ 4; arcs
-    /// curve to the opposite side of the stem.
+    /// each endpoint's un-offset (notehead-centre) y, curving `below` the notes or above
+    /// them — the side away from the stem the arc's first note was drawn with.
     ///
     /// SMuFL specifies the mark as *tapered* — thin at the endpoints, thick at the middle —
     /// which a single stroked curve cannot express whatever width it picks. So the arc is a
     /// closed outline: the centre-line curve offset outward, then the same curve offset
     /// inward and traversed backwards, filled rather than stroked.
-    private func emitArc(x1: Double, rawY1: Double, x2: Double, rawY2: Double, staffPos: Int,
+    private func emitArc(x1: Double, rawY1: Double, x2: Double, rawY2: Double, below: Bool,
                           kind: ArcKind, builder: inout SVGBuilder) {
         let s = config.staffSize
-        let tieBelow  = staffPos <= 4
+        let tieBelow  = below
         let endOffset = tieBelow ? s : -s     // shift endpoints one staff line away from note centre
         let dy        = tieBelow ? s * 0.75 : -(s * 0.75)
         let span = x2 - x1
@@ -2583,19 +2644,19 @@ struct SVGEmitter: Sendable {
 
     /// Note-to-note tie/slur arc: the start point clears the starting notehead's width,
     /// the end point sits at the ending notehead's left edge.
-    private func emitTieArc(fromX: Double, fromY: Double, staffPos: Int,
+    private func emitTieArc(fromX: Double, fromY: Double, arcBelow: Bool,
                              toX: Double, toY: Double, kind: ArcKind, builder: inout SVGBuilder) {
         emitArc(x1: fromX + noteheadWidth(), rawY1: fromY, x2: toX, rawY2: toY,
-               staffPos: staffPos, kind: kind, builder: &builder)
+               below: arcBelow, kind: kind, builder: &builder)
     }
 
     /// Arriving arc for a tie/slur carried over from a previous system (#27): starts
     /// exactly at the staff's left edge (no notehead clearance, since there's no note
     /// there) and curves in to the resolving note.
-    private func emitArrivingTieArc(edgeX: Double, staffPos: Int,
+    private func emitArrivingTieArc(edgeX: Double, arcBelow: Bool,
                                      toX: Double, toY: Double, kind: ArcKind,
                                      builder: inout SVGBuilder) {
-        emitArc(x1: edgeX, rawY1: toY, x2: toX, rawY2: toY, staffPos: staffPos,
+        emitArc(x1: edgeX, rawY1: toY, x2: toX, rawY2: toY, below: arcBelow,
                 kind: kind, builder: &builder)
     }
 
@@ -2603,13 +2664,13 @@ struct SVGEmitter: Sendable {
     /// curves from the anchor out to the staff's right edge (open-ended). If the anchor
     /// itself was already carried in from a previous system (never resolved within this
     /// one), both ends are open edges and neither gets notehead-width clearance.
-    private func emitDanglingArc(fromX: Double, y: Double, staffPos: Int, toEdgeX: Double,
+    private func emitDanglingArc(fromX: Double, y: Double, arcBelow: Bool, toEdgeX: Double,
                                   isCarriedOver: Bool, kind: ArcKind, builder: inout SVGBuilder) {
         if isCarriedOver {
-            emitArc(x1: fromX, rawY1: y, x2: toEdgeX, rawY2: y, staffPos: staffPos,
+            emitArc(x1: fromX, rawY1: y, x2: toEdgeX, rawY2: y, below: arcBelow,
                     kind: kind, builder: &builder)
         } else {
-            emitTieArc(fromX: fromX, fromY: y, staffPos: staffPos, toX: toEdgeX, toY: y,
+            emitTieArc(fromX: fromX, fromY: y, arcBelow: arcBelow, toX: toEdgeX, toY: y,
                        kind: kind, builder: &builder)
         }
     }

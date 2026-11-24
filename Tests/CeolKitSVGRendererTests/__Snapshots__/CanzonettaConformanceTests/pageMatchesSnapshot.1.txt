@@ -282,7 +282,7 @@
   <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(429.517 143.087) scale(0.0168 -0.0168)"/>
   <use href="#bravura-g536" xlink:href="#bravura-g536" transform="translate(426.19 143.087) scale(0.0168 -0.0168)"/>
   <line x1="434.221" y1="128.387" x2="434.221" y2="142.381" stroke="black" stroke-width="0.504"/>
-  <path d="M 348.837 153.097 C 361.738 156.583 374.639 150.283 387.54 146.797 L 387.54 146.377 C 374.639 149.191 361.738 155.491 348.837 152.677 Z" fill="black" stroke="none"/>
+  <path d="M 351.637 151.447 C 357.109 156.152 382.068 152.94 387.54 146.827 L 387.54 146.407 C 382.068 151.848 357.109 155.06 351.637 151.027 Z" fill="black" stroke="none"/>
   <line x1="576" y1="132.587" x2="576" y2="149.387" stroke="black" stroke-width="0.672"/>
   <use href="#bravura-g157" xlink:href="#bravura-g157" transform="translate(460.2 140.987) scale(0.0168 -0.0168)"/>
   <line x1="464.904" y1="126.287" x2="464.904" y2="140.281" stroke="black" stroke-width="0.504"/>
@@ -428,7 +428,7 @@
   <line x1="520.123" y1="186.212" x2="520.123" y2="200.207" stroke="black" stroke-width="0.504"/>
   <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(549.07 185.507) scale(0.0168 -0.0168)"/>
   <line x1="549.322" y1="186.212" x2="549.322" y2="200.207" stroke="black" stroke-width="0.504"/>
-  <path d="M 462.678 199.717 C 478.864 203.203 495.051 196.903 511.237 193.417 L 511.237 192.997 C 495.051 195.811 478.864 202.111 462.678 199.297 Z" fill="black" stroke="none"/>
+  <path d="M 465.478 198.037 C 472.163 203.125 504.553 199.855 511.237 193.417 L 511.237 192.997 C 504.553 198.763 472.163 202.033 465.478 197.617 Z" fill="black" stroke="none"/>
   <use href="#libertinusSerif-g52" xlink:href="#libertinusSerif-g52" transform="translate(233.75 206.868) scale(0.0098 -0.0098)"/>
   <use href="#libertinusSerif-g80" xlink:href="#libertinusSerif-g80" transform="translate(238.503 206.868) scale(0.0098 -0.0098)"/>
   <use href="#libertinusSerif-g79" xlink:href="#libertinusSerif-g79" transform="translate(243.442 206.868) scale(0.0098 -0.0098)"/>
@@ -772,7 +772,7 @@
   <line x1="119.634" y1="386.199" x2="138.976" y2="386.199" stroke="black" stroke-width="2.1"/>
   <use href="#bravura-g157" xlink:href="#bravura-g157" transform="translate(157.309 373.599) scale(0.0168 -0.0168)"/>
   <line x1="157.561" y1="374.305" x2="157.561" y2="388.299" stroke="black" stroke-width="0.504"/>
-  <path d="M 95.472 361.909 C 116.91 359.095 138.349 365.395 159.787 368.209 L 159.787 367.789 C 138.349 364.303 116.91 358.003 95.472 361.489 Z" fill="black" stroke="none"/>
+  <path d="M 98.272 363.589 C 106.635 358.559 151.424 361.923 159.787 368.209 L 159.787 367.789 C 151.424 360.831 106.635 357.467 98.272 363.169 Z" fill="black" stroke="none"/>
   <line x1="330.404" y1="367.299" x2="330.404" y2="384.099" stroke="black" stroke-width="0.672"/>
   <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(206.601 381.999) scale(0.0168 -0.0168)"/>
   <line x1="211.305" y1="367.299" x2="211.305" y2="381.294" stroke="black" stroke-width="0.504"/>
@@ -1027,7 +1027,7 @@
   <line x1="432.54" y1="487.005" x2="443.165" y2="487.005" stroke="black" stroke-width="2.1"/>
   <use href="#bravura-g158" xlink:href="#bravura-g158" transform="translate(448.329 498.555) scale(0.0168 -0.0168)"/>
   <line x1="453.033" y1="483.855" x2="453.033" y2="497.849" stroke="black" stroke-width="0.504"/>
-  <path d="M 393.627 500.165 C 412.687 503.651 431.747 507.851 450.807 504.365 L 450.807 503.945 C 431.747 506.759 412.687 502.559 393.627 499.745 Z" fill="black" stroke="none"/>
+  <path d="M 393.627 501.24 C 401.343 507.75 440.991 509.867 448.707 504.18 L 448.707 503.76 C 440.991 508.775 401.343 506.658 393.627 500.82 Z" fill="black" stroke="none"/>
   <use href="#bravura-g64" xlink:href="#bravura-g64" transform="translate(514.926 492.255) scale(0.0168 -0.0168)"/>
   <use href="#bravura-g64" xlink:href="#bravura-g64" transform="translate(514.926 488.055) scale(0.0168 -0.0168)"/>
   <line x1="517.614" y1="481.755" x2="517.614" y2="498.555" stroke="black" stroke-width="0.672"/>

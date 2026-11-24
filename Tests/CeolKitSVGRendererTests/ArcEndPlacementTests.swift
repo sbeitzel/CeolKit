@@ -86,6 +86,31 @@ struct ArcEndPlacementTests {
 
     // MARK: - Slurs
 
+    /// Where a slur placed from `start` to `end` finally lands: abcm2ps adjusts the ends it
+    /// places against the notes (#293) for the slur's slope, a jump between its ends, and
+    /// what it passes over (#292), all in ``ArcGeometry``.
+    private func adjusted(_ start: (Double, Double), _ end: (Double, Double), below: Bool,
+                          notes: Int, under: [ArcGeometry.Obstacle] = []) -> ArcGeometry {
+        ArcGeometry(start: .init(x: start.0, y: start.1), end: .init(x: end.0, y: end.1),
+                    below: below, kind: .slur(noteCount: notes, obstacles: under),
+                    staffSize: staffSize)
+    }
+
+    /// What a note under a slur reaches, as the emitter measures it: a staff space past its
+    /// notehead, or its stem's tip.
+    private func obstacle(_ head: Head, stem: Stem) -> ArcGeometry.Obstacle {
+        ArcGeometry.Obstacle(x: head.centreX, top: min(head.y - staffSize, stem.top),
+                             bottom: max(head.y + staffSize, stem.bottom))
+    }
+
+    private func expect(_ arc: Arc, at geometry: ArcGeometry,
+                        sourceLocation: SourceLocation = #_sourceLocation) {
+        #expect(close(arc.x1, geometry.start.x), sourceLocation: sourceLocation)
+        #expect(close(arc.y1, geometry.start.y), sourceLocation: sourceLocation)
+        #expect(close(arc.x2, geometry.end.x), sourceLocation: sourceLocation)
+        #expect(close(arc.y2, geometry.end.y), sourceLocation: sourceLocation)
+    }
+
     @Test("Away from the stems, a slur's ends stand 8 units past the noteheads' centres")
     func awayFromTheStems() throws {
         // B and c both stem down, so the slur goes above, on the side away from them.
@@ -93,18 +118,18 @@ struct ArcEndPlacementTests {
         let h = heads(in: svg)
         let arc = try #require(arcs(in: svg).first)
         try #require(h.count == 2)
-        #expect(close(arc.x1, h[0].centreX))
-        #expect(close(arc.y1, h[0].y - 8 * u))
-        #expect(close(arc.x2, h[1].centreX))
-        #expect(close(arc.y2, h[1].y - 8 * u))
+        expect(arc, at: adjusted((h[0].centreX, h[0].y - 8 * u), (h[1].centreX, h[1].y - 8 * u),
+                                 below: false, notes: 2))
     }
 
     @Test("A slur between neighbouring notes spans their centres, not the gap between them")
     func neighbouringNotes() throws {
-        let svg = try render("(Bc) |")
+        // Level ends, which nothing moves.
+        let svg = try render("(BB) |")
         let h = heads(in: svg)
         let arc = try #require(arcs(in: svg).first)
-        #expect(close(arc.x2 - arc.x1, h[1].centreX - h[0].centreX))
+        #expect(close(arc.x1, h[0].centreX))
+        #expect(close(arc.x2, h[1].centreX))
     }
 
     @Test("Below, away from the stems, the ends stand 8 units under the noteheads")
@@ -113,8 +138,8 @@ struct ArcEndPlacementTests {
         let svg = try render("(E2F2) |")
         let h = heads(in: svg)
         let arc = try #require(arcs(in: svg).first)
-        #expect(close(arc.y1, h[0].y + 8 * u))
-        #expect(close(arc.y2, h[1].y + 8 * u))
+        expect(arc, at: adjusted((h[0].centreX, h[0].y + 8 * u), (h[1].centreX, h[1].y + 8 * u),
+                                 below: true, notes: 2))
     }
 
     @Test("A slur starting on an unbeamed quarter's stem starts 6 units below its tip")
@@ -124,8 +149,8 @@ struct ArcEndPlacementTests {
         let h = heads(in: svg)
         let arc = try #require(arcs(in: svg).first)
         let tip = try stem(of: h[0], in: svg).top
-        #expect(close(arc.x1, h[0].centreX + 5 * u))
-        #expect(close(arc.y1, tip + 6 * u))
+        expect(arc, at: adjusted((h[0].centreX + 5 * u, tip + 6 * u),
+                                 (h[1].centreX, h[1].y - 8 * u), below: false, notes: 2))
     }
 
     @Test("A slur starting on a flagged note's stem starts beside its flag")
@@ -134,8 +159,8 @@ struct ArcEndPlacementTests {
         let h = heads(in: svg)
         let arc = try #require(arcs(in: svg).first)
         let tip = try stem(of: h[0], in: svg).top
-        #expect(close(arc.x1, h[0].centreX + 7 * u))
-        #expect(close(arc.y1, tip + 3 * u))
+        expect(arc, at: adjusted((h[0].centreX + 7 * u, tip + 3 * u),
+                                 (h[1].centreX, h[1].y - 8 * u), below: false, notes: 2))
     }
 
     @Test("A slur starting where a beam runs on starts above the beam")
@@ -143,10 +168,14 @@ struct ArcEndPlacementTests {
         // G and A are beamed, stems up; c stems down and sends the slur above.
         let svg = try render("(GA c) z |")
         let h = heads(in: svg)
+        try #require(h.count == 3)
         let arc = try #require(arcs(in: svg).first)
         // At the beam: the stem as drawn ends there, not where it would unbeamed.
         let tip = try stem(of: h[0], in: svg).top
-        #expect(close(arc.y1, tip - 3 * u))
+        let a = obstacle(h[1], stem: try stem(of: h[1], in: svg))
+        expect(arc, at: adjusted((h[0].centreX + 5 * u, tip - 3 * u),
+                                 (h[2].centreX, h[2].y - 8 * u), below: false, notes: 3,
+                                 under: [a]))
     }
 
     @Test("A slur ending where a beam starts ends 6 units below the stem's tip")
@@ -156,8 +185,8 @@ struct ArcEndPlacementTests {
         let h = heads(in: svg)
         let arc = try #require(arcs(in: svg).first)
         let tip = try stem(of: h[1], in: svg).top
-        #expect(close(arc.x2, h[1].centreX + 1 * u))
-        #expect(close(arc.y2, tip + 6 * u))
+        expect(arc, at: adjusted((h[0].centreX, h[0].y - 8 * u),
+                                 (h[1].centreX + 1 * u, tip + 6 * u), below: false, notes: 2))
     }
 
     @Test("A slur ending inside a beam ends 3 units past the beam")
@@ -169,8 +198,10 @@ struct ArcEndPlacementTests {
         try #require(h.count == 3)
         let arc = try #require(arcs(in: svg).first)
         let tip = try stem(of: h[2], in: svg).top
-        #expect(close(arc.x2, h[2].centreX + 1 * u))
-        #expect(close(arc.y2, tip - 3 * u))
+        let g = obstacle(h[1], stem: try stem(of: h[1], in: svg))
+        expect(arc, at: adjusted((h[0].centreX, h[0].y - 8 * u),
+                                 (h[2].centreX + 1 * u, tip - 3 * u), below: false, notes: 3,
+                                 under: [g]))
     }
 
     @Test("A whole note's ends are placed by its own, wider notehead")

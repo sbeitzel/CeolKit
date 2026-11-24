@@ -102,6 +102,8 @@ private struct SlurAnchor {
     var spanStemDown = false
     var spanStemUp = false
     var spanLow = false
+    /// What the slur passes over on this system, which decides how high it rises (#292).
+    var span = SlurSpan(noteCount: 1)
     /// The note the slur opens on, which its start is placed against (#293).
     var startNote: ArcEnd? = nil
 
@@ -120,6 +122,62 @@ private struct SlurAnchor {
             if up { spanStemUp = true } else { spanStemDown = true }
         }
         if note.lowestStaffPos < 4 { spanLow = true }
+    }
+}
+
+/// What an open slur has passed over on the system being drawn — abcm2ps's `nn` and the
+/// notes `draw_slur` lifts the slur clear of (#292).  Counted per system: a slur broken
+/// across a line break is sized, like any other arc, from the notes of the piece drawn.
+private struct SlurSpan {
+    /// The notes, chords and rests spanned, the slur's ends included — a staff edge that a
+    /// carried-over slur starts from is not a note, and does not count.
+    var noteCount = 0
+    /// What lies between the ends.
+    private(set) var obstacles: [ArcGeometry.Obstacle] = []
+    /// For each obstacle drawn in the bar being drawn, its event index there, whether its
+    /// stem points up, and where its noteheads end on that side — a beam drawn later in the
+    /// bar moves that stem's tip — and `nil` for one whose bar is finished.
+    private var stems: [Stem?] = []
+    private struct Stem {
+        let event: Int
+        let up: Bool
+        let headEdge: Double
+    }
+
+    /// Records what one event put under the slur.  A grace group is several obstacles and
+    /// no note: abcm2ps counts notes, chords and rests alone.
+    /// `stem` is the way a stem a beam may still move points, and the noteheads' outer edge
+    /// on that side; `nil` where there is no such stem.
+    mutating func record(_ new: [ArcGeometry.Obstacle], event: Int,
+                         stem: (up: Bool, headEdge: Double)?, counts: Bool) {
+        obstacles += new
+        stems += new.map { _ in stem.map { Stem(event: event, up: $0.up, headEdge: $0.headEdge) } }
+        if counts { noteCount += 1 }
+    }
+
+    /// Withdraws the obstacle the note closing the slur recorded: it is an end, not
+    /// something under the arc.  It still counts as a note.
+    mutating func removeClosingNote() {
+        guard !obstacles.isEmpty else { return }
+        obstacles.removeLast()
+        stems.removeLast()
+    }
+
+    /// A beam has put the stem of event `event` of this bar's tip at `tipY`.
+    mutating func settleStem(event: Int, tipY: Double) {
+        for i in obstacles.indices {
+            guard let stem = stems[i], stem.event == event else { continue }
+            if stem.up {
+                obstacles[i].top = min(stem.headEdge, tipY)
+            } else {
+                obstacles[i].bottom = max(stem.headEdge, tipY)
+            }
+        }
+    }
+
+    /// The bar is drawn: its event indices mean nothing in the next.
+    mutating func endBar() {
+        stems = stems.map { _ in nil }
     }
 }
 
@@ -626,6 +684,7 @@ struct SVGEmitter: Sendable {
             var carried = $0
             carried.x = leftEdge
             carried.isCarriedOver = true
+            carried.span = SlurSpan()  // what it passed over was on the system before
             return carried
         }
 
@@ -1396,6 +1455,19 @@ struct SVGEmitter: Sendable {
                 for (member, entry) in zip(members, g) {
                     stemEnds[member] = StemEnd(x: entry.stem.stemX, y: beamY, up: entry.stem.stemUp)
                 }
+                // A slur over the group clears the beam, not the stems' unbeamed tips — an
+                // open one, or one closed in this bar and waiting to be drawn at its end.
+                let part = PartKey(staff: staffIndex, voice: voice)
+                for i in pendingSlurs.indices where pendingSlurs[i].part == part {
+                    for member in members {
+                        pendingSlurs[i].span.settleStem(event: member, tipY: beamY)
+                    }
+                }
+                for i in closedSlurs.indices where closedSlurs[i].anchor.part == part {
+                    for member in members {
+                        closedSlurs[i].anchor.span.settleStem(event: member, tipY: beamY)
+                    }
+                }
             }
         }
 
@@ -1418,9 +1490,14 @@ struct SVGEmitter: Sendable {
                 continue
             }
             if case .grace(let g) = event.kind {
-                lastGraceBeamY[voice] = emitGraceGroup(g, clef: event.clef,
-                                                       originX: event.origin.x, topStaffY: topY,
-                                                       bottomStaffY: bottomY, builder: &builder)
+                let drawn = emitGraceGroup(g, clef: event.clef,
+                                           originX: event.origin.x, topStaffY: topY,
+                                           bottomStaffY: bottomY, builder: &builder)
+                lastGraceBeamY[voice] = drawn.beamY
+                for i in pendingSlurs.indices where pendingSlurs[i].part == part {
+                    pendingSlurs[i].span.record(drawn.obstacles, event: index, stem: nil,
+                                                counts: false)
+                }
                 continue
             }
             graceBeamBefore[index] = lastGraceBeamY[voice]
@@ -1486,6 +1563,20 @@ struct SVGEmitter: Sendable {
                 }
             }
 
+            // What this event puts under the slurs already open in its part (#292).  The
+            // slurs it opens have not been opened yet, so it is never an obstacle to them;
+            // one it closes withdraws it again below.
+            let obstacle = slurObstacle(event, anchorX: anchorX, stem: stemInfo,
+                                        topStaffY: topY, bottomStaffY: bottomY,
+                                        unitNoteLength: measure.unitNoteLength,
+                                        separateRests: separateRests)
+            if let obstacle {
+                for i in pendingSlurs.indices where pendingSlurs[i].part == part {
+                    pendingSlurs[i].span.record([obstacle.extent], event: index,
+                                                stem: obstacle.beamableStem, counts: true)
+                }
+            }
+
             // Tie handling: resolve incoming ties before recording outgoing ones so that
             // a .continuesTie note draws the arc from the previous note to itself and
             // then registers itself as a new tie start.
@@ -1538,7 +1629,9 @@ struct SVGEmitter: Sendable {
                 for _ in 0..<note.slurs.closes {
                     if let idx = pendingSlurs.lastIndex(where: { $0.part == part }),
                        let arcEnd {
-                        closedSlurs.append((pendingSlurs.remove(at: idx), arcEnd))
+                        var anchor = pendingSlurs.remove(at: idx)
+                        if obstacle != nil { anchor.span.removeClosingNote() }
+                        closedSlurs.append((anchor, arcEnd))
                     }
                 }
                 for _ in 0..<note.slurs.opens {
@@ -1553,6 +1646,7 @@ struct SVGEmitter: Sendable {
         // Safety flush for malformed input, in voice order so that what a broken bar draws
         // does not depend on which voice happened to open a run last.
         for voice in pendingBeams.keys.sorted() { flushBeam(voice: voice) }
+        for i in pendingSlurs.indices { pendingSlurs[i].span.endBar() }
 
         // Every stem of the bar now ends where it is drawn: place the slurs against them.
         func settle(_ end: inout ArcEnd) {
@@ -2492,10 +2586,13 @@ struct SVGEmitter: Sendable {
     private var graceScale: Double { GraceMetrics.scale }
 
     @discardableResult
+    /// - Returns: the y of the group's beam (or its one flagged stem's tip), and what each
+    ///   of its notes puts under a slur drawn over the group (#292).
     private func emitGraceGroup(_ grace: GraceGroup, clef: ClefSpec, originX: Double,
                                  topStaffY: Double, bottomStaffY: Double,
-                                 builder: inout SVGBuilder) -> Double {
-        guard !grace.notes.isEmpty else { return 0 }
+                                 builder: inout SVGBuilder)
+        -> (beamY: Double, obstacles: [ArcGeometry.Obstacle]) {
+        guard !grace.notes.isEmpty else { return (0, []) }
 
         let s          = config.staffSize
         let fontSize   = 4.0 * s * graceScale
@@ -2590,7 +2687,14 @@ struct SVGEmitter: Sendable {
                          strokeWidth: metadata.engravingDefaults.stemThickness * s)
         }
 
-        return beamY
+        // Grace stems always point up, to the beam.  Below, a notehead reaches a staff space
+        // past its centre, as abcm2ps measures every note a slur has to clear.
+        let headWidth = (metadata.glyphBBoxes["noteheadBlack"]?.width ?? 1.18) * s * graceScale
+        let obstacles = positions.map {
+            ArcGeometry.Obstacle(x: $0.x + headWidth / 2, top: min(beamY, $0.noteheadY - s),
+                                 bottom: $0.noteheadY + s)
+        }
+        return (beamY, obstacles)
     }
 
     // MARK: - Rests
@@ -2602,14 +2706,24 @@ struct SVGEmitter: Sendable {
     private func emitRest(_ rest: Rest, x: Double, topStaffY: Double, bottomStaffY: Double,
                           unitNoteLength: Fraction, voiceIndex: Int? = nil,
                           builder: inout SVGBuilder) {
+        guard let (glyph, y) = restPlacement(rest, bottomStaffY: bottomStaffY,
+                                             unitNoteLength: unitNoteLength,
+                                             voiceIndex: voiceIndex) else { return }
+        builder.text(String(glyph.character), x: x, y: y,
+                     fontFamily: "Bravura", fontSize: 4.0 * config.staffSize)
+    }
+
+    /// The glyph a rest is drawn with and the y of its baseline, or `nil` for a rest that is
+    /// not drawn at all.  `voiceIndex` as for ``emitRest(_:x:topStaffY:bottomStaffY:unitNoteLength:voiceIndex:builder:)``.
+    private func restPlacement(_ rest: Rest, bottomStaffY: Double, unitNoteLength: Fraction,
+                               voiceIndex: Int?) -> (glyph: SMuFLGlyph, y: Double)? {
         switch rest.kind {
-        case .invisible, .fullMeasureInvisible: return
+        case .invisible, .fullMeasureInvisible: return nil
         default: break
         }
 
         let absDur   = rest.kind == .fullMeasure ? 1.0 :
                        absoluteDuration(rest.duration, unitNoteLength: unitNoteLength)
-        let fontSize = 4.0 * config.staffSize
         let s        = config.staffSize
 
         let glyph: SMuFLGlyph
@@ -2640,8 +2754,51 @@ struct SVGEmitter: Sendable {
         }
 
         let offset = voiceIndex.map { restOffset(forVoice: $0) } ?? 0
-        builder.text(String(glyph.character), x: x, y: y + offset,
-                     fontFamily: "Bravura", fontSize: fontSize)
+        return (glyph, y + offset)
+    }
+
+    // MARK: - Slur clearance
+
+    /// What `event` puts under a slur drawn over it (#292): where it stands and how far it
+    /// reaches up and down, for ``ArcGeometry`` to lift the slur clear of.
+    ///
+    /// A note or chord reaches a staff space past its outermost noteheads — abcm2ps's
+    /// `±6` — or to its stem's tip where that is farther; a rest, to its glyph's box.  An
+    /// event that is neither, or a rest that is not drawn, puts nothing there and is not
+    /// one of the slur's notes either.
+    ///
+    /// `beamableStem` is what a beam drawn later in the bar needs to move the stem's tip:
+    /// which way the stem points and where the noteheads end on that side.
+    private func slurObstacle(_ event: ResolvedEvent, anchorX: Double, stem: StemInfo?,
+                              topStaffY: Double, bottomStaffY: Double,
+                              unitNoteLength: Fraction, separateRests: Bool)
+        -> (extent: ArcGeometry.Obstacle, beamableStem: (up: Bool, headEdge: Double)?)? {
+        let s = config.staffSize
+        if let stemmed = stemmed(event) {
+            let ys = stemmed.positions.map { noteY(staffPos: $0, bottomStaffY: bottomStaffY) }
+            guard let highest = ys.min(), let lowest = ys.max() else { return nil }
+            let headTop = highest - s, headBottom = lowest + s
+            var extent = ArcGeometry.Obstacle(x: anchorX + noteheadWidth() / 2,
+                                              top: headTop, bottom: headBottom)
+            guard let stem else { return (extent, nil) }
+            if stem.stemUp {
+                extent.top = min(headTop, stem.stemTipY)
+            } else {
+                extent.bottom = max(headBottom, stem.stemTipY)
+            }
+            return (extent, (stem.stemUp, stem.stemUp ? headTop : headBottom))
+        }
+        if case .rest(let rest) = event.kind,
+           let (glyph, y) = restPlacement(rest, bottomStaffY: bottomStaffY,
+                                          unitNoteLength: unitNoteLength,
+                                          voiceIndex: separateRests ? event.voiceIndex : nil) {
+            let box = metadata.glyphBBoxes[glyph.rawValue]
+            let width = (box?.width ?? 1) * s
+            return (ArcGeometry.Obstacle(x: event.origin.x + width / 2,
+                                         top: y - (box?.neY ?? 1) * s,
+                                         bottom: y - (box?.swY ?? -1) * s), nil)
+        }
+        return nil
     }
 
     // MARK: - Tie arc
@@ -2669,14 +2826,20 @@ struct SVGEmitter: Sendable {
     /// which a single stroked curve cannot express whatever width it picks. So the arc is a
     /// closed outline: the centre-line curve offset outward, then the same curve offset
     /// inward and traversed backwards, filled rather than stroked.
+    ///
+    /// How high the arc rises, and where a slur's ends finally land, is abcm2ps's rule
+    /// (#292): see ``ArcGeometry``.  `under` is what a slur passes over; a tie ignores it.
     private func emitArc(from start: (x: Double, y: Double), to end: (x: Double, y: Double),
-                         below: Bool, kind: ArcKind, builder: inout SVGBuilder) {
+                         below: Bool, kind: ArcKind, under: SlurSpan = SlurSpan(),
+                         builder: inout SVGBuilder) {
         let s = config.staffSize
-        let dy = below ? s * 0.75 : -(s * 0.75)
-        let (x1, y1, x2, y2) = (start.x, start.y, end.x, end.y)
-        let span = x2 - x1
-        let cp1x = x1 + span / 3.0
-        let cp2x = x2 - span / 3.0
+        let geometryKind: ArcGeometry.Kind = switch kind {
+        case .tie:  .tie
+        case .slur: .slur(noteCount: under.noteCount, obstacles: under.obstacles)
+        }
+        let curve = ArcGeometry(start: .init(x: start.x, y: start.y),
+                                end: .init(x: end.x, y: end.y),
+                                below: below, kind: geometryKind, staffSize: s)
 
         // Half-widths of the ribbon, measured either side of the centre line. Subtracting one
         // boundary curve from the other leaves a third cubic — the thickness along the arc —
@@ -2690,18 +2853,19 @@ struct SVGEmitter: Sendable {
         /// `sign · halfInner` and its endpoints by `sign · halfEnd`. The shape is symmetric
         /// about the centre line, so which sign lands on the outside of the bulge does not
         /// matter — only that the two boundaries take opposite signs.
+        let (p1, c1, c2, p2) = (curve.start, curve.control1, curve.control2, curve.end)
         func boundary(_ sign: Double, reversed: Bool) -> String {
-            let c1 = builder.fmt(y1 + dy + sign * halfInner)
-            let c2 = builder.fmt(y2 + dy + sign * halfInner)
+            let c1y = builder.fmt(c1.y + sign * halfInner)
+            let c2y = builder.fmt(c2.y + sign * halfInner)
             return reversed
-                ? " C \(builder.fmt(cp2x)) \(c2) \(builder.fmt(cp1x)) \(c1)" +
-                  " \(builder.fmt(x1)) \(builder.fmt(y1 + sign * halfEnd))"
-                : " C \(builder.fmt(cp1x)) \(c1) \(builder.fmt(cp2x)) \(c2)" +
-                  " \(builder.fmt(x2)) \(builder.fmt(y2 + sign * halfEnd))"
+                ? " C \(builder.fmt(c2.x)) \(c2y) \(builder.fmt(c1.x)) \(c1y)" +
+                  " \(builder.fmt(p1.x)) \(builder.fmt(p1.y + sign * halfEnd))"
+                : " C \(builder.fmt(c1.x)) \(c1y) \(builder.fmt(c2.x)) \(c2y)" +
+                  " \(builder.fmt(p2.x)) \(builder.fmt(p2.y + sign * halfEnd))"
         }
-        let d = "M \(builder.fmt(x1)) \(builder.fmt(y1 + halfEnd))" +
+        let d = "M \(builder.fmt(p1.x)) \(builder.fmt(p1.y + halfEnd))" +
                 boundary(1, reversed: false) +
-                " L \(builder.fmt(x2)) \(builder.fmt(y2 - halfEnd))" +
+                " L \(builder.fmt(p2.x)) \(builder.fmt(p2.y - halfEnd))" +
                 boundary(-1, reversed: true) +
                 " Z"
         builder.path(d: d, fill: "black", stroke: "none")
@@ -2789,7 +2953,8 @@ struct SVGEmitter: Sendable {
             p1 = (anchor.x, y)
             p2 = (max(rightEdge ?? anchor.x, anchor.x + 12 * u), y)
         }
-        emitArc(from: p1, to: p2, below: below, kind: .slur, builder: &builder)
+        emitArc(from: p1, to: p2, below: below, kind: .slur, under: anchor.span,
+                builder: &builder)
     }
 
     // MARK: - Helpers

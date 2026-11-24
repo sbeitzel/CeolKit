@@ -303,3 +303,72 @@ struct TieSlurArcSideTests {
         #expect(try arcsBelow(high, topToBottom: true) == [false, false, true, true])
     }
 }
+
+// MARK: - Height
+
+/// How high a drawn arc rises, which is abcm2ps's rule (#292): see `ArcGeometryTests` for
+/// the rule itself.  These check that the emitter hands it what it needs — the span, the
+/// notes under a slur, and how far they reach.
+@Suite("Tie and slur arc height")
+struct TieSlurHeightTests {
+
+    private struct DrawnArc {
+        let startY, endY, apexY: Double
+        /// How far the middle of the curve stands out from the middle of its ends, upward
+        /// positive.
+        var rise: Double { (startY + endY) / 2 - apexY }
+    }
+
+    /// Every arc on the page, by the centre line between its ribbon's two boundaries.
+    private func arcs(in svg: String) -> [DrawnArc] {
+        svg.components(separatedBy: "<path d=\"").dropFirst()
+            .compactMap { $0.components(separatedBy: "\"").first }
+            .map(coordinates(of:))
+            .filter { $0.count == 16 }
+            .map { n in
+                let a = midpointY(n[1], n[3], n[5], n[7])
+                let b = midpointY(n[15], n[13], n[11], n[9])
+                return DrawnArc(startY: (n[1] + n[15]) / 2, endY: (n[7] + n[9]) / 2,
+                                apexY: (a + b) / 2)
+            }
+    }
+
+    /// The y of every black notehead on the page.
+    private func noteheadYs(in svg: String) -> [Double] {
+        let head = SMuFLGlyph.noteheadBlack.character
+        return svg.matches(
+            of: /<text x="([-0-9.]+)" y="([-0-9.]+)" font-family="Bravura"[^>]*>(.)<\/text>/
+        ).compactMap { match in
+            String(match.3).first == head ? Double(match.2) : nil
+        }
+    }
+
+    @Test("A longer tie rises higher")
+    func longerTieRisesHigher() throws {
+        // c stems down, so its ties curve above: the rise is positive, and grows with span.
+        let short = try #require(arcs(in: try renderFirstPage("c-c |")).first)
+        let long = try #require(arcs(in: try renderFirstPage("c4- c4 |")).first)
+        #expect(short.rise > 0)
+        #expect(long.rise > short.rise)
+    }
+
+    @Test("A slur clears a note that stands out between its ends")
+    func slurClearsATallNote() throws {
+        // c, a, c: every stem down, so the slur goes above, over the a.  Drawn as `<text>`
+        // so the noteheads can be found.
+        let tune = try #require(parseTune("(c a c) |"))
+        let score = Score(source: .init(file: nil, byteOffset: 0, length: 0, line: 0, column: 0),
+                          dialect: .loose, creator: nil, charset: nil,
+                          tunes: [tune], freeText: [], typesetText: [], diagnostics: [])
+        let svg = try textProbeRenderer().render(score).joined()
+        let arc = try #require(arcs(in: svg).first)
+        let ys = noteheadYs(in: svg)
+        let (aY, cY) = try (#require(ys.min()), #require(ys.max()))
+        // c to a is five staff steps: two and a half staff spaces.
+        let space = (cY - aY) / 2.5
+        // abcm2ps clears a notehead by a staff space past its centre.
+        #expect(arc.apexY < aY - space)
+        // The ends were lifted towards it, off the c's.
+        #expect(arc.startY < cY - space)
+    }
+}

@@ -625,6 +625,57 @@ be removed in a later release.
 the title block and the `W:` words along with the music, which it did not do
 before.
 
+## Bar numbers: `%%barnumbers`, `%%measurefirst` and `%%measurebox`
+
+ABC v2.2 §11.4.4 lists these directives with one line each. CeolKit implements them as
+abcm2ps 8.14.0 does (issue #290; `set_bar_num` in `parse.c`, `draw_measnb` in
+`deco.c`).
+
+- **`%%barnumbers N`**, or its alias **`%%measurenb N`**. The default is **−1**, which
+  numbers no bars. `0` numbers the first bar of every system except the first. `N > 0`
+  numbers every bar whose number is a multiple of `N`, over the bar line that opens it.
+  If a system opens on such a bar, the number goes at the system's head. The final bar
+  line, and the bar line that ends a system, get no number.
+- **`%%measurefirst N`** sets the first bar's number (default `1`). abcm2ps never
+  numbers bar 1 at a system's head. So with `%%measurefirst 10` the first system can
+  carry a number, but by default it never does.
+- **`%%measurebox <true|false>`** (default `false`) draws a box around each number.
+
+Bars are counted by time, not by bar lines:
+
+- A bar line counts only once a full measure of the meter in force has passed since the
+  last one that counted. So a pickup is not bar 1, and the two halves of a bar split by
+  a repeat sign are one bar. A tune with no meter (`M:none`) counts every bar line.
+- `Zn` and `Xn` count as `n` bars.
+- Each variant ending after the first (`:|2`, `[3`, …) counts again from the number the
+  first ending started on. abcm2ps's `%%contbarnb`, which turns this off, is not in the
+  spec and is not supported.
+- `%%setbarnb`, which resets the count mid-tune, is not supported yet (issue #296).
+
+The numbers are drawn only over each system's top staff, in serif italic at abcm2ps's
+`%%measurefont` default size of 14. `%%measurefont` is not in the spec, so the font is
+fixed. A number stands at least 8 units (abcm2ps's units, 6 to a staff space) above the
+top line, or 14 at a system's head under `%%barnumbers 0`, and higher where notes lie
+under it. Chord symbols, annotations, dynamics, tempo changes and ending brackets on
+that system stand above the numbers, as abcm2ps draws them.
+
+A `%%barnumbers` value that is not an integer of −1 or more produces a warning and is
+ignored. All three directives are scoped like `%%stretchstaff`: file header or tune.
+Written in a tune body, they govern the whole tune. `SVGRenderConfig.barNumbers`,
+`.firstBarNumber` and `.measureBox` set the values the host uses where the document
+says nothing.
+
+```abc
+%%barnumbers 4
+X:1
+T:Every fourth bar
+M:4/4
+L:1/8
+K:D
+d2|ABcd efga|bagf edcB|A2A2 B2B2|c4 d4|e8|f8|g8|a8|
+|:ABcd efga|bagf edcB|1 A2A2 B2B2:|2 c4 d4|Z4|ABcd efga|]
+```
+
 ## The last line: `%%stretchlast` and `%%stretchstaff`
 
 These are abcm2ps's directives (ABC v2.2 §11.4.3 lists both), implemented the way

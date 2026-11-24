@@ -319,6 +319,16 @@ public struct TuneBlock: Sendable {
     /// `%%ceolkit:closevariants` (issue #237).  `nil` leaves the layout engine's own
     /// ``SVGRenderConfig/closeVariants`` standing.
     public let closeVariants: Bool?
+    /// Which bars are numbered, from `%%barnumbers` / `%%measurenb` (issue #290): `-1`
+    /// none, `0` the first of each system, `n` every multiple of `n`.  `nil` leaves the
+    /// layout engine's own ``SVGRenderConfig/barNumbers`` standing.
+    public let barNumbers: Int?
+    /// The number of the tune's first bar, from `%%measurefirst`; `nil` leaves
+    /// ``SVGRenderConfig/firstBarNumber`` standing.
+    public let firstBarNumber: Int?
+    /// Whether bar numbers are boxed, from `%%measurebox`; `nil` leaves
+    /// ``SVGRenderConfig/measureBox`` standing.
+    public let measureBox: Bool?
     /// The `%%newpage` breaks this tune asks for, in system order (issue #140).  Empty for
     /// almost every tune, and an empty list is the pagination this engine has always done.
     public let pageBreaks: [ForcedPageBreak]
@@ -337,13 +347,17 @@ public struct TuneBlock: Sendable {
                 straightFlags: Bool? = nil,
                 graceSlurs: Bool? = nil,
                 closeVariants: Bool? = nil,
+                barNumbers: Int? = nil,
+                firstBarNumber: Int? = nil,
+                measureBox: Bool? = nil,
                 pageBreaks: [ForcedPageBreak] = [],
                 words: [String] = []) {
         self.init(systemGroups: systemGroups, titleRows: titleRows,
                   titleBlockHeight: titleBlockHeight, scale: scale,
                   graceNoteSpacing: graceNoteSpacing, stemDirection: stemDirection,
                   straightFlags: straightFlags, graceSlurs: graceSlurs,
-                  closeVariants: closeVariants,
+                  closeVariants: closeVariants, barNumbers: barNumbers,
+                  firstBarNumber: firstBarNumber, measureBox: measureBox,
                   pageBreaks: pageBreaks, words: words, textStyles: nil)
     }
 
@@ -354,6 +368,9 @@ public struct TuneBlock: Sendable {
                 straightFlags: Bool? = nil,
                 graceSlurs: Bool? = nil,
                 closeVariants: Bool? = nil,
+                barNumbers: Int? = nil,
+                firstBarNumber: Int? = nil,
+                measureBox: Bool? = nil,
                 pageBreaks: [ForcedPageBreak] = [],
                 words: [String] = [],
                 textStyles: TextStyles?) {
@@ -366,6 +383,9 @@ public struct TuneBlock: Sendable {
         self.straightFlags = straightFlags
         self.graceSlurs = graceSlurs
         self.closeVariants = closeVariants
+        self.barNumbers = barNumbers
+        self.firstBarNumber = firstBarNumber
+        self.measureBox = measureBox
         self.pageBreaks = pageBreaks
         self.words = words
         self.textStyles = textStyles
@@ -871,6 +891,9 @@ public struct ResolvedSystem: Sendable {
     /// The variant-ending brackets drawn above this staff, left to right.  Empty on every
     /// staff of every tune that writes none, which reserves no space for them either.
     public let endingBrackets: [EndingBracket]
+    /// The bar numbers drawn over this staff, from `%%barnumbers` (issue #290).  Only a
+    /// system's top staff carries any, and only where the document asks for them.
+    public let barNumbers: [BarNumber]
     /// Where the chord symbols and annotations above and below this staff stand, measured
     /// out from its outer lines.  `nil` on a layout assembled by hand, where the emitter
     /// falls back to ``AnnotationBand/floorRatio``.
@@ -909,6 +932,7 @@ public struct ResolvedSystem: Sendable {
         voiceLabel: VoiceLabel? = nil,
         voiceStemDirections: [StemDirection] = [],
         endingBrackets: [EndingBracket] = [],
+        barNumbers: [BarNumber] = [],
         annotationFloors: AnnotationFloors? = nil,
         headerKeyChange: KeyChange? = nil
     ) {
@@ -932,8 +956,26 @@ public struct ResolvedSystem: Sendable {
         self.voiceLabel = voiceLabel
         self.voiceStemDirections = voiceStemDirections
         self.endingBrackets = endingBrackets
+        self.barNumbers = barNumbers
         self.annotationFloors = annotationFloors
         self.headerKeyChange = headerKeyChange
+    }
+}
+
+/// One bar number over a staff (`%%barnumbers`; issue #290), already placed.
+public struct BarNumber: Sendable, Equatable {
+    public let text: String
+    /// Left end of the number's baseline.
+    public let x: Double
+    public let baselineY: Double
+    /// The box drawn around it under `%%measurebox`, or `nil`.
+    public let box: Rect?
+
+    public init(text: String, x: Double, baselineY: Double, box: Rect? = nil) {
+        self.text = text
+        self.x = x
+        self.baselineY = baselineY
+        self.box = box
     }
 }
 

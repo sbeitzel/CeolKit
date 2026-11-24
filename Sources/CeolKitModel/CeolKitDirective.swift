@@ -39,6 +39,16 @@ public enum CeolKitDirective: Hashable, Sendable {
     case staffPlan(StaffPlan)          // %%score / %%staves     (ABC v2.2 §11.1)
     case font(TextFontRole, FontSpec)  // %%titlefont, %%gchordfont, … <name> [<size>]  (§11.4.2)
     case fontList(FontListMode)        // %%ceolkit:fontlist [resolved|available]  (issue #191)
+    /// Which bars are numbered, from `%%barnumbers` or its alias `%%measurenb` (ABC v2.2
+    /// §11.4.4; issue #290).  As in abcm2ps: `-1`, the default, numbers none; `0` numbers the
+    /// first bar of every system but the first; `n > 0` numbers every bar whose number is a
+    /// multiple of `n`.
+    case barNumbers(Int)               // %%barnumbers N | %%measurenb N  (N >= -1)
+    /// The number of the tune's first bar, from `%%measurefirst` (§11.4.4).  `1` is the
+    /// default.  A pickup is not a bar, so this is the bar after it.
+    case firstBarNumber(Int)           // %%measurefirst N
+    /// Whether bar numbers are drawn in a box, from `%%measurebox` (§11.4.4).
+    case measureBox(Bool)              // %%measurebox true|false
 }
 
 public struct CeolKitDirectiveScope: Sendable {

@@ -663,6 +663,7 @@ struct SVGEmitter: Sendable {
         emitStaffLines(system, builder: &builder)
         emitStaffGroupConnector(system, builder: &builder)
         emitEndingBrackets(system, builder: &builder)
+        emitBarNumbers(system, builder: &builder)
         emitVoiceLabel(system, builder: &builder)
         emitClef(system, builder: &builder)
         emitKeySignature(system: system, builder: &builder)
@@ -805,6 +806,25 @@ struct SVGEmitter: Sendable {
                 fontFamily: "Libertinus Serif",
                 fontSize: EndingBracketBand.fontSize(staffSize: s)
             )
+        }
+    }
+
+    // MARK: - Bar numbers
+
+    /// The bar numbers over this staff (`%%barnumbers`; issue #290), already placed by
+    /// ``BarNumberBand``, each in a box under `%%measurebox`.
+    private func emitBarNumbers(_ system: ResolvedSystem, builder: inout SVGBuilder) {
+        guard !system.barNumbers.isEmpty else { return }
+        let style = textStyles(for: system).barNumber
+        // abcm2ps strokes the box at 0.6 of its units.
+        let boxStroke = 0.6 * system.staffSize / TextStyles.nominalStaffSize
+        for number in system.barNumbers {
+            builder.text(number.text, x: number.x, y: number.baselineY, style: style)
+            if let box = number.box {
+                builder.rect(x: box.origin.x, y: box.origin.y,
+                             width: box.width, height: box.height,
+                             stroke: "black", strokeWidth: boxStroke)
+            }
         }
     }
 

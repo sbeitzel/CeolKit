@@ -33,6 +33,12 @@ struct LayoutDirectives {
     /// Whether every variant-ending bracket is hooked at its end, from
     /// `%%ceolkit:closevariants`.
     var closeVariants: Bool
+    /// Which bars are numbered, from `%%barnumbers` / `%%measurenb` (issue #290).
+    var barNumbers: Int
+    /// The first bar's number, from `%%measurefirst`.
+    var firstBarNumber: Int
+    /// Whether bar numbers are boxed, from `%%measurebox`.
+    var measureBox: Bool
     /// `strftime` pattern for the `$D`/`$d` marks of a `%%footer`, from `%%dateformat`.
     /// `nil` leaves the renderer's own default date format standing.  Scoped like the rest:
     /// one in a tune header dates that tune's pages and no others (issue #155).
@@ -61,6 +67,9 @@ struct LayoutDirectives {
         straightFlags = config.straightFlags
         graceSlurs = config.graceSlurs
         closeVariants = config.closeVariants
+        barNumbers = config.barNumbers
+        firstBarNumber = config.firstBarNumber
+        measureBox = config.measureBox
     }
 
     mutating func apply(_ directive: CeolKitDirective, source: SourceRange? = nil) {
@@ -79,6 +88,9 @@ struct LayoutDirectives {
         case .straightFlags(let on):      straightFlags = on
         case .graceSlurs(let on):         graceSlurs = on
         case .closeVariants(let on):      closeVariants = on
+        case .barNumbers(let every):      barNumbers = every
+        case .firstBarNumber(let first):  firstBarNumber = first
+        case .measureBox(let on):         measureBox = on
         case .dateFormat(let pattern):    dateFormat = pattern
         case .label(let text):            label = text
         default: break

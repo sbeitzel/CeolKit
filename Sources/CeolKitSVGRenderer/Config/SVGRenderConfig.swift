@@ -53,6 +53,15 @@ public struct SVGRenderConfig: Sendable {
     /// only the one that closes at a repeat bar (issue #237).  A `%%ceolkit:closevariants`
     /// in the document overrides it.
     public var closeVariants: Bool
+    /// Which bars are numbered, as abcm2ps's `%%barnumbers` / `%%measurenb` (ABC v2.2
+    /// §11.4.4; issue #290): `-1`, the default, numbers none; `0` the first bar of each
+    /// system after the first; `n > 0` every bar whose number is a multiple of `n`.  A
+    /// directive in the document overrides it.
+    public var barNumbers: Int
+    /// The number of a tune's first bar, as `%%measurefirst`.  `1` by default.
+    public var firstBarNumber: Int
+    /// Whether bar numbers are drawn in a box, as `%%measurebox`.  Off by default.
+    public var measureBox: Bool
     /// Step between adjacent grace noteheads within one grace group, as a multiple of the
     /// grace notehead width.
     ///
@@ -103,6 +112,9 @@ public struct SVGRenderConfig: Sendable {
         straightFlags: Bool = false,
         graceSlurs: Bool = true,
         closeVariants: Bool = false,
+        barNumbers: Int = -1,
+        firstBarNumber: Int = 1,
+        measureBox: Bool = false,
         graceNoteSpacing: Double = 1.05,
         textRendering: TextRendering = .outlines,
         lineOverflowTolerance: Double = 0.02,
@@ -124,6 +136,9 @@ public struct SVGRenderConfig: Sendable {
         self.straightFlags = straightFlags
         self.graceSlurs = graceSlurs
         self.closeVariants = closeVariants
+        self.barNumbers = max(barNumbers, -1)
+        self.firstBarNumber = firstBarNumber
+        self.measureBox = measureBox
         self.graceNoteSpacing = graceNoteSpacing
         self.textRendering = textRendering
         self.lineOverflowTolerance = lineOverflowTolerance

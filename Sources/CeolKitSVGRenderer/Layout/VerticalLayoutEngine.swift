@@ -62,14 +62,20 @@ public struct VerticalLayoutEngine: Sendable {
             closeAll: config.closeVariants)
         let openHairpins = DynamicsBand.openAtStart(of: systems.map { JustifiedSystemGroup(staves: [$0]) })
         let lyricStaves = DynamicsBand.staffHasLyrics(in: systems.map { JustifiedSystemGroup(staves: [$0]) })
+        let standardStyles = TextStyles.standard(staffSize: config.staffSize)
+        let barNumbers = barNumberSettings(
+            of: systems.map { JustifiedSystemGroup(staves: [$0]) },
+            every: config.barNumbers, first: config.firstBarNumber, boxed: config.measureBox,
+            stemDirection: nil, style: standardStyles.barNumber, staffSize: config.staffSize)
 
         for (index, jsystem) in systems.enumerated() {
             let runs = endingRuns[index][0]
             let extent = verticalExtent(of: jsystem, staffSize: config.staffSize,
-                                        styles: .standard(staffSize: config.staffSize),
+                                        styles: standardStyles,
                                         hasEndingBracket: !runs.isEmpty,
                                         dynamicsOverStaff: lyricStaves.contains(0),
-                                        openHairpins: openHairpins[index][0])
+                                        openHairpins: openHairpins[index][0],
+                                        barNumberReach: barNumbers.reach(index))
             let (extraAbove, extraBelow) = (extent.extraAbove, extent.extraBelow)
             let totalHeight = extraAbove + staffHeight + extraBelow
 
@@ -110,6 +116,10 @@ public struct VerticalLayoutEngine: Sendable {
                 endingBrackets: EndingBracketBand.place(
                     runs, over: measures, bandTopY: systemOrigin.y,
                     staffSize: config.staffSize, metadata: metadata),
+                barNumbers: barNumbers.place(index, over: measures,
+                                             staffLeftX: systemOrigin.x,
+                                             staffTopY: systemOrigin.y + extraAbove,
+                                             staffSize: config.staffSize),
                 annotationFloors: extent.annotationFloors,
                 headerKeyChange: jsystem.headerKeyChange
             ))
@@ -226,6 +236,9 @@ public struct VerticalLayoutEngine: Sendable {
             let systemGap   = tuneConfig.systemGap
             let tuneGap     = tuneConfig.tuneGap
             let styles      = block.textStyles ?? .standard(staffSize: staffSize)
+            // Counted once for the whole tune, like the endings: the count runs on from one
+            // system to the next (issue #290).
+            let barNumbers  = barNumberSettings(of: block, styles: styles, staffSize: staffSize)
 
             // A `%%newpage` standing before the tune moves its title block too, so it is
             // honoured ahead of everything else this block does.
@@ -236,7 +249,7 @@ public struct VerticalLayoutEngine: Sendable {
             // are taller than a full page are still forced to a fresh page here; the
             // inner system loop below handles the mid-tune page breaks they require.
             if !pageSystems.isEmpty {
-                let tuneH = totalHeight(of: block, endingRuns: endingRuns)
+                let tuneH = totalHeight(of: block, endingRuns: endingRuns, barNumbers: barNumbers)
                 if y + tuneH > floorY(pageHeight: pageSize.height) {
                     flushPage()
                 }
@@ -260,7 +273,8 @@ public struct VerticalLayoutEngine: Sendable {
                 let metrics = groupMetrics(of: group, config: tuneConfig, styles: styles,
                                            endingRuns: endingRuns[gi],
                                            lyricStaves: lyricStaves,
-                                           openHairpins: openHairpins[gi])
+                                           openHairpins: openHairpins[gi],
+                                           barNumberReach: barNumbers.reach(gi))
 
                 // The tune's own breaks, resolved to the system each stands in front of.
                 // Group 0 was dealt with above, before the title block was placed.
@@ -284,7 +298,8 @@ public struct VerticalLayoutEngine: Sendable {
                     tuneStemDirection: block.stemDirection,
                     straightFlags: block.straightFlags, graceSlurs: block.graceSlurs,
                     abcLine: abcLine,
-                    endingRuns: endingRuns[gi]).map {
+                    endingRuns: endingRuns[gi],
+                    barNumbers: (barNumbers, gi)).map {
                         var system = $0
                         system.textStyles = styles
                         return system
@@ -377,7 +392,8 @@ public struct VerticalLayoutEngine: Sendable {
                               config: SVGRenderConfig, styles: TextStyles,
                               endingRuns: [[EndingBracketBand.Run]],
                               lyricStaves: Set<Int> = [],
-                              openHairpins: [[Int: [DynamicsBand.Hairpin]]] = []) -> GroupMetrics {
+                              openHairpins: [[Int: [DynamicsBand.Hairpin]]] = [],
+                              barNumberReach: Double = 0) -> GroupMetrics {
         // Parallel to `group.staves` by construction: `EndingBracketBand.runs(in:)` walks
         // the very groups this is being called for, one entry per staff of each.
         let staffSize = config.staffSize
@@ -396,7 +412,8 @@ public struct VerticalLayoutEngine: Sendable {
                 hasEndingBracket: !endingRuns[i].isEmpty,
                 barMarks: (barMarks, i),
                 dynamicsOverStaff: lyricStaves.contains(i),
-                openHairpins: i < openHairpins.count ? openHairpins[i] : [:])
+                openHairpins: i < openHairpins.count ? openHairpins[i] : [:],
+                barNumberReach: i == 0 ? barNumberReach : 0)
             let (extraAbove, extraBelow) = (extent.extraAbove, extent.extraBelow)
             staves.append((extraAbove, extraBelow, offset + extraAbove, extent.annotationFloors))
             offset += extraAbove + staffHeight + extraBelow
@@ -428,7 +445,9 @@ public struct VerticalLayoutEngine: Sendable {
                               straightFlags: Bool?,
                               graceSlurs: Bool?,
                               abcLine: Int,
-                              endingRuns: [[EndingBracketBand.Run]]) -> [ResolvedSystem] {
+                              endingRuns: [[EndingBracketBand.Run]],
+                              barNumbers: (settings: BarNumberSettings, group: Int)? = nil)
+        -> [ResolvedSystem] {
         // A group of one is an ordinary system: no membership, no group furniture, and the
         // same output the renderer produced before staff groups existed.
         let isGrouped = group.staves.count > 1
@@ -514,10 +533,79 @@ public struct VerticalLayoutEngine: Sendable {
                 endingBrackets: EndingBracketBand.place(
                     endingRuns[i], over: measures, bandTopY: systemOrigin.y,
                     staffSize: staffSize, metadata: metadata),
+                barNumbers: i == 0
+                    ? barNumbers.map {
+                        $0.settings.place($0.group, over: measures, staffLeftX: systemOrigin.x,
+                                          staffTopY: topY + staffTopOffset,
+                                          staffSize: staffSize)
+                    } ?? []
+                    : [],
                 annotationFloors: annotationFloors,
                 headerKeyChange: staff.headerKeyChange
             )
         }
+    }
+
+    // MARK: - Bar numbers
+
+    /// One tune's bar numbers (issue #290): what `%%barnumbers` asks for, and the numbers it
+    /// puts over each system group's top staff before they have an x.
+    struct BarNumberSettings {
+        let every: Int
+        let boxed: Bool
+        let style: TextStyle
+        let staffSize: Double
+        /// Per system group, the numbers over its top staff.
+        let marks: [[BarNumberBand.Mark]]
+
+        /// How far above its top staff line group `gi`'s numbers reach.
+        func reach(_ gi: Int) -> Double {
+            gi < marks.count
+                ? BarNumberBand.reach(of: marks[gi], style: style, boxed: boxed,
+                                      staffSize: staffSize)
+                : 0
+        }
+
+        /// Group `gi`'s numbers, placed over its top staff's `measures`.
+        func place(_ gi: Int, over measures: [ResolvedMeasure], staffLeftX: Double,
+                   staffTopY: Double, staffSize: Double) -> [BarNumber] {
+            guard gi < marks.count, !marks[gi].isEmpty else { return [] }
+            return BarNumberBand.place(marks[gi], over: measures, staffLeftX: staffLeftX,
+                                       staffTopY: staffTopY, every: every, style: style,
+                                       boxed: boxed, staffSize: staffSize)
+        }
+    }
+
+    private func barNumberSettings(of block: TuneBlock, styles: TextStyles,
+                                   staffSize: Double) -> BarNumberSettings {
+        barNumberSettings(of: block.systemGroups,
+                          every: block.barNumbers ?? config.barNumbers,
+                          first: block.firstBarNumber ?? config.firstBarNumber,
+                          boxed: block.measureBox ?? config.measureBox,
+                          stemDirection: block.stemDirection,
+                          style: styles.barNumber, staffSize: staffSize)
+    }
+
+    private func barNumberSettings(of groups: [JustifiedSystemGroup], every: Int, first: Int,
+                                   boxed: Bool, stemDirection: StemDirection?,
+                                   style: TextStyle, staffSize: Double) -> BarNumberSettings {
+        guard every >= 0 else {
+            return BarNumberSettings(every: every, boxed: boxed, style: style,
+                                     staffSize: staffSize, marks: [])
+        }
+        let numbers = BarNumbering.count(groups, first: first)
+        let marks = zip(groups, numbers).map { group, numbers -> [BarNumberBand.Mark] in
+            guard let top = group.staves.first else { return [] }
+            // The stems of the voice the numbers stand over: its own `stem=`, else up where
+            // it shares the staff, else the tune's `%%ceolkit:pipeformat`.
+            let direction: StemDirection = top.stemDirection != .auto ? top.stemDirection
+                : top.voiceStemDirections.count > 1 ? .up : (stemDirection ?? .auto)
+            return BarNumberBand.marks(for: top, numbers: numbers, every: every,
+                                       clef: top.clef, stemDirection: direction,
+                                       style: style, boxed: boxed, staffSize: staffSize)
+        }
+        return BarNumberSettings(every: every, boxed: boxed, style: style,
+                                 staffSize: staffSize, marks: marks)
     }
 
     // MARK: - Clef width
@@ -526,7 +614,8 @@ public struct VerticalLayoutEngine: Sendable {
     /// including its title block, all systems, and inter-system gaps (but not the
     /// trailing gap that follows the last system).
     private func totalHeight(of block: TuneBlock,
-                            endingRuns: [[[EndingBracketBand.Run]]]) -> Double {
+                            endingRuns: [[[EndingBracketBand.Run]]],
+                            barNumbers: BarNumberSettings) -> Double {
         let tuneConfig = config.scaled(by: block.scale)
         let styles = block.textStyles ?? .standard(staffSize: tuneConfig.staffSize)
         var h = block.titleBlockHeight
@@ -535,7 +624,8 @@ public struct VerticalLayoutEngine: Sendable {
         for (i, group) in block.systemGroups.enumerated() {
             h += groupMetrics(of: group, config: tuneConfig, styles: styles,
                               endingRuns: endingRuns[i],
-                              lyricStaves: lyricStaves, openHairpins: openHairpins[i]).totalHeight
+                              lyricStaves: lyricStaves, openHairpins: openHairpins[i],
+                              barNumberReach: barNumbers.reach(i)).totalHeight
             if i < block.systemGroups.count - 1 { h += tuneConfig.systemGap }
         }
         return h + WordsBlock.height(lines: block.words.count, style: styles.words)
@@ -597,7 +687,8 @@ public struct VerticalLayoutEngine: Sendable {
                                 hasEndingBracket: Bool,
                                 barMarks: (sections: BarMarkSections, staff: Int)? = nil,
                                 dynamicsOverStaff: Bool = false,
-                                openHairpins: [Int: [DynamicsBand.Hairpin]] = [:]
+                                openHairpins: [Int: [DynamicsBand.Hairpin]] = [:],
+                                barNumberReach: Double = 0
     ) -> (extraAbove: Double, extraBelow: Double, annotationFloors: AnnotationFloors) {
         var headReach = HeadReach()
         var verses = 0
@@ -683,7 +774,10 @@ public struct VerticalLayoutEngine: Sendable {
         // is as far as anything on its side reaches; the annotations stack beyond it (#231).
         // The ornaments and fermatas stand clear of their notes' stems and ledger lines
         // already, so they too are maxed with them rather than added (#264).
-        let floorAbove = max(headReach.above * s + graceOvershoot, tupletAbove, marks.above)
+        // The bar numbers are drawn before everything that stacks above the staff, as
+        // abcm2ps draws them, so all of it stands beyond them (issue #290).
+        let floorAbove = max(headReach.above * s + graceOvershoot, tupletAbove, marks.above,
+                             barNumberReach)
             + (lines.above > 0 ? floor : 0)
         let floorBelow = max(headReach.below * s, tupletBelow, marks.below)
             + (lines.below > 0 ? floor : 0)

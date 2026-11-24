@@ -185,17 +185,16 @@ struct CanzonettaConformanceTests {
         let (svg, staves) = try textRender()
         // The tune's last stave ends `|1F2z2:|2F8|]` in every voice, so its three staves —
         // the last three drawn — each carry a `1` bracket and a `2` bracket.
-        let lastSystem = staves.suffix(3)
-        #expect(lastSystem.count == 3)
+        let lastSystem = Array(staves.suffix(4))
+        #expect(lastSystem.count == 4)
 
-        for (index, staff) in lastSystem.enumerated() {
-            let ruleY = staff.topY - EndingBracketBand.height(staffSize: staff.staffLineGap)
-                + EndingBracketBand.thickness(metadata: try BravuraMetadata.load(),
-                                              staffSize: staff.staffLineGap) / 2
-            let baselineY = ruleY + EndingBracketBand.labelBaselineOffset(
-                staffSize: staff.staffLineGap)
+        // Looked for between the staff above and this one rather than at a fixed height: the
+        // top staff's brackets stand above its `%%measurenb 0` bar number (issue #290).
+        for index in 1..<lastSystem.count {
+            let staff = lastSystem[index]
+            let above = lastSystem[index - 1].bottomY
             let labels = lyricRuns(in: svg)
-                .filter { abs($0.y - baselineY) < 1e-6 }
+                .filter { ["1", "2"].contains($0.content) && $0.y > above && $0.y < staff.topY }
                 .sorted { $0.x < $1.x }
                 .map(\.content)
             #expect(labels == ["1", "2"], "Staff \(index) of the last system carries \(labels)")

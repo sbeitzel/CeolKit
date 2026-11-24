@@ -314,6 +314,8 @@ struct SemanticPass {
             || name == "score" || name == "staves" || name == "newpage"
             || name == "scale" || name == "pagescale" || name == "stretchlast"
             || name == "stretchstaff"
+            || name == "barnumbers" || name == "measurenb" || name == "measurefirst"
+            || name == "measurebox"
             || TextFontRole(rawValue: name) != nil
     }
 
@@ -1223,6 +1225,7 @@ struct SemanticPass {
              "scale", "pagescale", "ceolkit:gracenotespacing", "ceolkit:closevariants",
              "ceolkit:fontlist", "writefields",
              "dateformat", "footer", "straightflags", "graceslurs",
+             "barnumbers", "measurenb", "measurefirst", "measurebox",
              _ where TextFontRole(rawValue: name) != nil:
             var tempDiags: [Diagnostic] = []
             if let d = parseCeolKitDirective(name: name, payload: payload, source: source, diagnostics: &tempDiags) {
@@ -1813,6 +1816,24 @@ struct SemanticPass {
             diagnostics.append(Diagnostic(severity: .warning, code: .invalidStretchLast,
                 message: "%%stretchlast expects a number from 0 to 1, or 'true'/'false' "
                        + "(got '\(trimmed)')", source: source))
+            return nil
+        case "barnumbers", "measurenb":
+            // abcm2ps reads `%%barnumbers` as `%%measurenb` (format.c), and below `0` it
+            // numbers nothing, which `-1` is its way of saying (issue #290).
+            if let n = Int(trimmed), n >= -1 { return .barNumbers(n) }
+            diagnostics.append(Diagnostic(severity: .warning, code: .unknownDirective,
+                message: "%%\(name) expects an integer of -1 or more (got '\(trimmed)')",
+                source: source))
+            return nil
+        case "measurefirst":
+            if let n = Int(trimmed) { return .firstBarNumber(n) }
+            diagnostics.append(Diagnostic(severity: .warning, code: .unknownDirective,
+                message: "%%measurefirst expects an integer (got '\(trimmed)')", source: source))
+            return nil
+        case "measurebox":
+            if let value = parseLogical(trimmed) { return .measureBox(value) }
+            diagnostics.append(Diagnostic(severity: .warning, code: .unknownDirective,
+                message: "%%measurebox expects '0'/'false' or '1'/'true'", source: source))
             return nil
         case "stretchstaff":
             if let value = parseLogical(trimmed) { return .stretchStaff(value) }

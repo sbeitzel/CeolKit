@@ -243,6 +243,9 @@ struct TextStyles: Sendable {
     var vocal: TextStyle
     /// A `Q:` written in the music, printed above the staff where it falls.
     var tempoChange: TextStyle
+    /// Bar numbers (`%%barnumbers`; issue #290), in abcm2ps's `%%measurefont` default,
+    /// serif italic 14.  The spec has no font directive for them, so nothing changes it.
+    var barNumber: TextStyle
 
     /// The staff space abcm2ps's font sizes are stated against: its staff is 24 units tall
     /// at `%%scale 1`.  A size of `n` is drawn at `n × staffSize / nominalStaffSize`.
@@ -285,7 +288,8 @@ struct TextStyles: Sendable {
             chordSymbol: style(.chordSymbol),
             annotation: style(.annotation),
             vocal: style(.vocal),
-            tempoChange: style(.tempo))
+            tempoChange: style(.tempo),
+            barNumber: TextStyle(size: BarNumberBand.fontSize * k, italic: true))
     }
 
     /// What `$1` … `$4` switch to in every role; the same for all of them.

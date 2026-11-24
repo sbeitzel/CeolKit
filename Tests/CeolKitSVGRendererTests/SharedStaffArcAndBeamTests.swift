@@ -114,6 +114,11 @@ struct SharedStaffArcAndBeamTests {
         return Array(Set(xs)).sorted()
     }
 
+    /// Which of `columns` the x lies nearest.
+    private func nearestColumn(_ x: Double, _ columns: [Double]) -> Int? {
+        columns.indices.min { abs(columns[$0] - x) < abs(columns[$1] - x) }
+    }
+
     // MARK: - Beams
 
     @Test("Each voice of a shared staff is beamed on its own, not with its neighbour")
@@ -160,8 +165,10 @@ struct SharedStaffArcAndBeamTests {
         let columns = onsetXs(in: document)
         try #require(columns.count == 4)
         // Outer arc: the upper voice's, column 0 to column 3.  Inner: the lower voice's, 1 to 2.
-        #expect(drawn[0].endX == columns[3])
-        #expect(drawn[1].endX == columns[2])
+        // An arc's ends sit by its notes' centres, as abcm2ps places them (#293), so each is
+        // named by the column it lands nearest.
+        #expect(nearestColumn(drawn[0].endX, columns) == 3)
+        #expect(nearestColumn(drawn[1].endX, columns) == 2)
         #expect(drawn[0].startX > columns[0] && drawn[0].startX < columns[1])
         #expect(drawn[1].startX > columns[1] && drawn[1].startX < columns[2])
     }
@@ -179,8 +186,8 @@ struct SharedStaffArcAndBeamTests {
         let columns = onsetXs(in: document)
         try #require(columns.count == 4)
         let (upper, lower) = (drawn[0], drawn[1])
-        #expect(upper.endX == columns[2])
-        #expect(lower.endX == columns[3])
+        #expect(nearestColumn(upper.endX, columns) == 2)
+        #expect(nearestColumn(lower.endX, columns) == 3)
         #expect(upper.startX < lower.startX)
     }
 

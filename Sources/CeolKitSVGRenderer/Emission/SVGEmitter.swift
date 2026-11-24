@@ -76,6 +76,11 @@ private struct TieAnchor {
     // to the left staff edge of the new system rather than a real notehead, so the arc
     // drawn to resolve it must not add notehead-width clearance on that side (see #27).
     var isCarriedOver: Bool = false
+    /// The note is dotted, sits on a line — so its dot is raised into the space above —
+    /// and the tie curves above: abcm2ps starts such a tie clear of the dot (#293).
+    var dotOnArcSide: Bool = false
+    /// Half the opening notehead's width: its centre is this far right of `x`.
+    var headHalfWidth: Double = 0
 }
 
 /// Pending slur: records the start position of an open slur bracket so the arc
@@ -97,6 +102,8 @@ private struct SlurAnchor {
     var spanStemDown = false
     var spanStemUp = false
     var spanLow = false
+    /// The note the slur opens on, which its start is placed against (#293).
+    var startNote: ArcEnd? = nil
 
     /// Whether the slur curves below its notes — abcm2ps's `slur_direction`: above as soon
     /// as any stem under it points down, and above when nothing under it is stemmed up and
@@ -114,6 +121,28 @@ private struct SlurAnchor {
         }
         if note.lowestStaffPos < 4 { spanLow = true }
     }
+}
+
+/// One note a slur starts or ends on, as abcm2ps's `draw_slur` reads it to place the slur's
+/// end against it (#293): where its notehead is, how its stem is drawn, and where in a beam
+/// it falls.
+private struct ArcEnd {
+    let centreX: Double
+    let centreY: Double
+    /// The way its stem is drawn; `nil` for a note drawn without one.
+    let stemUp: Bool?
+    /// Shorter than a quarter note: flagged, or beamed.  abcm2ps's `nflags > 0`.
+    let flagged: Bool
+    /// A beam ends on it, or it is not beamed at all — abcm2ps's `S_BEAM_END`.
+    let beamEnds: Bool
+    /// A beam starts on it, or it is not beamed at all — abcm2ps's `S_BEAM_ST`.
+    let beamStarts: Bool
+    /// Its index in the bar it is drawn in, by which its stem's final tip is found.
+    let event: Int
+    /// Its stem's tip, at the beam for a beamed note once the bar's beams are drawn.
+    var stemTipY: Double?
+    /// Whether `stemTipY` is final: set at the end of the note's bar.
+    var settled = false
 }
 
 /// What one note or chord tells the tie or slur over it about which side to curve on: the
@@ -621,14 +650,15 @@ struct SVGEmitter: Sendable {
         if let lastMeasure = system.measures.last {
             let rightEdge = lastMeasure.origin.x + lastMeasure.width
             for anchor in pendingTies where anchor.part.staff == staffIndex {
-                emitDanglingArc(fromX: anchor.x, y: anchor.noteY, arcBelow: anchor.arcBelow,
-                                toEdgeX: rightEdge, isCarriedOver: anchor.isCarriedOver,
-                                kind: .tie, builder: &builder)
+                let (x1, x2) = tieEnds(startX: anchor.x + anchor.headHalfWidth,
+                                       startIsNote: !anchor.isCarriedOver,
+                                       endX: rightEdge, endIsNote: false,
+                                       dotOnArcSide: anchor.dotOnArcSide)
+                emitArc(from: (x1, anchor.noteY), to: (x2, anchor.noteY),
+                        below: anchor.arcBelow, kind: .tie, builder: &builder)
             }
             for anchor in pendingSlurs where anchor.part.staff == staffIndex {
-                emitDanglingArc(fromX: anchor.x, y: anchor.noteY, arcBelow: anchor.arcBelow,
-                                toEdgeX: rightEdge, isCarriedOver: anchor.isCarriedOver,
-                                kind: .slur, builder: &builder)
+                emitSlur(anchor, end: nil, rightEdge: rightEdge, builder: &builder)
             }
         }
     }
@@ -1356,6 +1386,8 @@ struct SVGEmitter: Sendable {
         // clear of them (#231).
         var pendingBeamMembers: [Int: [Int]] = [:]
         var stemEnds: [Int: StemEnd] = [:]
+        // The slurs that close in this bar, with the note each closes on (#293).
+        var closedSlurs: [(anchor: SlurAnchor, end: ArcEnd)] = []
 
         func flushBeam(voice: Int) {
             guard let g = pendingBeams.removeValue(forKey: voice) else { return }
@@ -1433,6 +1465,21 @@ struct SVGEmitter: Sendable {
                 ArcNote(stemUp: stemInfo?.stemUp, lowestStaffPos: $0.positions.min() ?? 4)
             }
             let voiceSide = sharedStaffArcBelow(voice: voice)
+            // Where a slur starting or ending here is placed against this note (#293).
+            let arcEnd: ArcEnd? = noteFrom(event).flatMap { note in
+                stemmed(event).map { stemmed in
+                    ArcEnd(centreX: anchorX + noteheadHalfWidth(note.duration,
+                                                                unitNoteLength: measure.unitNoteLength),
+                           centreY: noteY(staffPos: staffPos(for: note.pitch, clef: event.clef),
+                                          bottomStaffY: bottomY),
+                           stemUp: stemInfo?.stemUp,
+                           flagged: absoluteDuration(stemmed.duration,
+                                                     unitNoteLength: measure.unitNoteLength) < 0.25,
+                           beamEnds: stemmed.beam == .end || stemmed.beam == .single,
+                           beamStarts: stemmed.beam == .start || stemmed.beam == .single,
+                           event: index, stemTipY: stemInfo?.stemTipY)
+                }
+            }
             if let arcNote {
                 for i in pendingSlurs.indices where pendingSlurs[i].part == part {
                     pendingSlurs[i].include(arcNote)
@@ -1451,14 +1498,17 @@ struct SVGEmitter: Sendable {
                         $0.part == part && $0.pitch == note.pitch
                     }) {
                         let anchor = pendingTies.remove(at: idx)
-                        if anchor.isCarriedOver {
-                            emitArrivingTieArc(edgeX: anchor.x, arcBelow: anchor.arcBelow,
-                                               toX: anchorX, toY: ny,
-                                               kind: .tie, builder: &builder)
-                        } else {
-                            emitTieArc(fromX: anchor.x, fromY: anchor.noteY, arcBelow: anchor.arcBelow,
-                                       toX: anchorX, toY: ny, kind: .tie, builder: &builder)
-                        }
+                        let (x1, x2) = tieEnds(startX: anchor.x + anchor.headHalfWidth,
+                                               startIsNote: !anchor.isCarriedOver,
+                                               endX: anchorX + noteheadHalfWidth(
+                                                  note.duration,
+                                                  unitNoteLength: measure.unitNoteLength),
+                                               endIsNote: true,
+                                               dotOnArcSide: anchor.dotOnArcSide)
+                        // An arriving tie has no note of its own: it starts level with its end.
+                        let y1 = anchor.isCarriedOver ? ny : anchor.noteY
+                        emitArc(from: (x1, y1), to: (x2, ny), below: anchor.arcBelow,
+                                kind: .tie, builder: &builder)
                     }
                 }
                 if note.ties == .startsTie || note.ties == .continuesTie {
@@ -1466,8 +1516,14 @@ struct SVGEmitter: Sendable {
                     // the way its stem would have.
                     let below = voiceSide ?? stemInfo?.stemUp
                         ?? stemsUp(resolvedStemDirection(forVoice: voice), staffPos: sp)
+                    let dotted = augmentationDots(note.duration,
+                                                  unitNoteLength: measure.unitNoteLength) > 0
                     pendingTies.append(TieAnchor(x: anchorX, noteY: ny,
-                                                 pitch: note.pitch, arcBelow: below, part: part))
+                                                 pitch: note.pitch, arcBelow: below, part: part,
+                                                 dotOnArcSide: dotted && sp.isMultiple(of: 2) && !below,
+                                                 headHalfWidth: noteheadHalfWidth(
+                                                    note.duration,
+                                                    unitNoteLength: measure.unitNoteLength)))
                 }
             }
 
@@ -1477,23 +1533,19 @@ struct SVGEmitter: Sendable {
                 let sp = staffPos(for: note.pitch, clef: event.clef)
                 let ny = noteY(staffPos: sp, bottomStaffY: bottomY)
 
+                // A closed slur is drawn once the bar's beams are, which is where the stems
+                // its ends are placed against finally end (#293).
                 for _ in 0..<note.slurs.closes {
-                    if let idx = pendingSlurs.lastIndex(where: { $0.part == part }) {
-                        let anchor = pendingSlurs.remove(at: idx)
-                        if anchor.isCarriedOver {
-                            emitArrivingTieArc(edgeX: anchor.x, arcBelow: anchor.arcBelow,
-                                               toX: anchorX, toY: ny,
-                                               kind: .slur, builder: &builder)
-                        } else {
-                            emitTieArc(fromX: anchor.x, fromY: anchor.noteY, arcBelow: anchor.arcBelow,
-                                       toX: anchorX, toY: ny, kind: .slur, builder: &builder)
-                        }
+                    if let idx = pendingSlurs.lastIndex(where: { $0.part == part }),
+                       let arcEnd {
+                        closedSlurs.append((pendingSlurs.remove(at: idx), arcEnd))
                     }
                 }
                 for _ in 0..<note.slurs.opens {
                     var anchor = SlurAnchor(x: anchorX, noteY: ny, part: part,
                                             voiceSide: voiceSide)
                     if let arcNote { anchor.include(arcNote) }
+                    anchor.startNote = arcEnd
                     pendingSlurs.append(anchor)
                 }
             }
@@ -1501,6 +1553,22 @@ struct SVGEmitter: Sendable {
         // Safety flush for malformed input, in voice order so that what a broken bar draws
         // does not depend on which voice happened to open a run last.
         for voice in pendingBeams.keys.sorted() { flushBeam(voice: voice) }
+
+        // Every stem of the bar now ends where it is drawn: place the slurs against them.
+        func settle(_ end: inout ArcEnd) {
+            guard !end.settled else { return }
+            if let tip = stemEnds[end.event] { end.stemTipY = tip.y }
+            end.settled = true
+        }
+        for i in pendingSlurs.indices {
+            if pendingSlurs[i].startNote != nil { settle(&pendingSlurs[i].startNote!) }
+        }
+        for (anchor, end) in closedSlurs {
+            var anchor = anchor, end = end
+            if anchor.startNote != nil { settle(&anchor.startNote!) }
+            settle(&end)
+            emitSlur(anchor, end: end, rightEdge: nil, builder: &builder)
+        }
 
         for tuplet in measure.tuplets {
             emitTuplet(tuplet, in: measure, stemEnds: stemEnds, topStaffY: topY,
@@ -2593,25 +2661,22 @@ struct SVGEmitter: Sendable {
         }
     }
 
-    /// Draws the cubic-bezier arc shared by ties and slurs, given final endpoint x's and
-    /// each endpoint's un-offset (notehead-centre) y, curving `below` the notes or above
-    /// them — the side away from the stem the arc's first note was drawn with.
+    /// Draws the cubic-bezier arc shared by ties and slurs between its two ends, already
+    /// placed (see ``tieEnds(startX:startIsNote:endX:endIsNote:dotOnArcSide:)`` and
+    /// ``slurEnd(_:isStart:below:)``), curving `below` them or above.
     ///
     /// SMuFL specifies the mark as *tapered* — thin at the endpoints, thick at the middle —
     /// which a single stroked curve cannot express whatever width it picks. So the arc is a
     /// closed outline: the centre-line curve offset outward, then the same curve offset
     /// inward and traversed backwards, filled rather than stroked.
-    private func emitArc(x1: Double, rawY1: Double, x2: Double, rawY2: Double, below: Bool,
-                          kind: ArcKind, builder: inout SVGBuilder) {
+    private func emitArc(from start: (x: Double, y: Double), to end: (x: Double, y: Double),
+                         below: Bool, kind: ArcKind, builder: inout SVGBuilder) {
         let s = config.staffSize
-        let tieBelow  = below
-        let endOffset = tieBelow ? s : -s     // shift endpoints one staff line away from note centre
-        let dy        = tieBelow ? s * 0.75 : -(s * 0.75)
+        let dy = below ? s * 0.75 : -(s * 0.75)
+        let (x1, y1, x2, y2) = (start.x, start.y, end.x, end.y)
         let span = x2 - x1
         let cp1x = x1 + span / 3.0
         let cp2x = x2 - span / 3.0
-        let y1   = rawY1 + endOffset
-        let y2   = rawY2 + endOffset
 
         // Half-widths of the ribbon, measured either side of the centre line. Subtracting one
         // boundary curve from the other leaves a third cubic — the thickness along the arc —
@@ -2642,37 +2707,89 @@ struct SVGEmitter: Sendable {
         builder.path(d: d, fill: "black", stroke: "none")
     }
 
-    /// Note-to-note tie/slur arc: the start point clears the starting notehead's width,
-    /// the end point sits at the ending notehead's left edge.
-    private func emitTieArc(fromX: Double, fromY: Double, arcBelow: Bool,
-                             toX: Double, toY: Double, kind: ArcKind, builder: inout SVGBuilder) {
-        emitArc(x1: fromX + noteheadWidth(), rawY1: fromY, x2: toX, rawY2: toY,
-               below: arcBelow, kind: kind, builder: &builder)
+    /// One abcm2ps unit: a sixth of a staff space, which the constants it places arcs by
+    /// are written in (#293).
+    private var arcUnit: Double { config.staffSize / 6.0 }
+
+    /// The x of a tie's two ends, as abcm2ps's `draw_note_ties` places them (#293): the
+    /// noteheads' centres, each drawn 3.5 units in (1.5 between notes 20 or fewer apart),
+    /// and clear of a dot on the arc's side.
+    ///
+    /// `startX` and `endX` are a notehead's centre, or a staff edge where the tie is broken
+    /// across systems (`startIsNote` / `endIsNote` false).  A broken tie still runs at least
+    /// 20 units into its end note, and at least 16 out of its start note.
+    private func tieEnds(startX: Double, startIsNote: Bool, endX: Double, endIsNote: Bool,
+                         dotOnArcSide: Bool) -> (Double, Double) {
+        let u = arcUnit
+        var x1 = startX
+        var x2 = endX
+        if !startIsNote { x1 = min(x1, x2 - 20 * u) }
+        if !endIsNote { x2 = max(x2, x1 + 16 * u) }
+        let pull = x2 - x1 > 20 * u ? 3.5 * u : 1.5 * u
+        x1 += pull
+        x2 -= pull
+        if startIsNote && dotOnArcSide { x1 += 6 * u }
+        return (x1, x2)
     }
 
-    /// Arriving arc for a tie/slur carried over from a previous system (#27): starts
-    /// exactly at the staff's left edge (no notehead clearance, since there's no note
-    /// there) and curves in to the resolving note.
-    private func emitArrivingTieArc(edgeX: Double, arcBelow: Bool,
-                                     toX: Double, toY: Double, kind: ArcKind,
-                                     builder: inout SVGBuilder) {
-        emitArc(x1: edgeX, rawY1: toY, x2: toX, rawY2: toY, below: arcBelow,
-                kind: kind, builder: &builder)
-    }
-
-    /// Departing dangling arc for a tie/slur still open at the end of a system (#27):
-    /// curves from the anchor out to the staff's right edge (open-ended). If the anchor
-    /// itself was already carried in from a previous system (never resolved within this
-    /// one), both ends are open edges and neither gets notehead-width clearance.
-    private func emitDanglingArc(fromX: Double, y: Double, arcBelow: Bool, toEdgeX: Double,
-                                  isCarriedOver: Bool, kind: ArcKind, builder: inout SVGBuilder) {
-        if isCarriedOver {
-            emitArc(x1: fromX, rawY1: y, x2: toEdgeX, rawY2: y, below: arcBelow,
-                    kind: kind, builder: &builder)
-        } else {
-            emitTieArc(fromX: fromX, fromY: y, arcBelow: arcBelow, toX: toEdgeX, toY: y,
-                       kind: kind, builder: &builder)
+    /// Where a slur starting (`isStart`) or ending on `note` is placed against it, as
+    /// abcm2ps's `draw_slur` places it (#293).
+    ///
+    /// Away from the stem, the end stands 8 units (1⅓ staff spaces) off the notehead's
+    /// centre.  On the stem's side it goes by the stem's tip — beside it where the stem is
+    /// free, past it where a beam runs on from it.
+    private func slurEnd(_ note: ArcEnd, isStart: Bool, below: Bool) -> (x: Double, y: Double) {
+        let u = arcUnit
+        let out: Double = below ? 1 : -1  // SVG direction away from the notes
+        guard let up = note.stemUp, up != below, let tip = note.stemTipY else {
+            return (note.centreX, note.centreY + out * 8 * u)
         }
+        // The stem is on the arc's side: up for a slur above, down for one below.
+        if isStart {
+            var x = note.centreX + (below ? -1 : 5) * u
+            guard note.beamEnds else { return (x, tip + out * 3 * u) }
+            if note.flagged {
+                x += 2 * u
+                return (x, tip - out * 3 * u)
+            }
+            return (x, tip - out * 6 * u)
+        } else {
+            let x = note.centreX + (below ? -5 : 1) * u
+            return (x, note.beamStarts ? tip - out * 6 * u : tip + out * 3 * u)
+        }
+    }
+
+    /// Draws a slur from `anchor` to the note it closes on, or — `end` nil — dangling off
+    /// the system at `rightEdge`.
+    ///
+    /// An end with no note of its own (a staff edge, where the slur is broken across
+    /// systems) is set 1.2 units farther out than the end that has one, as abcm2ps sets an
+    /// end on anything but a note, and kept 12 units clear of it.
+    private func emitSlur(_ anchor: SlurAnchor, end: ArcEnd?, rightEdge: Double?,
+                          builder: inout SVGBuilder) {
+        let u = arcUnit
+        let below = anchor.arcBelow
+        let out: Double = below ? 1 : -1
+        let start = anchor.isCarriedOver ? nil : anchor.startNote
+        var p1: (x: Double, y: Double)
+        var p2: (x: Double, y: Double)
+        switch (start, end) {
+        case let (start?, end?):
+            p1 = slurEnd(start, isStart: true, below: below)
+            p2 = slurEnd(end, isStart: false, below: below)
+        case let (nil, end?):
+            p2 = slurEnd(end, isStart: false, below: below)
+            p1 = (min(anchor.x, p2.x - 12 * u), p2.y + out * 1.2 * u)
+        case let (start?, nil):
+            p1 = slurEnd(start, isStart: true, below: below)
+            p2 = (max(rightEdge ?? p1.x, p1.x + 12 * u), p1.y + out * 1.2 * u)
+        case (nil, nil):
+            // Carried in and still open: a staff edge at either end.
+            let y = anchor.noteY + out * 8 * u
+            p1 = (anchor.x, y)
+            p2 = (max(rightEdge ?? anchor.x, anchor.x + 12 * u), y)
+        }
+        emitArc(from: p1, to: p2, below: below, kind: .slur, builder: &builder)
     }
 
     // MARK: - Helpers
@@ -3109,6 +3226,15 @@ struct SVGEmitter: Sendable {
     private func noteheadWidth() -> Double {
         metadata.glyphBBoxes["noteheadBlack"].map { $0.width * config.staffSize }
             ?? config.staffSize * 1.2
+    }
+
+    /// Half the width of the notehead a note of `duration` is drawn with — a whole note's
+    /// is wider than a black one — which is how far its centre lies from its left edge.
+    private func noteheadHalfWidth(_ duration: Fraction, unitNoteLength: Fraction) -> Double {
+        let glyph = noteheadGlyph(absoluteDuration: absoluteDuration(duration,
+                                                                     unitNoteLength: unitNoteLength))
+        return (metadata.glyphBBoxes[glyph.rawValue].map { $0.width * config.staffSize }
+            ?? noteheadWidth()) / 2
     }
 
     /// Matches ``ColumnMetrics/augmentationDotStep()``, which reserves the room.

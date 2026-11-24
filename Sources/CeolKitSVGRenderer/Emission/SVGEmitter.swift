@@ -144,6 +144,12 @@ private struct SlurSpan {
         let headEdge: Double
     }
 
+    /// Spelled out because the private stored properties make the synthesised memberwise
+    /// initialiser private, and Swift 6.3 then offers only `init()` outside the struct.
+    init(noteCount: Int = 0) {
+        self.noteCount = noteCount
+    }
+
     /// Records what one event put under the slur.  A grace group is several obstacles and
     /// no note: abcm2ps counts notes, chords and rests alone.
     /// `stem` is the way a stem a beam may still move points, and the noteheads' outer edge

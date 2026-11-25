@@ -185,6 +185,14 @@ enum BarNumberBand {
                     duration = c.duration
                 case .grace, .spacer, .directiveAnchor, .tempoChange, .clefChange:
                     continue
+                case .rest(let r) where MultiMeasureRest.drawnCount(of: r) != nil:
+                    // Its count stands over the staff, the width of its bar (#291).
+                    let u = s / TextStyles.nominalStaffSize
+                    let x = measureX + (index < jm.eventOffsets.count ? jm.eventOffsets[index] : 0)
+                    inks.append(Ink(left: x, right: x + MultiMeasureRest.barLength * u,
+                                    top: MultiMeasureRest.reachAbove * u))
+                    if voice == 0 { seenFirst = true }
+                    continue
                 default:
                     if voice == 0 { seenFirst = true }
                     continue

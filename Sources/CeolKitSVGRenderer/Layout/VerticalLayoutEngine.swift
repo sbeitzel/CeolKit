@@ -973,6 +973,10 @@ public struct VerticalLayoutEngine: Sendable {
                 graceTopY = high.map { Double(8 - $0) / 2 - 3.5 * 0.6 }
                 return
             case .rest(let r):
+                // A multi-measure rest's count stands over the staff (#291).
+                if MultiMeasureRest.drawnCount(of: r) != nil {
+                    above = max(above, MultiMeasureRest.reachAbove * s / TextStyles.nominalStaffSize)
+                }
                 // A rest can carry a dynamic or a hairpin's end, just outside the staff.
                 let inBand = DynamicsBand.touches(r.decorations) || !(openHairpins[voice] ?? []).isEmpty
                 DynamicsBand.apply(r.decorations, to: &openHairpins[voice, default: []])

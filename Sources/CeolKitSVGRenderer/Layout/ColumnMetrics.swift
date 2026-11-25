@@ -103,6 +103,15 @@ struct ColumnMetrics: Sendable {
                        lyricReservation(n.lyrics, next: next))
 
         case .rest(let r):
+            // A full-measure rest's duration is a count of measures, not a length (#291):
+            // `Zn` takes a multi-measure rest's fixed room whatever `L:` and `M:` are, and
+            // `Z` is spaced as the whole-bar rest abcm2ps expands it to — a whole note's
+            // column, `M:` not being known here.
+            if let count = r.measureCount {
+                guard count == 1 else { return MultiMeasureRest.columnWidth(staffSize: s) }
+                return max(minCol, base * durationFactor(4 * quarterInUnits,
+                                                         quarterInUnits: quarterInUnits))
+            }
             return max(minCol, base * durationFactor(durationUnits ?? rawDuration(r.duration),
                                                      quarterInUnits: quarterInUnits))
 
@@ -144,6 +153,8 @@ struct ColumnMetrics: Sendable {
         switch event {
         case .note(let n):  (notes, decorations) = ([n], n.decorations)
         case .chord(let c): (notes, decorations) = (c.notes, c.decorations + c.notes.flatMap(\.decorations))
+        case .rest(let r) where MultiMeasureRest.isMultiMeasure(r):
+            return MultiMeasureRest.leadingRoom * config.staffSize / TextStyles.nominalStaffSize
         default:            return 0
         }
         let accidentals = notes.map { accidentalMetrics.reservation(for: $0.displayedAccidental) }

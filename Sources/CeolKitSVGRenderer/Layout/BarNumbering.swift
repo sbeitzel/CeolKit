@@ -133,9 +133,7 @@ enum BarNumbering {
                 let voice = index < jm.source.eventVoiceIndices.count
                     ? jm.source.eventVoiceIndices[index] : 0
                 guard voice == 0 else { continue }
-                if case .rest(let rest) = event,
-                   rest.kind == .fullMeasure || rest.kind == .fullMeasureInvisible {
-                    let bars = max(1, Int(Self.units(rest.duration).rounded()))
+                if case .rest(let rest) = event, let bars = rest.measureCount {
                     return (max(total, wmeasure * Double(bars)), bars - 1)
                 }
                 total += units(of: event) * unit

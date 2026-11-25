@@ -1104,6 +1104,12 @@ public enum ResolvedEventKind: Sendable {
         }
     }
 
+    /// Whether this is a multi-measure rest that is drawn (`Zn`, n > 1; issue #291).
+    var isMultiMeasureRest: Bool {
+        if case .rest(let r) = self { return MultiMeasureRest.drawnCount(of: r) != nil }
+        return false
+    }
+
     /// See ``isMusic(_:)``.
     var isMusic: Bool {
         switch self {

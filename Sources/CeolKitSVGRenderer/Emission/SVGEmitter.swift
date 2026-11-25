@@ -282,7 +282,13 @@ struct SVGEmitter: Sendable {
     private static func bundledFaces(in layout: ResolvedLayout) -> Set<CeolKitFonts.Face> {
         var faces: Set<CeolKitFonts.Face> = []
         for page in layout.pages {
-            for system in page.systems { faces.formUnion(system.textStyles?.bundledFaces ?? []) }
+            for system in page.systems {
+                faces.formUnion(system.textStyles?.bundledFaces ?? [])
+                // A multi-measure rest's count is set in the bold face (#291).
+                if system.measures.contains(where: { $0.events.contains(where: \.kind.isMultiMeasureRest) }) {
+                    faces.insert(.libertinusSerifBold)
+                }
+            }
             for row in page.titleRows + page.footerRows {
                 for item in row.items { if let face = item.face?.bundledFace { faces.insert(face) } }
             }
@@ -2732,11 +2738,40 @@ struct SVGEmitter: Sendable {
     private func emitRest(_ rest: Rest, x: Double, topStaffY: Double, bottomStaffY: Double,
                           unitNoteLength: Fraction, voiceIndex: Int? = nil,
                           builder: inout SVGBuilder) {
+        if let count = MultiMeasureRest.drawnCount(of: rest) {
+            emitMultiMeasureRest(count: count, x: x, topStaffY: topStaffY,
+                                 bottomStaffY: bottomStaffY,
+                                 offset: voiceIndex.map { restOffset(forVoice: $0) } ?? 0,
+                                 builder: &builder)
+            return
+        }
         guard let (glyph, y) = restPlacement(rest, bottomStaffY: bottomStaffY,
                                              unitNoteLength: unitNoteLength,
                                              voiceIndex: voiceIndex) else { return }
         builder.text(String(glyph.character), x: x, y: y,
                      fontFamily: "Bravura", fontSize: 4.0 * config.staffSize)
+    }
+
+    /// `Zn`, n > 1 (ABC v2.2 §4.5; issue #291): abcm2ps's bar on the middle line, starting
+    /// at `x`, with `count` centred over the staff.  See ``MultiMeasureRest``.
+    private func emitMultiMeasureRest(count: Int, x: Double, topStaffY: Double,
+                                      bottomStaffY: Double, offset: Double,
+                                      builder: inout SVGBuilder) {
+        let s = config.staffSize
+        let u = s / TextStyles.nominalStaffSize
+        builder.path(d: MultiMeasureRest.path(x: x, middleLineY: bottomStaffY - 2 * s + offset,
+                                              staffSize: s),
+                     fill: "black")
+        let centre = x + MultiMeasureRest.barLength * u / 2
+        let baseline = topStaffY - MultiMeasureRest.numberBaseline * u
+        let size = MultiMeasureRest.fontSize * u
+        if let bold = TextFace.bundledBold {
+            builder.text(String(count), x: centre, y: baseline, face: bold, fontSize: size,
+                         textAnchor: "middle")
+        } else {
+            builder.text(String(count), x: centre, y: baseline, fontFamily: "Libertinus Serif",
+                         fontSize: size, textAnchor: "middle")
+        }
     }
 
     /// The glyph a rest is drawn with and the y of its baseline, or `nil` for a rest that is

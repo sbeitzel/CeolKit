@@ -39,6 +39,21 @@ struct TextFace: Sendable {
         return TextFace(FontProvider.Resolved(key: .bravura, font: font, resolution: resolution))
     }()
 
+    /// Libertinus Serif Bold, as bundled: the face a multi-measure rest's count is set in
+    /// (issue #291), standing in for abcm2ps's Times-Bold.  No font directive reaches it.
+    /// `nil` where the bundled resource could not be read.
+    static let bundledBold: TextFace? = {
+        let bold = CeolKitFonts.Face.libertinusSerifBold
+        guard let font = try? OutlineFontSet.font(for: bold) else { return nil }
+        let resolution = FontResolution(
+            requested: FontRequest(family: bold.familyName, weight: .bold, style: .upright),
+            postScriptName: bold.rawValue, family: bold.familyName, weight: .bold,
+            style: .upright, origin: .bundled, refusedForEmbedding: [],
+            searchedSystemFonts: false)
+        return TextFace(FontProvider.Resolved(key: OutlineFontSet.FaceKey(bold), font: font,
+                                              resolution: resolution))
+    }()
+
     /// Whether `scalar` is a SMuFL codepoint: the BMP Private Use Area, which SMuFL fills
     /// with its recommended (U+E000–U+F3FF) and optional (U+F400–U+F8FF) glyphs.
     static func isSMuFL(_ scalar: Unicode.Scalar) -> Bool {

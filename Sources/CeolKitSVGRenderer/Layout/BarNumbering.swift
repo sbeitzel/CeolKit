@@ -13,6 +13,11 @@ import CeolKitModel
 /// - Each variant ending after the first (`:|2`, `[3`, …) starts again from the number the
 ///   first one began on.  abcm2ps's `%%contbarnb`, which turns that off, is not in the spec,
 ///   so CeolKit always restarts.
+/// - A bar a `%%setbarnb N` numbered (`Measure.barNumber`, issue #296) is bar `N`, whether or
+///   not the bar before it was complete, and the count goes on from there.  That number
+///   stands even where the bar opens a later ending.  Here CeolKit departs from abcm2ps on
+///   purpose: abcm2ps gives `N` to the bar *after* the one the directive opens, which the
+///   spec's own examples (§6.1.1) plainly do not intend.
 ///
 /// The count is taken on each system group's top staff, which is the one the numbers are
 /// drawn over.
@@ -29,7 +34,8 @@ enum BarNumbering {
 
     /// The numbers of every system of a tune, in system order, counted from `first`.
     static func count(_ groups: [JustifiedSystemGroup], first: Int = 1) -> [SystemNumbers] {
-        var counter = Counter(barNumber: first)
+        var counter = Counter(barNumber: groups.first.flatMap { Self.barNumber(of: $0, at: 0) }
+                                  ?? first)
         var meter = groups.lazy.compactMap { $0.staves.first?.meter }.first
         var result: [SystemNumbers] = []
         result.reserveCapacity(groups.count)
@@ -51,16 +57,35 @@ enum BarNumbering {
                     meter = changed
                     counter.changeMeter(to: Self.measureLength(changed))
                 }
-                let next = mi + 1 < staff.measures.count
-                    ? staff.measures[mi + 1].source.measure
-                    : groups[(gi + 1)...].lazy.compactMap { $0.staves.first?.measures.first }
-                        .first?.source.measure
+                let next: Measure?
+                let nextNumber: Int?
+                if mi + 1 < staff.measures.count {
+                    next = staff.measures[mi + 1].source.measure
+                    nextNumber = Self.barNumber(of: group, at: mi + 1)
+                } else if let later = groups[(gi + 1)...].first(where: {
+                    $0.staves.first?.measures.isEmpty == false
+                }) {
+                    next = later.staves.first?.measures.first?.source.measure
+                    nextNumber = Self.barNumber(of: later, at: 0)
+                } else {
+                    next = nil
+                    nextNumber = nil
+                }
                 closing.append(counter.close(jm, wmeasure: meter.flatMap(Self.measureLength),
-                                             next: next))
+                                             next: next, nextNumber: nextNumber))
             }
             result.append(SystemNumbers(start: start, closing: closing))
         }
         return result
+    }
+
+    /// The number a `%%setbarnb` gives the measure at `index` of `group`'s columns, from
+    /// whichever staff it was written on: the count is the top staff's, but the directive
+    /// may stand in any voice.
+    static func barNumber(of group: JustifiedSystemGroup, at index: Int) -> Int? {
+        group.staves.lazy.compactMap {
+            index < $0.measures.count ? $0.measures[index].source.measure.barNumber : nil
+        }.first
     }
 
     /// The length of one measure of `meter` in whole notes, or `nil` for a meter that has
@@ -107,13 +132,26 @@ enum BarNumbering {
         }
 
         /// Advances over `jm` and returns the number its closing bar line opens, or `nil`
-        /// where that bar line does not count.
-        mutating func close(_ jm: JustifiedMeasure, wmeasure: Double?, next: Measure?) -> Int? {
+        /// where that bar line does not count.  `nextNumber` is the number a `%%setbarnb`
+        /// gave the bar that bar line opens, which it opens whatever the count says.
+        mutating func close(_ jm: JustifiedMeasure, wmeasure: Double?, next: Measure?,
+                            nextNumber: Int? = nil) -> Int? {
             let length = wmeasure ?? 0
             if barTime == nil { barTime = time + length }
             let (duration, extraBars) = Self.duration(of: jm, wmeasure: length)
             time += duration
             barNumber += extraBars
+            if let nextNumber {
+                barNumber = nextNumber
+                // A first ending it opens is where the later ones restart from; a later one
+                // keeps the number it was given.
+                if let next, next.endings.first?.startIndex == nil,
+                   next.endings.first?.numbers.first == 1 {
+                    repeatStart = nextNumber
+                }
+                barTime = time + length
+                return barNumber
+            }
             let epsilon = 1e-9
             guard time + epsilon >= barTime ?? 0 else { return nil }
             barNumber += 1

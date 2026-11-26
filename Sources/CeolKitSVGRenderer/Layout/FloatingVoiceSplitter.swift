@@ -211,7 +211,8 @@ enum FloatingVoiceSplitter {
                        closingBar: measure.closingBar,
                        endings: measure.endings(movedBy: moved.filter { $0.value < events.count }),
                        source: measure.source, meter: measure.meter, key: measure.key,
-                       unitNoteLength: measure.unitNoteLength)
+                       unitNoteLength: measure.unitNoteLength,
+                       barNumber: measure.barNumber)
     }
 
     // MARK: - Durations

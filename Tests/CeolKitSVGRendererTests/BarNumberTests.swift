@@ -217,4 +217,68 @@ struct BarNumberTests {
         // The chord symbol's baseline is above the top of the number's digits.
         #expect(chord < two.y - style.size * LibertinusSerifMetrics.capHeightRatio)
     }
+
+    // MARK: - %%setbarnb (issue #296)
+
+    private func numbered(_ body: String, meter: String = "6/8") throws -> [String] {
+        let abc = "%%barnumbers 1\nX:1\nT:Set\nM:\(meter)\nL:1/8\nK:C\n\(body)\n"
+        return try render(abc).numbers.map(\.text)
+    }
+
+    /// §6.1.1: the 9/8 bar the directive opens is bar 10.  abcm2ps 8.14 numbers this
+    /// source 2, 3, 10, 11 — it gives 10 to the bar after — and CeolKit follows the spec.
+    @Test("%%setbarnb numbers the bar it opens, as §6.1.1 means",
+          arguments: [
+              "abc cab|abc cab|\\\n%%setbarnb 10\nM:9/8\n%comment\n"
+                  + "abc cba abc|abc cba abc|abc cba abc|",
+              "abc cab|abc cab|[I:setbarnb 10][M:9/8][r:comment]"
+                  + "abc cba abc|abc cba abc|abc cba abc|",
+          ])
+    func setBarNumber(body: String) throws {
+        let got = try numbered(body)
+        #expect(got == ["2", "10", "11", "12"])
+    }
+
+    @Test("%%setbarnb after a pickup numbers the bar after it")
+    func setBarNumberAfterPickup() throws {
+        let got = try numbered("c|[I:setbarnb 5]abc cab|abc cab|abc cab|]")
+        #expect(got == ["5", "6", "7"])
+    }
+
+    /// Like `%%measurefirst`, a first bar not numbered 1 carries its number at the head.
+    @Test("%%setbarnb before the first note is %%measurefirst")
+    func setBarNumberFirstBar() throws {
+        let got = try numbered("[I:setbarnb 5]abc cab|abc cab|abc cab|]")
+        #expect(got == ["5", "6", "7"])
+        let header = "%%barnumbers 1\n%%setbarnb 5\n\nX:1\nT:Set\nM:6/8\nL:1/8\nK:C\n"
+            + "abc cab|abc cab|abc cab|]\n"
+        let fromHeader = try render(header).numbers.map(\.text)
+        #expect(fromHeader == ["5", "6", "7"])
+    }
+
+    @Test("A Zn numbered by %%setbarnb still counts n bars")
+    func setBarNumberMultiMeasureRest() throws {
+        let got = try numbered("abc cab|[I:setbarnb 8]Z4|abc cab|abc cab|]")
+        #expect(got == ["8", "12", "13"])
+    }
+
+    @Test("A later ending %%setbarnb numbers keeps its number")
+    func setBarNumberSecondEnding() throws {
+        let got = try numbered("|:abc cab|1 abc cab:|[I:setbarnb 20][2 cba cba|abc cab|abc cab|]")
+        #expect(got == ["2", "20", "21", "22"])
+    }
+
+    @Test("A later ending restarts from a first ending %%setbarnb numbered")
+    func setBarNumberFirstEnding() throws {
+        let got = try numbered("|:abc cab|[I:setbarnb 20][1 abc cab:|2 cba cba|abc cab|abc cab|]")
+        #expect(got == ["20", "20", "21", "22"])
+    }
+
+    @Test("%%setbarnb in a lower voice numbers the top staff's bar")
+    func setBarNumberLowerVoice() throws {
+        let abc = "%%barnumbers 1\nX:1\nT:Voices\nM:6/8\nL:1/8\nK:C\n"
+            + "V:1\nabc cab|abc cab|abc cab|]\nV:2\nabc cab|[I:setbarnb 30]abc cab|abc cab|]\n"
+        let got = try render(abc).numbers.map(\.text)
+        #expect(got == ["30", "31"])
+    }
 }

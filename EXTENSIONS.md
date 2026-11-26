@@ -625,7 +625,7 @@ be removed in a later release.
 the title block and the `W:` words along with the music, which it did not do
 before.
 
-## Bar numbers: `%%barnumbers`, `%%measurefirst` and `%%measurebox`
+## Bar numbers: `%%barnumbers`, `%%measurefirst`, `%%measurebox` and `%%setbarnb`
 
 ABC v2.2 §11.4.4 lists these directives with one line each. CeolKit implements them as
 abcm2ps 8.14.0 does (issue #290; `set_bar_num` in `parse.c`, `draw_measnb` in
@@ -640,6 +640,8 @@ abcm2ps 8.14.0 does (issue #290; `set_bar_num` in `parse.c`, `draw_measnb` in
   numbers bar 1 at a system's head. So with `%%measurefirst 10` the first system can
   carry a number, but by default it never does.
 - **`%%measurebox <true|false>`** (default `false`) draws a box around each number.
+- **`%%setbarnb N`** sets the number of a bar part way through the tune (issue #296); see
+  below.
 
 Bars are counted by time, not by bar lines:
 
@@ -650,7 +652,7 @@ Bars are counted by time, not by bar lines:
 - Each variant ending after the first (`:|2`, `[3`, …) counts again from the number the
   first ending started on. abcm2ps's `%%contbarnb`, which turns this off, is not in the
   spec and is not supported.
-- `%%setbarnb`, which resets the count mid-tune, is not supported yet (issue #296).
+- A bar numbered by `%%setbarnb N` is bar `N`, and the count goes on from there.
 
 The numbers are drawn only over each system's top staff, in serif italic at abcm2ps's
 `%%measurefont` default size of 14. `%%measurefont` is not in the spec, so the font is
@@ -660,10 +662,10 @@ under it. Chord symbols, annotations, dynamics, tempo changes and ending bracket
 that system stand above the numbers, as abcm2ps draws them.
 
 A `%%barnumbers` value that is not an integer of −1 or more produces a warning and is
-ignored. All three directives are scoped like `%%stretchstaff`: file header or tune.
-Written in a tune body, they govern the whole tune. `SVGRenderConfig.barNumbers`,
-`.firstBarNumber` and `.measureBox` set the values the host uses where the document
-says nothing.
+ignored. `%%barnumbers`, `%%measurefirst` and `%%measurebox` are scoped like
+`%%stretchstaff`: file header or tune. Written in a tune body, they govern the whole tune.
+`SVGRenderConfig.barNumbers`, `.firstBarNumber` and `.measureBox` set the values the host
+uses where the document says nothing.
 
 ```abc
 %%barnumbers 4
@@ -675,6 +677,35 @@ K:D
 d2|ABcd efga|bagf edcB|A2A2 B2B2|c4 d4|e8|f8|g8|a8|
 |:ABcd efga|bagf edcB|1 A2A2 B2B2:|2 c4 d4|Z4|ABcd efga|]
 ```
+
+### `%%setbarnb`: where CeolKit departs from abcm2ps
+
+`%%setbarnb N` numbers **the bar it opens**: the first bar to begin at or after it. Written
+against a bar line, on its own line between two bars or as an inline `[I:setbarnb N]`, it
+numbers the bar that follows. Written part way through a bar, it numbers the next one. That
+bar is `N` even if the bar before it was incomplete or the bar opens a later variant ending,
+and it is `N` even if the bar is a `Zn`. If it opens a first ending, the later endings count
+again from `N`.
+
+This follows the spec, not abcm2ps. The spec's own example (§6.1.1) writes the directive
+where a 9/8 bar begins, so that bar is meant to be bar 10:
+
+```abc
+abc cab|\
+%%setbarnb 10
+M:9/8
+abc cba abc|
+```
+
+abcm2ps 8.14 gives `N` to the next bar line after the directive, so here it numbers the 9/8
+bar 3 and the bar *after* it 10. CeolKit numbers the 9/8 bar 10.
+
+In a file or tune header, where there is no bar for it to stand at, `%%setbarnb N` is
+`%%measurefirst N`, as in abcm2ps. Before the first note of the body it numbers the first
+bar, which comes to the same thing. A bar can be numbered from any voice. The count is still
+taken on the top staff, and a number written in a lower voice applies to the bar in the
+same column. The number is in the model as `Measure.barNumber`. A payload that is not an
+integer produces a warning and is ignored.
 
 ## The last line: `%%stretchlast` and `%%stretchstaff`
 

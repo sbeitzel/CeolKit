@@ -211,7 +211,10 @@ struct SharedStaffMerger: Sendable {
                                  movedBy: mergedIndex[primary.voiceIndex] ?? [:]),
                              source: primary.measure.source, meter: primary.measure.meter,
                              key: primary.measure.key,
-                             unitNoteLength: unitNoteLength),
+                             unitNoteLength: unitNoteLength,
+                             // A `%%setbarnb` in any voice sharing the staff numbers the bar.
+                             barNumber: primary.measure.barNumber
+                                ?? sounding.lazy.compactMap(\.measure.barNumber).first),
             naturalWidth: naturalWidth,
             eventOffsets: offsets,
             unitNoteLength: unitNoteLength,

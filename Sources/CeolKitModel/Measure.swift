@@ -62,6 +62,18 @@ public struct Measure: Sendable {
     /// "Did it change here?" is still recoverable as `m.unitNoteLength != previous`, with
     /// `Voice.unitNoteLength` as the comparison for a voice's first measure.
     public let unitNoteLength: Fraction
+    /// The bar number this measure is given by a `%%setbarnb N` (or `[I:setbarnb N]`) in the
+    /// tune body, or `nil` where none was written (ABC v2.2 §11.4.4; issue #296).
+    ///
+    /// It follows `meter`'s convention: non-nil means "set here".  Bars after this one count
+    /// on from it, so a renderer numbering bars restarts its count at this measure.
+    ///
+    /// The directive numbers the bar it opens: written against a bar line (`|[I:setbarnb
+    /// 10]abc|`, or on its own line between two bars) it lands on the bar that follows; written
+    /// part way through a bar, on the next one.  This is the plain reading of the spec's own
+    /// examples (§6.1.1, §11), and deliberately not abcm2ps 8.14's, which numbers the bar
+    /// after that one.
+    public let barNumber: Int?
 
     public init(
         openingBar: BarLine?,
@@ -71,7 +83,8 @@ public struct Measure: Sendable {
         source: SourceRange,
         meter: Meter? = nil,
         key: KeySignature? = nil,
-        unitNoteLength: Fraction
+        unitNoteLength: Fraction,
+        barNumber: Int? = nil
     ) {
         self.openingBar = openingBar
         self.events = events
@@ -81,6 +94,7 @@ public struct Measure: Sendable {
         self.meter = meter
         self.key = key
         self.unitNoteLength = unitNoteLength
+        self.barNumber = barNumber
     }
 }
 

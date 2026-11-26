@@ -55,7 +55,8 @@ enum TupletExpansion {
                         closingBar: measure.closingBar,
                         endings: measure.endings(movedBy: moved), source: measure.source,
                         meter: measure.meter, key: measure.key,
-                        unitNoteLength: measure.unitNoteLength),
+                        unitNoteLength: measure.unitNoteLength,
+                        barNumber: measure.barNumber),
                 tuplets)
     }
 

@@ -315,7 +315,7 @@ struct SemanticPass {
             || name == "scale" || name == "pagescale" || name == "stretchlast"
             || name == "stretchstaff"
             || name == "barnumbers" || name == "measurenb" || name == "measurefirst"
-            || name == "measurebox"
+            || name == "measurebox" || name == "setbarnb"
             || TextFontRole(rawValue: name) != nil
     }
 
@@ -1205,6 +1205,16 @@ struct SemanticPass {
                 }
             }
             diagnostics += tempDiags
+        case "setbarnb":
+            // §11.4.4: unlike the other bar-number directives this one applies at a point in
+            // the music, so it is a mark on the bar it opens, not a tune-wide setting (#296).
+            let trimmed = payload.trimmingCharacters(in: .whitespaces)
+            if let n = Int(trimmed) {
+                ctx.setBarNumber(n, in: VoiceKey(voice), source: source)
+            } else {
+                diagnostics.append(Diagnostic(severity: .warning, code: .unknownDirective,
+                    message: "%%setbarnb expects an integer (got '\(trimmed)')", source: source))
+            }
         case "newpage":
             // §11.4.7: the music from here on starts a fresh page.  Like a staff plan, and
             // for the same reason — the staves of a system are laid out together — a break
@@ -1825,6 +1835,14 @@ struct SemanticPass {
                 message: "%%\(name) expects an integer of -1 or more (got '\(trimmed)')",
                 source: source))
             return nil
+        case "setbarnb":
+            // Outside the tune body there is no bar to set, so it numbers the first one, as
+            // `%%measurefirst` does — abcm2ps's reading too (issue #296).  In the body it is
+            // a mark on the music, which `applyBodyDirective` handles before reaching here.
+            if let n = Int(trimmed) { return .firstBarNumber(n) }
+            diagnostics.append(Diagnostic(severity: .warning, code: .unknownDirective,
+                message: "%%setbarnb expects an integer (got '\(trimmed)')", source: source))
+            return nil
         case "measurefirst":
             if let n = Int(trimmed) { return .firstBarNumber(n) }
             diagnostics.append(Diagnostic(severity: .warning, code: .unknownDirective,
@@ -2169,7 +2187,8 @@ struct SemanticPass {
                 measures[measures.count - 1] = Measure(
                     openingBar: last.openingBar, events: last.events + tempos,
                     closingBar: last.closingBar, endings: last.endings, source: last.source,
-                    meter: last.meter, key: last.key, unitNoteLength: last.unitNoteLength)
+                    meter: last.meter, key: last.key, unitNoteLength: last.unitNoteLength,
+                    barNumber: last.barNumber)
             }
         }
 
@@ -2201,6 +2220,9 @@ struct SemanticPass {
             if let change = acc.pendingKey, acc.musicalEventCount > change.after {
                 finalKey = change.key
             }
+            // A `%%setbarnb` waiting for this bar numbers it; one written part way through
+            // it was waiting for a bar that never began.
+            let finalBarNumber = acc.pendingBarNumber.flatMap { $0.opensNextBar ? nil : $0.number }
             let finalMeasure = Measure(
                 openingBar: acc.lastBarLine,
                 events: acc.currentEvents,
@@ -2209,7 +2231,8 @@ struct SemanticPass {
                 source: src,
                 meter: acc.pendingMeter,
                 key: finalKey,
-                unitNoteLength: finalUnit
+                unitNoteLength: finalUnit,
+                barNumber: finalBarNumber
             )
             measures.append(finalMeasure)
         }
@@ -2255,7 +2278,8 @@ struct SemanticPass {
                 source: m.source,
                 meter: m.meter,
                 key: m.key,
-                unitNoteLength: m.unitNoteLength
+                unitNoteLength: m.unitNoteLength,
+                barNumber: m.barNumber
             ))
         }
 
@@ -2280,7 +2304,8 @@ struct SemanticPass {
                 source: m.source,
                 meter: m.meter,
                 key: m.key,
-                unitNoteLength: m.unitNoteLength
+                unitNoteLength: m.unitNoteLength,
+                barNumber: m.barNumber
             ))
         }
         return (beamResolved, diagnostics)

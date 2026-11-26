@@ -65,6 +65,13 @@ struct VoiceAccumulator {
     /// is where the new signature gets drawn.
     var pendingKey: (key: KeySignature, after: Int)? = nil
 
+    /// A `%%setbarnb N` met here, waiting for the measure it numbers (issue #296).
+    ///
+    /// `opensNextBar` is false while the bar being written holds no music yet, so the
+    /// directive stands at its start and numbers it; written part way through a bar, it
+    /// numbers the next one — the first bar to begin after it.
+    var pendingBarNumber: (number: Int, opensNextBar: Bool)? = nil
+
     init(source: SourceRange, unitNoteLength: Fraction) {
         self.measureSource = source
         self.openingUnitNoteLength = unitNoteLength
@@ -137,6 +144,24 @@ struct VoiceAccumulator {
     /// Records a `K:` met here, to be carried by whichever measure the next note lands in.
     mutating func markKeyChange(_ key: KeySignature) {
         pendingKey = (key, musicalEventCount)
+    }
+
+    /// Records a `%%setbarnb N` met here, to be carried by the first bar to begin at or
+    /// after it.
+    mutating func markBarNumber(_ number: Int) {
+        pendingBarNumber = (number, hasOpenMeasure)
+    }
+
+    /// The bar number the measure now closing is given, consuming it; a number waiting for
+    /// the next bar moves on to wait for it at the start of that bar.
+    mutating func takeBarNumber() -> Int? {
+        guard let pending = pendingBarNumber else { return nil }
+        if pending.opensNextBar {
+            pendingBarNumber = (pending.number, false)
+            return nil
+        }
+        pendingBarNumber = nil
+        return pending.number
     }
 
     /// Appends a bar with no music in it, to keep an `&` overlay's measures aligned with the
@@ -225,6 +250,7 @@ struct VoiceAccumulator {
             // to the measure the next note falls in, counted from that measure's start.
             pendingUnitNoteLength?.after = 0
             pendingKey?.after = 0
+            pendingBarNumber?.opensNextBar = false
             return
         }
         let src = measureSourceSpan(
@@ -260,7 +286,8 @@ struct VoiceAccumulator {
             source: src,
             meter: meterTag,
             key: keyTag,
-            unitNoteLength: effectiveUnitNoteLength
+            unitNoteLength: effectiveUnitNoteLength,
+            barNumber: takeBarNumber()
         )
         closedMeasures.append(measure)
         currentEvents = []
@@ -580,7 +607,8 @@ struct VoiceState {
                 source: m.source,
                 meter: m.meter,
                 key: m.key,
-                unitNoteLength: m.unitNoteLength
+                unitNoteLength: m.unitNoteLength,
+                barNumber: m.barNumber
             )
             offset += count
         }
@@ -937,6 +965,11 @@ struct BodyContext {
     /// voice opens in, and part way through as a change carried on the measure it falls in.
     mutating func setUnitNoteLength(_ length: Fraction, in voice: VoiceKey, source: SourceRange) {
         withVoice(voice, source: source) { $0.setUnitNoteLength(length) }
+    }
+
+    /// Numbers the bar `voice` opens next `number`, from a `%%setbarnb` in the body (#296).
+    mutating func setBarNumber(_ number: Int, in voice: VoiceKey, source: SourceRange) {
+        withVoice(voice, source: source) { $0.accumulator.markBarNumber(number) }
     }
 
     // MARK: Accidentals

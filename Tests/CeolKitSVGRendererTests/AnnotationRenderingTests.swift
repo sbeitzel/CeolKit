@@ -298,4 +298,64 @@ struct AnnotationRenderingTests {
             $0.content != String(SMuFLGlyph.csymAccidentalFlat.character)
         })
     }
+
+    // MARK: - On rests (#299)
+
+    /// abcm2ps 8.14 draws a chord symbol over a rest of every kind, invisible ones and the
+    /// multi-measure rest included.  Each stays in its own bar: none is dropped, and none is
+    /// carried on to the next note.
+    @Test("A chord symbol on a rest is drawn in the rest's own bar")
+    func chordSymbolsOnRests() throws {
+        let (svg, staves) = try render(tune(#""Am"z4 | "G"Z | "C"Z2 | "D"x4 | "E"z C3 |]"#))
+        let staff = try #require(staves.first)
+        let bars = staff.barlineXs
+        try #require(bars.count >= 5)
+        for (i, symbol) in ["Am", "G", "C", "D", "E"].enumerated() {
+            let text = try run(symbol, in: svg)
+            let left = i == 0 ? staff.left : bars[i - 1]
+            #expect(text.x > left && text.x < bars[i], "\(symbol) is not in bar \(i + 1)")
+            #expect(text.y < staff.topY)
+        }
+    }
+
+    /// A rest that fills its bar is drawn at the bar's centre (#300), and the text written on
+    /// it goes with it.  abcm2ps leaves the text at the bar's start; that detaches it from
+    /// the rest, and is not followed.
+    @Test("A chord symbol on a centred whole-bar rest moves with the rest")
+    func chordSymbolFollowsCentredRest() throws {
+        let (svg, _) = try render(tune(#"C D E F | "Am"Z | C D E F |]"#))
+        let wholeRest = String(SMuFLGlyph.restWhole.character)
+        let rest = try #require(bravuraRuns(in: svg).first { $0.content == wholeRest })
+        #expect(abs(try run("Am", in: svg).x - rest.x) < 0.01)
+    }
+
+    /// Room for the text was made where the rest stood before it was centred, so text too
+    /// wide to start at the centre is drawn back from it, still ending inside the bar.
+    @Test("Text too wide to start at a centred rest still ends inside its bar")
+    func wideTextOnCentredRestStaysInItsBar() throws {
+        let (svg, staves) = try render(tune(#"C D E F | "^a rather long annotation"Z | C D E F |]"#))
+        let staff = try #require(staves.first)
+        try #require(staff.barlineXs.count >= 2)
+        let text = try run("a rather long annotation", in: svg)
+        let width = AnnotationBand.width(of: text.content, font: OutlineFontSet.textFace(),
+                                         fontSize: text.fontSize)
+        #expect(text.x > staff.barlineXs[0])
+        #expect(text.x + width < staff.barlineXs[1])
+    }
+
+    /// As abcm2ps sets them: `<` and `>` either side of the rest on the middle line, `_`
+    /// below the staff.
+    @Test("Annotations on a rest are drawn in every position")
+    func annotationsOnRests() throws {
+        let (svg, staves) = try render(tune(#""^above" "_below" z "<left" z ">right" z z |]"#))
+        let staff = try #require(staves.first)
+        #expect(try run("above", in: svg).y < staff.topY)
+        #expect(try run("below", in: svg).y > staff.bottomY)
+        let left = try run("left", in: svg), right = try run("right", in: svg)
+        #expect(left.anchor == "end")
+        #expect(left.x < right.x)
+        for side in [left, right] {
+            #expect(side.y > staff.topY && side.y < staff.bottomY + side.fontSize)
+        }
+    }
 }

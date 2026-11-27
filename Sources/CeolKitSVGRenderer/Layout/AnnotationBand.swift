@@ -235,17 +235,34 @@ enum AnnotationBand {
     }
 
     static func lineCounts(of event: Event) -> (above: Int, below: Int) {
-        switch event {
-        case .note(let n):
-            return (linesAbove(chordSymbol: n.chordSymbol, annotations: n.annotations).count,
-                    linesBelow(annotations: n.annotations).count)
-        case .chord(let c):
-            return (linesAbove(chordSymbol: c.chordSymbol, annotations: c.annotations).count,
-                    linesBelow(annotations: c.annotations).count)
-        case .tuplet(let t):
-            return lineCounts(of: t.events)
-        default:
-            return (0, 0)
+        if case .tuplet(let t) = event { return lineCounts(of: t.events) }
+        guard let (chordSymbol, annotations) = event.writtenText else { return (0, 0) }
+        return (linesAbove(chordSymbol: chordSymbol, annotations: annotations).count,
+                linesBelow(annotations: annotations).count)
+    }
+}
+
+extension Event {
+    /// The chord symbol and annotations written before this event, where it is one that
+    /// carries them: a note, a chord or a rest (#299).  `nil` for anything else.
+    var writtenText: (chordSymbol: ChordSymbol?, annotations: [Annotation])? {
+        switch self {
+        case .note(let n):  (n.chordSymbol, n.annotations)
+        case .chord(let c): (c.chordSymbol, c.annotations)
+        case .rest(let r):  (r.chordSymbol, r.annotations)
+        default:            nil
+        }
+    }
+}
+
+extension ResolvedEventKind {
+    /// As ``CeolKitModel/Event/writtenText``.
+    var writtenText: (chordSymbol: ChordSymbol?, annotations: [Annotation])? {
+        switch self {
+        case .note(let n):  (n.chordSymbol, n.annotations)
+        case .chord(let c): (c.chordSymbol, c.annotations)
+        case .rest(let r):  (r.chordSymbol, r.annotations)
+        default:            nil
         }
     }
 }

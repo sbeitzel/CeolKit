@@ -72,6 +72,9 @@ public enum DiagnosticCode: String, Codable, Sendable {
     /// rest, say — where there is no beam for it to break.  It is dropped, as abcm2ps
     /// drops it.
     case misplacedBeamBreak
+    /// An `"@…"` annotation that does not start with an `x,y` offset (§4.19; the offset is
+    /// abcm2ps's convention).  The whole text is placed at the note, as abcm2ps places it.
+    case malformedAnnotationOffset
     // Fields
     case unknownField
     case malformedFieldPayload

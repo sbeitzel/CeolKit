@@ -386,7 +386,7 @@ private struct ParseContext {
 
     // MARK: Annotation / chord symbol
 
-    func parseAnnotationOrChord(_ s: String, source: SourceRange) -> MusicElement {
+    mutating func parseAnnotationOrChord(_ s: String, source: SourceRange) -> MusicElement {
         guard let first = s.first else { return .chordSymbol("", source: source) }
         let rest = String(s.dropFirst())
         switch first {
@@ -399,17 +399,63 @@ private struct ParseContext {
         }
     }
 
-    func parseAbsoluteAnnotation(_ s: String, source: SourceRange) -> MusicElement {
-        // Format: "x,y text" (coordinates in staff spaces, optional text after space)
-        let parts = s.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: false)
-        if let coordPart = parts.first {
-            let xy = coordPart.split(separator: ",")
-            if xy.count == 2, let x = Double(xy[0]), let y = Double(xy[1]) {
-                let text = parts.count > 1 ? String(parts[1]) : ""
-                return .annotation(.absolute(x: x, y: y), text, source: source)
+    /// `"@x,y text"`: text offset by (x, y) from the note.  §4.19 leaves the placement of
+    /// `@` text to the program; the `x,y` offset is abcm2ps's convention.  As abcm2ps reads
+    /// it (`sscanf(p, "%f,%f%n", …)`), the offset is two numbers separated by a comma, one
+    /// space after it is skipped if present, and the rest is the text — so `"@2,3at"` is
+    /// `at` at (2, 3).  Without an offset the whole payload is the text, at the note, with
+    /// a warning (abcm2ps reports `Error in annotation "@"`).
+    mutating func parseAbsoluteAnnotation(_ s: String, source: SourceRange) -> MusicElement {
+        let scalars = s.unicodeScalars
+        if let (x, afterX) = Self.scanFloat(scalars, from: scalars.startIndex),
+           afterX < scalars.endIndex, scalars[afterX] == ",",
+           let (y, afterY) = Self.scanFloat(scalars, from: scalars.index(after: afterX)) {
+            var textStart = afterY
+            if textStart < scalars.endIndex, scalars[textStart] == " " {
+                textStart = scalars.index(after: textStart)
+            }
+            return .annotation(.absolute(x: x, y: y), String(scalars[textStart...]), source: source)
+        }
+        diagnostics.append(Diagnostic(
+            severity: .warning, code: .malformedAnnotationOffset,
+            message: "An \"@\" annotation should start with an x,y offset; \"\(s)\" is placed at the note",
+            source: source, related: [],
+            hint: "Write the offset as two numbers separated by a comma, e.g. \"@2,3 text\""
+        ))
+        return .annotation(.absolute(x: 0, y: 0), s, source: source)
+    }
+
+    /// Reads a number the way C's `%f` does: leading whitespace, an optional sign, digits
+    /// with an optional decimal point (at least one digit), and an optional exponent that is
+    /// consumed only when digits follow it.  Returns the value and the index after it.
+    static func scanFloat(_ scalars: String.UnicodeScalarView,
+                          from start: String.UnicodeScalarView.Index)
+        -> (Double, String.UnicodeScalarView.Index)? {
+        let end = scalars.endIndex
+        var i = start
+        func isDigit(_ i: String.UnicodeScalarView.Index) -> Bool {
+            i < end && ("0"..."9").contains(scalars[i])
+        }
+        while i < end, scalars[i].properties.isWhitespace { i = scalars.index(after: i) }
+        let numberStart = i
+        if i < end, scalars[i] == "+" || scalars[i] == "-" { i = scalars.index(after: i) }
+        var digits = 0
+        while isDigit(i) { digits += 1; i = scalars.index(after: i) }
+        if i < end, scalars[i] == "." {
+            i = scalars.index(after: i)
+            while isDigit(i) { digits += 1; i = scalars.index(after: i) }
+        }
+        guard digits > 0 else { return nil }
+        if i < end, scalars[i] == "e" || scalars[i] == "E" {
+            var j = scalars.index(after: i)
+            if j < end, scalars[j] == "+" || scalars[j] == "-" { j = scalars.index(after: j) }
+            if isDigit(j) {
+                while isDigit(j) { j = scalars.index(after: j) }
+                i = j
             }
         }
-        return .annotation(.absolute(x: 0, y: 0), s, source: source)
+        guard let value = Double(String(scalars[numberStart..<i])) else { return nil }
+        return (value, i)
     }
 
     // MARK: Broken rhythm

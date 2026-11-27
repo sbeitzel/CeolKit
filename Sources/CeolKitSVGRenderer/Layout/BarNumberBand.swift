@@ -171,6 +171,9 @@ enum BarNumberBand {
             let unit = jm.source.measure.unitNoteLength
             var opening: FirstNote?
             var seenFirst = false
+            // A multi-measure rest stands at the centre of its bar (#300).
+            let offsets = CentredRest.offsets(of: jm, measureLength: nil, metadata: nil,
+                                              staffSize: s)
             for (index, event) in jm.source.measure.events.enumerated() {
                 if case .clefChange(let change) = event { clef = change }
                 let voice = index < jm.eventVoiceIndices.count ? jm.eventVoiceIndices[index] : 0
@@ -188,7 +191,7 @@ enum BarNumberBand {
                 case .rest(let r) where MultiMeasureRest.drawnCount(of: r) != nil:
                     // Its count stands over the staff, the width of its bar (#291).
                     let u = s / TextStyles.nominalStaffSize
-                    let x = measureX + (index < jm.eventOffsets.count ? jm.eventOffsets[index] : 0)
+                    let x = measureX + (index < offsets.count ? offsets[index] : 0)
                     inks.append(Ink(left: x, right: x + MultiMeasureRest.barLength * u,
                                     top: MultiMeasureRest.reachAbove * u))
                     if voice == 0 { seenFirst = true }

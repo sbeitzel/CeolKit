@@ -166,9 +166,9 @@
   <use href="#bravura-g64" xlink:href="#bravura-g64" transform="translate(126.602 94.367) scale(0.0168 -0.0168)"/>
   <use href="#bravura-g64" xlink:href="#bravura-g64" transform="translate(126.602 90.167) scale(0.0168 -0.0168)"/>
   <line x1="233.818" y1="83.867" x2="233.818" y2="100.667" stroke="black" stroke-width="0.672"/>
-  <use href="#bravura-g994" xlink:href="#bravura-g994" transform="translate(133.238 88.067) scale(0.0168 -0.0168)"/>
+  <use href="#bravura-g994" xlink:href="#bravura-g994" transform="translate(178.681 88.067) scale(0.0168 -0.0168)"/>
   <line x1="341.403" y1="83.867" x2="341.403" y2="100.667" stroke="black" stroke-width="0.672"/>
-  <use href="#bravura-g994" xlink:href="#bravura-g994" transform="translate(238.774 88.067) scale(0.0168 -0.0168)"/>
+  <use href="#bravura-g994" xlink:href="#bravura-g994" transform="translate(285.242 88.067) scale(0.0168 -0.0168)"/>
   <line x1="455.244" y1="83.867" x2="455.244" y2="100.667" stroke="black" stroke-width="0.672"/>
   <use href="#bravura-g157" xlink:href="#bravura-g157" transform="translate(346.359 83.867) scale(0.0168 -0.0168)"/>
   <line x1="346.611" y1="84.572" x2="346.611" y2="98.567" stroke="black" stroke-width="0.504"/>
@@ -398,7 +398,7 @@
   <use href="#bravura-g64" xlink:href="#bravura-g64" transform="translate(126.602 191.807) scale(0.0168 -0.0168)"/>
   <use href="#bravura-g64" xlink:href="#bravura-g64" transform="translate(126.602 187.607) scale(0.0168 -0.0168)"/>
   <line x1="233.818" y1="181.307" x2="233.818" y2="198.107" stroke="black" stroke-width="0.672"/>
-  <use href="#bravura-g994" xlink:href="#bravura-g994" transform="translate(133.238 185.507) scale(0.0168 -0.0168)"/>
+  <use href="#bravura-g994" xlink:href="#bravura-g994" transform="translate(178.681 185.507) scale(0.0168 -0.0168)"/>
   <line x1="341.403" y1="181.307" x2="341.403" y2="198.107" stroke="black" stroke-width="0.672"/>
   <use href="#bravura-g157" xlink:href="#bravura-g157" transform="translate(238.774 185.507) scale(0.0168 -0.0168)"/>
   <line x1="239.026" y1="186.212" x2="239.026" y2="200.207" stroke="black" stroke-width="0.504"/>

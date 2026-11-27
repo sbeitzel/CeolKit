@@ -82,7 +82,8 @@ enum TupletExpansion {
                 ties: c.ties, slurs: c.slurs, lyrics: c.lyrics, source: c.source))
         case .rest(let r):
             return .rest(Rest(kind: r.kind, duration: unscaled(r.duration),
-                              decorations: r.decorations, source: r.source))
+                              decorations: r.decorations, chordSymbol: r.chordSymbol,
+                              annotations: r.annotations, source: r.source))
         default:
             return event
         }

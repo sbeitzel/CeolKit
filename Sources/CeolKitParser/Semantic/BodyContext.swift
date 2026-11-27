@@ -1279,6 +1279,7 @@ private func applyTupletFactor(q: Int, p: Int, to event: Event) -> Event {
             denominator: r.duration.denominator * p
         )
         return .rest(Rest(kind: r.kind, duration: dur, decorations: r.decorations,
+                          chordSymbol: r.chordSymbol, annotations: r.annotations,
                           source: r.source))
     default:
         return event

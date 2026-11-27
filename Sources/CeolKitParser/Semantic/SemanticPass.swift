@@ -817,7 +817,11 @@ struct SemanticPass {
                 ))
                 return true
             }
-            let rest = Rest(kind: kind, duration: duration, decorations: decorations, source: src)
+            // Text written before a rest is the rest's (#299), not carried on to the next note.
+            let rest = Rest(kind: kind, duration: duration, decorations: decorations,
+                            chordSymbol: ctx.flushChordSymbol(in: voice, source: src),
+                            annotations: ctx.flushAnnotations(in: voice, source: src),
+                            source: src)
             ctx.emit(.rest(rest), in: voice)
 
         case .barLine(let kind, let src):

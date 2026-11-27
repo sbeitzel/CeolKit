@@ -38,6 +38,8 @@ enum FontSwitchUsage {
                     scan(n.chordSymbol, n.annotations, n.lyrics, at: n.source)
                 case .chord(let c):
                     scan(c.chordSymbol, c.annotations, c.lyrics, at: c.source)
+                case .rest(let r):
+                    scan(r.chordSymbol, r.annotations, [], at: r.source)
                 case .tuplet(let t):
                     scan(t.events)
                 case .tempoChange(let tempo):

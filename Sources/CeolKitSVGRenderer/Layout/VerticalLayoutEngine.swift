@@ -55,6 +55,7 @@ public struct VerticalLayoutEngine: Sendable {
         var isFirstPage = true
         var y = config.margins.top + titleBlockHeight
         var previousAbcLine: Int?
+        var meter: Meter?
         // A staff of its own is a group of one, so the same walk that carries an ending over
         // a system break in a multi-voice tune serves here too.
         let endingRuns = EndingBracketBand.runs(
@@ -89,9 +90,12 @@ public struct VerticalLayoutEngine: Sendable {
 
             let systemOrigin = Point(x: config.margins.left, y: y)
             let startWidth = systemStartWidth(for: jsystem, staffSize: config.staffSize)
+            meter = jsystem.meter ?? meter
             let measures = resolveMeasures(
                 jsystem.measures,
                 clef: jsystem.clef,
+                meter: &meter,
+                staffSize: config.staffSize,
                 systemOrigin: systemOrigin,
                 extraAbove: extraAbove,
                 systemStartWidth: startWidth
@@ -269,6 +273,8 @@ public struct VerticalLayoutEngine: Sendable {
             }
             y += block.titleBlockHeight
 
+            // Per staff, the meter in force, for centring whole-measure rests (#300).
+            var meters: [Int: Meter] = [:]
             for (gi, group) in groups.enumerated() {
                 let metrics = groupMetrics(of: group, config: tuneConfig, styles: styles,
                                            endingRuns: endingRuns[gi],
@@ -299,7 +305,7 @@ public struct VerticalLayoutEngine: Sendable {
                     straightFlags: block.straightFlags, graceSlurs: block.graceSlurs,
                     abcLine: abcLine,
                     endingRuns: endingRuns[gi],
-                    barNumbers: (barNumbers, gi)).map {
+                    barNumbers: (barNumbers, gi), meters: &meters).map {
                         var system = $0
                         system.textStyles = styles
                         return system
@@ -446,7 +452,8 @@ public struct VerticalLayoutEngine: Sendable {
                               graceSlurs: Bool?,
                               abcLine: Int,
                               endingRuns: [[EndingBracketBand.Run]],
-                              barNumbers: (settings: BarNumberSettings, group: Int)? = nil)
+                              barNumbers: (settings: BarNumberSettings, group: Int)? = nil,
+                              meters: inout [Int: Meter])
         -> [ResolvedSystem] {
         // A group of one is an ordinary system: no membership, no group furniture, and the
         // same output the renderer produced before staff groups existed.
@@ -488,9 +495,12 @@ public struct VerticalLayoutEngine: Sendable {
             // `origin.y` is the top of the staff's own band; `staffOrigin` walks down from
             // there to the top staff line, exactly as in the single-staff case.
             let systemOrigin = Point(x: staffLeftX, y: topY + staffTopOffset - extraAbove)
+            meters[i] = staff.meter ?? meters[i]
             let measures = resolveMeasures(
                 staff.measures,
                 clef: staff.clef,
+                meter: &meters[i],
+                staffSize: staffSize,
                 systemOrigin: systemOrigin,
                 extraAbove: extraAbove,
                 systemStartWidth: metrics.startWidth,
@@ -1073,11 +1083,17 @@ public struct VerticalLayoutEngine: Sendable {
 
     // MARK: - Horizontal layout
 
-    /// - Parameter clef: the clef the staff head draws, which the system's first measure is
-    ///   in unless a clef change says otherwise.
+    /// - Parameters:
+    ///   - clef: the clef the staff head draws, which the system's first measure is in
+    ///     unless a clef change says otherwise.
+    ///   - meter: the meter in force as the system begins, left at the one in force as it
+    ///     ends: a rest lasting a whole measure of it is centred (issue #300).
+    ///   - staffSize: the tune's staff size, which the rest is measured at.
     private func resolveMeasures(
         _ measures: [JustifiedMeasure],
         clef systemClef: ClefSpec,
+        meter: inout Meter?,
+        staffSize: Double,
         systemOrigin: Point,
         extraAbove: Double,
         systemStartWidth: Double,
@@ -1096,13 +1112,18 @@ public struct VerticalLayoutEngine: Sendable {
 
             let voices = jm.eventVoiceIndices
             clef = jm.clef ?? clef
+            meter = jm.source.measure.meter ?? meter
+            // A rest that fills the measure stands at its centre (#300).
+            let offsets = CentredRest.offsets(of: jm,
+                                              measureLength: meter.flatMap(CentredRest.measureLength),
+                                              metadata: metadata, staffSize: staffSize)
             // A tuplet's notes were spaced for how long they sound; from here on their
             // durations only choose noteheads, flags and beams, which show what was written.
             var tupletOf: [Int: TupletSpan] = [:]
             for tuplet in jm.source.tuplets {
                 for index in tuplet.eventIndices { tupletOf[index] = tuplet }
             }
-            let events: [ResolvedEvent] = zip(jm.eventOffsets, jm.source.measure.events)
+            let events: [ResolvedEvent] = zip(offsets, jm.source.measure.events)
                 .enumerated().map { i, pair in
                     let (offset, event) = pair
                     if case .clefChange(let change) = event { clef = change }

@@ -2783,36 +2783,11 @@ struct SVGEmitter: Sendable {
         default: break
         }
 
-        let absDur   = rest.kind == .fullMeasure ? 1.0 :
-                       absoluteDuration(rest.duration, unitNoteLength: unitNoteLength)
-        let s        = config.staffSize
-
-        let glyph: SMuFLGlyph
-        let y: Double
-
-        if absDur >= 1.0 {
-            glyph = .restWhole
-            // Whole rest hangs below 4th staff line (staffPos 6); glyph baseline at that line.
-            y = bottomStaffY - 6.0 * s / 2.0
-        } else if absDur >= 0.5 {
-            glyph = .restHalf
-            y = bottomStaffY - 4.0 * s / 2.0   // sits on middle line
-        } else if absDur >= 0.25 {
-            glyph = .restQuarter
-            y = bottomStaffY - 4.0 * s / 2.0
-        } else if absDur >= 0.125 {
-            glyph = .rest8th
-            y = bottomStaffY - 4.0 * s / 2.0
-        } else if absDur >= 0.0625 {
-            glyph = .rest16th
-            y = bottomStaffY - 4.0 * s / 2.0
-        } else if absDur >= 0.03125 {
-            glyph = .rest32nd
-            y = bottomStaffY - 4.0 * s / 2.0
-        } else {
-            glyph = .rest64th
-            y = bottomStaffY - 4.0 * s / 2.0
-        }
+        let s     = config.staffSize
+        let glyph = CentredRest.glyph(for: rest, unitNoteLength: unitNoteLength)
+        // A whole rest hangs below the 4th staff line (staffPos 6), its baseline on that
+        // line; every other rest sits on the middle line.
+        let y = bottomStaffY - (glyph == .restWhole ? 6.0 : 4.0) * s / 2.0
 
         let offset = voiceIndex.map { restOffset(forVoice: $0) } ?? 0
         return (glyph, y + offset)
@@ -3117,7 +3092,11 @@ struct SVGEmitter: Sendable {
                 let shared = staffVoiceCount > 1
                 columns.append(MarkColumn(
                     part: PartKey(staff: staffIndex, voice: event.voiceIndex),
-                    centerX: event.origin.x + nhCenterX,
+                    // At the rest's own centre, which a rest centred in its bar (#300) and a
+                    // multi-measure rest's bar both need.
+                    centerX: event.origin.x + CentredRest.drawnWidth(
+                        of: r, unitNoteLength: measure.unitNoteLength,
+                        metadata: metadata, staffSize: s) / 2,
                     nextAbove: topStaffY - DecorationStack.staffGap * s,
                     nextBelow: bottomStaffY + DecorationStack.staffGap * s,
                     flipped: shared && resolvedStemDirection(forVoice: event.voiceIndex) == .down,

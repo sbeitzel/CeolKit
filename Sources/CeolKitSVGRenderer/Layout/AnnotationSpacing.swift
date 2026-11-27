@@ -136,7 +136,7 @@ struct AnnotationSpacing: Sendable {
 
     /// Width of the widest line `event` draws in `band`, `0` where it draws none.
     private func textWidth(of event: Event, band: Band) -> Double {
-        guard let (chordSymbol, annotations) = Self.text(of: event) else { return 0 }
+        guard let (chordSymbol, annotations) = event.writtenText else { return 0 }
         let lines: [(line: AnnotationBand.Line, isChordLine: Bool)] = switch band {
         case .above:
             AnnotationBand.styledLinesAbove(chordSymbol: chordSymbol, annotations: annotations)
@@ -151,7 +151,7 @@ struct AnnotationSpacing: Sendable {
 
     /// Width of the widest `<` or `>` line beside `event`'s notehead.
     private func sideWidth(of event: Event, position: AnnotationPosition) -> Double {
-        guard let (_, annotations) = Self.text(of: event) else { return 0 }
+        guard let (_, annotations) = event.writtenText else { return 0 }
         return AnnotationBand.texts(in: annotations, at: position).map {
             metrics.styles.annotation.width(of: $0)
         }.max() ?? 0
@@ -179,17 +179,8 @@ struct AnnotationSpacing: Sendable {
             .max() ?? 0
     }
 
-    private static func text(of event: Event)
-        -> (chordSymbol: ChordSymbol?, annotations: [Annotation])? {
-        switch event {
-        case .note(let n):  return (n.chordSymbol, n.annotations)
-        case .chord(let c): return (c.chordSymbol, c.annotations)
-        default:            return nil
-        }
-    }
-
     private static func carriesText(_ event: Event) -> Bool {
-        guard let (chordSymbol, annotations) = text(of: event) else { return false }
+        guard let (chordSymbol, annotations) = event.writtenText else { return false }
         return chordSymbol != nil || !annotations.isEmpty
     }
 }

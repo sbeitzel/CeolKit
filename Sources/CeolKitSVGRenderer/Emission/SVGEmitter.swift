@@ -1029,16 +1029,32 @@ struct SVGEmitter: Sendable {
 
         for (m, measure) in system.measures.enumerated() {
             for (e, event) in measure.events.enumerated() {
-                let chordSymbol: ChordSymbol?
-                let annotations: [Annotation]
-                let notes: [Note]
-                switch event.kind {
-                case .note(let n):  (chordSymbol, annotations, notes) = (n.chordSymbol, n.annotations, [n])
-                case .chord(let c): (chordSymbol, annotations, notes) = (c.chordSymbol, c.annotations, c.notes)
-                default:            continue
+                guard let (chordSymbol, annotations) = event.kind.writtenText,
+                      chordSymbol != nil || !annotations.isEmpty else { continue }
+                let notes: [Note] = switch event.kind {
+                case .note(let n):  [n]
+                case .chord(let c): c.notes
+                default:            []
                 }
-                guard chordSymbol != nil || !annotations.isEmpty else { continue }
-                let x = event.origin.x
+                // On the rest wherever it is drawn, a rest centred in its bar (#300) included
+                // — abcm2ps leaves the text at the bar's start, which detaches it from what it
+                // was written on (#299).  Room was made for the text where the rest stood
+                // before it moved, so it is drawn no further right than ends it at the bar
+                // line.
+                var x = event.origin.x
+                if case .rest = event.kind {
+                    let widest = (AnnotationBand.styledLinesAbove(chordSymbol: chordSymbol,
+                                                                  annotations: annotations)
+                        .map { AnnotationBand.width(of: $0.line,
+                                                    style: $0.isChordLine ? chordStyle
+                                                                          : annotationStyle,
+                                                    metadata: metadata) }
+                        + AnnotationBand.linesBelow(annotations: annotations)
+                        .map { annotationStyle.width(of: $0) }).max() ?? 0
+                    let barEnd = measure.origin.x + measure.width
+                    x = min(x, max(barEnd - widest - AnnotationBand.sideGapRatio * s,
+                                   measure.origin.x))
+                }
 
                 // Above: first listed at the top, the chord symbol nearest the staff.
                 var above = AnnotationBand.styledLinesAbove(chordSymbol: chordSymbol,
@@ -1065,7 +1081,10 @@ struct SVGEmitter: Sendable {
 
                 // Beside the notehead, and at a stated offset from it.  A chord's are centred
                 // on the middle of its span, which is what they stand beside.
-                let ys = notes.map {
+                // Beside the glyph itself; a rest's text is centred on the middle line, as
+                // abcm2ps sets it (#299).
+                let glyphX = event.origin.x
+                let ys = notes.isEmpty ? [bottomY - 2 * s] : notes.map {
                     noteY(staffPos: staffPos(for: $0.pitch, clef: event.clef), bottomStaffY: bottomY)
                 }
                 guard let highest = ys.min(), let lowest = ys.max() else { continue }
@@ -1084,7 +1103,7 @@ struct SVGEmitter: Sendable {
                 let accidental = notes.map { accidentalMetrics.reservation(for: $0.displayedAccidental) }
                     .max() ?? 0
                 for (i, text) in left.enumerated() {
-                    draw(text, style: annotationStyle, x: x - accidental - gap,
+                    draw(text, style: annotationStyle, x: glyphX - accidental - gap,
                          y: sideY(i, of: left.count), anchor: "end")
                 }
 
@@ -1093,7 +1112,7 @@ struct SVGEmitter: Sendable {
                     augmentationDots($0.duration, unitNoteLength: measure.unitNoteLength)
                 }.max() ?? 0
                 let dotAllowance = dots > 0 ? s + Double(dots - 1) * augmentationDotStep() : 0
-                let rightX = x + noteheadWidth() + gap + dotAllowance
+                let rightX = glyphX + noteheadWidth() + gap + dotAllowance
                 for (i, text) in right.enumerated() {
                     draw(text, style: annotationStyle, x: rightX, y: sideY(i, of: right.count))
                 }
@@ -1101,7 +1120,7 @@ struct SVGEmitter: Sendable {
                 // `@x,y`: offset in staff spaces from the notehead, y upward.
                 for annotation in annotations {
                     guard case .absolute(let dx, let dy) = annotation.position else { continue }
-                    draw(annotation.text.value, style: annotationStyle, x: x + dx * s,
+                    draw(annotation.text.value, style: annotationStyle, x: glyphX + dx * s,
                          y: sideBaseline - dy * s)
                 }
             }

@@ -14,12 +14,21 @@ public struct Rest: Sendable {
     /// as written: `Z6` is `6/1` whatever `L:` is.  Read that through ``measureCount``.
     public let duration: Fraction
     public let decorations: [Decoration]
+    /// The chord symbol written before the rest (ABC v2.2 §4.18), as on a ``Note``: a
+    /// chord symbol may stand before a rest of any kind, invisible ones included.
+    public let chordSymbol: ChordSymbol?
+    /// The annotations written before the rest (§4.19), as on a ``Note``.
+    public let annotations: [Annotation]
     public let source: SourceRange
 
-    public init(kind: RestKind, duration: Fraction, decorations: [Decoration], source: SourceRange) {
+    public init(kind: RestKind, duration: Fraction, decorations: [Decoration],
+                chordSymbol: ChordSymbol? = nil, annotations: [Annotation] = [],
+                source: SourceRange) {
         self.kind = kind
         self.duration = duration
         self.decorations = decorations
+        self.chordSymbol = chordSymbol
+        self.annotations = annotations
         self.source = source
     }
 

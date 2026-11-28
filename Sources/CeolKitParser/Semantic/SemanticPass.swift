@@ -1279,26 +1279,29 @@ struct SemanticPass {
             let elem = elements[i]
             switch elem {
             case .brokenRhythm(let count, let direction, _):
-                // Modify the last note in result (left side) and peek at next note (right side).
+                // The left side is the last note, rest or chord before the symbol; the right
+                // side is the next one after it.  Anything else in between (slurs, grace groups,
+                // decorations, chord symbols, annotations, spaces, inline fields) passes through
+                // unchanged, as abcm2ps applies a pending broken rhythm to whichever note it
+                // parses next (#307).  A bar line or voice overlay ends the search.
                 let (leftMul, rightMul) = brokenMultipliers(count: count, direction: direction)
-                // Adjust left
-                if !result.isEmpty {
-                    result[result.count - 1] = applyDurationMultiplier(leftMul, to: result[result.count - 1])
+                if let left = lastDurationIndex(in: result) {
+                    result[left] = applyDurationMultiplier(leftMul, to: result[left])
                 }
-                // Advance to the right-side note, passing any intervening grace groups through
-                // unchanged. A grace group is a graceStart…graceEnd bracket with notes inside;
-                // consuming it here preserves order without losing the pending modifier.
                 i += 1
-                while i < elements.count, case .graceStart = elements[i] {
-                    while i < elements.count {
-                        let g = elements[i]
-                        result.append(g)
-                        i += 1
-                        if case .graceEnd = g { break }
-                    }
+                var inGrace = false
+                while i < elements.count {
+                    let e = elements[i]
+                    if case .graceStart = e { inGrace = true }
+                    else if case .graceEnd = e { inGrace = false }
+                    else if !inGrace, takesDuration(e) || endsBrokenSearch(e) { break }
+                    result.append(e)
+                    i += 1
                 }
-                if i < elements.count {
+                if i < elements.count, takesDuration(elements[i]) {
                     result.append(applyDurationMultiplier(rightMul, to: elements[i]))
+                } else {
+                    continue  // leave the bar line (or end) for the main loop
                 }
             default:
                 result.append(elem)
@@ -1306,6 +1309,39 @@ struct SemanticPass {
             i += 1
         }
         return result
+    }
+
+    /// A note, rest or chord: an element a broken rhythm lengthens or shortens (a grace note
+    /// never is; callers skip grace groups whole).
+    private func takesDuration(_ element: MusicElement) -> Bool {
+        switch element {
+        case .note, .rest, .chord: return true
+        default:                   return false
+        }
+    }
+
+    /// An element a broken rhythm does not reach across.
+    private func endsBrokenSearch(_ element: MusicElement) -> Bool {
+        switch element {
+        case .barLine, .voiceOverlay, .brokenRhythm: return true
+        default:                                      return false
+        }
+    }
+
+    /// The index of the last note, rest or chord in `elements` that a broken rhythm written
+    /// after them reaches: grace groups are skipped whole, and a bar line ends the search.
+    private func lastDurationIndex(in elements: [MusicElement]) -> Int? {
+        var inGrace = false
+        for index in elements.indices.reversed() {
+            let e = elements[index]
+            if case .graceEnd = e { inGrace = true }
+            else if case .graceStart = e { inGrace = false }
+            else if !inGrace {
+                if takesDuration(e) { return index }
+                if endsBrokenSearch(e) { return nil }
+            }
+        }
+        return nil
     }
 
     // Returns (leftMultiplier, rightMultiplier) as (num, den) pairs.
